@@ -112,9 +112,13 @@ source: 续写，遵守 orchestrator/protocol.md 的"主Agent零裁量"原则
 
 1. 该目录中存在 `docs/reports/.round-claims/round{N}.claim`，且 claim 文件内的 `trace_id` **不等于**本次运行的 `trace_id`（说明是上一次运行的残留）；
 2. 该目录下**没有** `round{N}-final-report.md`（说明上一轮没有正常闭合）；
-3. 该目录下所有产物文件的时间戳都早于本次运行的启动时间。
+3. 该目录下的产物文件**不满足**"已闭合"特征——即不存在任何 `05-verify-*.md` 文件，或存在但对应 `open_items` 中仍有可自动消解的阻塞项。
 
-三个条件全部满足 → 返回 `round_number = N`，并在 `anomalies` 中记 `ORPHAN_ROUND_REUSED`，`detail` 写明复用了哪个目录、含多少个残留文件。主Agent据此决定是清空重跑还是续跑（这是主Agent的调度决策，不是探测Agent的判断）。
+**关于时间戳判据的说明**：早期设计曾用"所有产物文件的时间戳早于本次运行启动时间"作为第 3 个条件，但这**不可执行**——探测Agent的派发参数里没有"本次运行启动时间"这个字段，它也无从得知主Agent何时启动。改为上面基于**文件存在性**的判据（是否有 `final-report`、是否有 `05-verify`），这些都能被探测Agent直接观察到，且语义更强：一份没有最终报告的轮次目录，无论时间戳如何，都是未闭合的。
+
+**`trace_id` 的来源**：探测Agent在派发参数中**必定**收到主Agent注入的 `trace_id`（`protocol.md` 的 `trace_id` 传播规则要求它在所有派发中传递）。若某种 harness 无法传递 `trace_id`，则第 1 个条件降级为"claim 文件存在"即可，但必须在 `anomalies` 中标注 `TRACE_ID_UNAVAILABLE`，提示主Agent该判定可能不准。
+
+三个条件**全部**满足 → 返回 `round_number = N`，并在 `anomalies` 中记 `ORPHAN_ROUND_REUSED`，`detail` 写明复用了哪个目录、含多少个残留文件。主Agent据此决定是清空重跑还是续跑（这是主Agent的调度决策，不是探测Agent的判断）。
 
 **只满足部分条件时**：**不复用**，按 `max+1` 正常推进，并在 `anomalies` 中记 `ORPHAN_ROUND_DETECTED`。理由：宁可留下一个孤儿目录（可在最终报告中说明），也不能因为误判而复用一个可能已经正常闭合的轮次，那会让两轮产物混在一起。
 

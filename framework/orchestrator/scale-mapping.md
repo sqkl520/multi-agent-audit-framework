@@ -102,7 +102,43 @@ admission_ceiling = min(60, effective_slices + 30)
 **与 `protocol.md` 第 6 节的关系**：`protocol.md` 规定**单次运行总Agent数上限 = 60**（硬护栏，跨波次累计，包括发现波、锐评波、修复波、验收波的所有实例）。本节的 `admission_ceiling` 是**单波次内**的队列上限，二者是不同层级的约束，且 `admission_ceiling` **不得超过** 60：
 
 - `effective_slices ≤ 30` 时，`admission_ceiling = effective_slices + 30`（≤ 60），留出重派与追加切片的余量；
-- `effective_slices > 30` 时，`admission_ceiling = 60`，即**硬护栏就是队列上限**，剩余切片一律 `DEFERRED`，最终报告标注“本轮覆盖不完整”。
+- `effective_slices > 30` 时，`admission_ceiling = 60`，剩余切片一律 `DEFERRED`，最终报告标注"本轮覆盖不完整"。
+
+### 「计划量 = 切片数」与队列上限的关系
+
+第 3 节的映射表说"发现波计划量永远等于 `effective_slices`"，本节又说超过 60 的部分要 `DEFERRED`。这两个规则不矛盾，因为它们描述的是**两个不同阶段的数字**：
+
+| 数字 | 阶段 | 定义 |
+|---|---|---|
+| `planned_discovery_agents = effective_slices` | 波次二**规划时** | 每一片都必须有对应的审计 Agent，**不允许合并切片**。这是"计划量"，写入账本后不再修改 |
+| `admission_ceiling` | 波次二**执行时** | 同时在队列中（`PENDING + RUNNING`）的实例数上限，是**背压阀**，不是总量限制 |
+
+**关键区分**：`admission_ceiling` 限制的是**队列中同时存在的实例数**，不是**总共能派多少个**。滚动窗口的机制是：一个实例进入终态、结果被主Agent收集后，从队列中移除，下一个 `PENDING` 切片补位。因此 100 个切片、`admission_ceiling = 60` 时，不是"只能派 60 个"，而是"任意时刻队列里最多 60 个"。
+
+### 总预算 60 的分配（这是真正的约束）
+
+`protocol.md` 的 `total_agent_count = 60` 是**跨波次累计**的硬护栏，涵盖侦察、审计、锐评、修复、验收的全部实例。这意味着发现波不能独占 60——否则下游无预算可用。因此引入**分波预算**：
+
+```
+total_budget = 60
+reserved_for_downstream = 20          # 锐评 + 修复 + 验收的预留
+discovery_budget = total_budget - reserved_for_downstream = 40
+affordable_slices = min(effective_slices, discovery_budget)
+deferred_slices = effective_slices - affordable_slices
+```
+
+| 情形 | 发现波实派 | 下游预留 | 结果 |
+|---|---|---|---|
+| `effective_slices ≤ 40` | `= effective_slices` | ≥ 20 | 全部切片被审计 |
+| `effective_slices > 40` | `40` | 20 | 超出部分 `DEFERRED`，最终报告标注"本轮覆盖不完整" |
+
+**为什么预留 20 而不是按比例**：下游 Agent 数量由**发现数**驱动，而发现数在波次二完成前无法预知。20 是一个保守的下界，覆盖"锐评 3–4 个实例 + 若干修复与验收"。如果实际发现数很少，剩余预算闲置，这比"发现波吃光预算导致无法修复"要好得多。
+
+**发现数超过预留时的处理**：如果 `UPHELD` 发现数 × 2（修复 + 验收）> 20，主Agent**不自行挑选修哪些**，而是按发现 ID 的 FIFO 顺序处理前若干个，其余写入 `open_items`，`kind: "UNRESOLVED_FINDING"`，`blocking: false`，`next_action: "NONE"`，`summary` 写明"因总预算耗尽，本轮排入下一轮修复"（**不得**用 `DEFERRED_SLICE`——那个枚举专指未派发的**审计切片**，不是未修复的**缺陷**；混用会让最终报告的"未覆盖切片数"统计失真）。**不得**因为预算不足而降低单个修复的验收标准。
+
+**超过预算时的推荐做法**：`effective_slices > 40` 时，主Agent**不自行决定审哪 40 片**（那是裁量），而是按第 5 节第 2 条"同一优先级内按原始 FIFO 顺序"取前 40 片。第 41 片之后全部 `DEFERRED`，由下一轮审计接手。
+
+**这带来的诚实代价**：大项目一轮审不完，需要多轮。框架选择"每轮诚实报告覆盖率"，而不是"一轮内悄悄降低深度假装审完了"。这与 `README.md` 开头的核心原则一致——宁可承认覆盖不足，不可产生看起来完整的假象。
 
 **为什么不是 `max(60, ...)`**：如果写成 `max`，超大项目会让队列上限突破 60，与 `protocol.md` 的硬护栏直接冲突——主Agent会陷入"该遵守哪个数"的两难，而框架的核心原则是主Agent不做裁量。`min` 保证两个数字永远不矛盾：60 是天花板。
 
@@ -157,13 +193,17 @@ admission_ceiling = min(60, effective_slices + 30)
 ```
 ledger.scale_decision:
   effective_slices: int
-  planned_discovery_agents: int      # = effective_slices
+  planned_discovery_agents: int      # = affordable_slices，见第 4 节预算分配
   concurrency_window: int            # = min(窗口值, harness_cap)
-  admission_ceiling: int
+  admission_ceiling: int             # 队列背压阀，= min(60, effective_slices + 30)
+  total_budget: int                  # = 60，跨波次累计硬护栏
+  reserved_for_downstream: int       # = 20，锐评+修复+验收预留
+  discovery_budget: int              # = total_budget - reserved_for_downstream
+  affordable_slices: int             # = min(effective_slices, discovery_budget)
   critique_roles: ["Skeptic", "Devil's Advocate", "Arbiter"]  # 或子集
   critique_extra: "cross-pattern-scan" | "regression-scan" | null
   skipped_slices: [string]           # SKIP_REAUDIT 的切片标识
-  deferred_slices: [string]          # 触达 admission_ceiling 后未派发的切片
+  deferred_slices: [string]          # 因 discovery_budget 或 admission_ceiling 未派发的切片
 ```
 
 主Agent在波次二启动前将 `scale_decision` 写入账本，之后**不再回头修改**。如果运行过程中发现 `effective_slices` 的初始计算有误，修复方式是**派一个全新的侦察Agent重新执行切片**，而不是在运行中热改 `scale_decision`。

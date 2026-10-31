@@ -146,6 +146,17 @@ Resume Packet 是一个**不可变快照**，在每个波次闭合时由主Agent
 
 **`blocking` 的语义**：`true` 表示该项**阻止下一波闭合**。主Agent在门控判定时，只检查 `blocking: true` 的 `open_items` 是否已被处理或显式转为 `DEFERRED`。`blocking: false` 的项可以随包传递，但不阻止波次推进。
 
+**`blocking` 的两种子类**（这一点决定了流程会不会挂死）：
+
+| 子类 | 包含的 `kind` | 是否有自动动作 | 对波次闭合的影响 |
+|---|---|---|---|
+| **可自动消解的阻塞** | `UNRESOLVED_FINDING`、`EVIDENCE_GAP`、`COVERAGE_GAP`、`REGRESSION_SCAN_REQUIRED`、`AFFECTED_BY_FIX`、`PERMANENT_FAILURE`、`UNVERIFIED_TARGET`、`DEFERRED_SLICE` | 有。分别对应派仲裁、派补采、派审计、追加回归扫描、转验收、标记未覆盖 | **阻止波次推进**，必须处理完毕 |
+| **人工阻塞（不可自动消解）** | `HUMAN_DECISION_REQUIRED`、`REVOKED` | **无**。只能由人裁决 | **不阻止本轮终止**，只阻止把该缺陷记为"已修复"；本轮状态为 `PARTIALLY_CLOSED` |
+
+**判定规则**：主Agent在波次闭合时，把 `blocking: true` 的项按上表分类。若剩余阻塞项**全部**属于人工阻塞类，则允许以 `PARTIALLY_CLOSED` 终止，并在最终报告中单列「待人工裁决」。若存在任何可自动消解的阻塞项，则必须继续处理，不得以 `PARTIALLY_CLOSED` 草草收尾。
+
+这条区分是为了防止一个真实的死局：如果所有 `blocking: true` 都要求清空才能闭合，那一旦出现需要人裁决的项，无人值守的流程会永久卡死。
+
 
 ## 第 4 节：`conflicts`——冲突列表与裁决状态
 
