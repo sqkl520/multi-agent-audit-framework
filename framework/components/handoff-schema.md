@@ -53,7 +53,7 @@ Resume Packet 是一个**不可变快照**，在每个波次闭合时由主Agent
 | `schema_version` | string | 精确等于 `"handoff-schema-v1"`。版本不匹配时，主Agent不得尝试兼容，必须标记 `PERMANENT_FAILURE` 并写入 `unverified` | 拒绝整个包 |
 | `round_id` | string | 由轮次探测Agent返回的 `RN`，例如 `"round30"` | 拒绝整个包 |
 | `wave_id` | string | 当前波次标识，固定枚举 | 拒绝整个包 |
-| `wave_status` | enum | `CLOSED` 表示该波所有子Agent达到终态且门控通过；`PARTIALLY_CLOSED` 表示部分切片 `DEFERRED` 或 `PERMANENT_FAILURE`；`FAILED` 表示波次级失败 | 拒绝整个包 |
+| `wave_status` | enum | `CLOSED` = 该波所有子Agent达到终态且门控通过、无未决阻塞项；`PARTIALLY_CLOSED` = 该波已尽力推进并可以收尾，但存在无法由自动流程消解的遗留（部分切片 `DEFERRED` / `PERMANENT_FAILURE`，或剩余阻塞项**全部**属于 `HUMAN_DECISION_REQUIRED` / `REVOKED` 等人工阻塞类）；`FAILED` = 波次级失败（例如侦察返回空切片、关键模板全部 `CONTRACT_VIOLATION`） | 拒绝整个包 |
 | `trace_id` | string | 全轮次唯一，必须由主Agent在波次一启动时生成并**原样注入每个子Agent的派发参数**，子Agent在返回中回显 | 拒绝整个包；如果某子Agent返回的 `trace_id` 与派发时不一致，该子Agent的返回作废 |
 | `generated_at` | ISO8601 | 包生成时间 | 允许缺失，主Agent补当前时间 |
 | `packet_digest` | string | 包内容的 SHA256，用于完整性校验和去重；下一波主Agent在加载前验证 digest，不一致则拒绝 | 允许缺失；如果存在但不匹配，拒绝整个包 |
@@ -144,7 +144,7 @@ Resume Packet 是一个**不可变快照**，在每个波次闭合时由主Agent
 
 **枚举扩展的纪律**：`kind` 与 `next_action` 必须是**闭集**。任何波次模板需要使用新的 `kind` 时，**必须先在本文档中登记**，否则该 `open_item` 视为 `CONTRACT_VIOLATION`。这是防止各模板各自发明字段导致 Resume Packet 无法被主Agent机械解析的唯一手段。
 
-**`blocking` 的语义**：`true` 表示该项**阻止下一波闭合**。主Agent在门控判定时，只检查 `blocking: true` 的 `open_items` 是否已被处理或显式转为 `DEFERRED`。`blocking: false` 的项可以随包传递，但不阻止波次推进。
+**`blocking` 的语义**：`true` 表示该项**阻止流程继续推进而不被处理**。主Agent在门控判定时，只检查 `blocking: true` 的 `open_items` 是否已被处理或显式转为 `DEFERRED`。`blocking: false` 的项可以随包传递，但不阻止波次推进。**注意**：`blocking: true` 并不一律阻止本轮终止——它分两类，见下。
 
 **`blocking` 的两种子类**（这一点决定了流程会不会挂死）：
 
