@@ -137,7 +137,7 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 8 轮)
     "verdicts": [
       {
         "finding_id": "string",
-        "verdict": "UPHOLD | DOWNGRADE | REVOKE | EVIDENCE_GAP",
+        "verdict": "UPHELD | DOWNGRADED | REVOKED | EVIDENCE_GAP",
         "reason": "string — 必须引用具体证据或指出具体缺失",
         "missing_evidence": "string|null"
       }
