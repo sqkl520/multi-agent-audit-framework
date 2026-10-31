@@ -67,7 +67,20 @@ Workflow Wave Dispatch 的纪律是：波次之间不是并行扇出，而是**�
 - **波次二（发现）闭合条件**：`spawned_agents` 中所有切片的审计Agent状态均为 `SUCCESS`，且没有 `CONTRACT_VIOLATION`。**不要求“零发现”**——没有发现本身可以是一个合法结果，但必须是带证据的“No evidence found”。
 - **波次三（锐评）闭合条件**：Skeptic 和 Devil's Advocate 均返回 `SUCCESS`；`conflicts` 中每一项的 `resolution` 不再是 `PENDING`（要么已由Arbiter裁决，要么标记为 `ARBITRATING` 并已派发仲裁Agent）。
 - **波次四（修复）闭合条件**：每一条 `UPHELD` 的发现都有对应的修复Agent返回 `SUCCESS`，且修复Agent的返回中带有 `affected_issues` 列表（说明该修改可能影响的其他已发现缺陷）。
-- **波次五（验收）闭合条件**：每一个修复对应的验收Agent返回 `SUCCESS`，且验收结论明确为“通过”或“不通过（附具体触发条件）”。不通过的修复**回到波次四**，不回到波次二。
+- **波次五（验收）闭合条件**：每一个修复对应的验收Agent都返回了**终态**（`SUCCESS` 或 `RETRYABLE_FAILURE`），且每个有 `verdict` 的修复都明确给出了结论。三种情形分别处理：
+  - `verdict: PASS` + `escalation_required: false` → 正常闭合，该项关闭；
+  - `verdict: FAIL`（归因 `FIX_INCOMPLETE` / `FIX_INCORRECT`）→ **回到波次四**，不回到波次二；
+  - `verdict: PASS` + `escalation_required: true`，或归因为 `BASELINE_INVALID` → 该缺陷**不进入修复波**，但本轮**允许以「部分闭合」状态终止**（见下方"人工阻塞项不可无限阻塞"规则）。
+
+**人工阻塞项不可无限阻塞**：`HUMAN_DECISION_REQUIRED` 与 `REVOKED` 是 `blocking: true` 的项，但自动化流程**没有任何机制能清除它们**——它们只能由人裁决。因此：
+
+1. 这两类 `blocking` 项**不阻止本轮终止**，只阻止把该缺陷记为"已修复"；
+2. 主Agent在波次五闭合时，若剩余 `blocking: true` 的项**全部**属于 `HUMAN_DECISION_REQUIRED` 或 `REVOKED`，则本轮状态置为 `PARTIALLY_CLOSED`（不是 `FAILED`，也不是 `CLOSED`），并照常生成最终报告；
+3. 最终报告必须把这类项列在「待人工裁决」清单中，并明确写出"本轮未据此记为已修复"。
+
+**为什么必须这样**：如果严格按"所有 blocking 项清空才能闭合"执行，一旦出现需要人工裁决的项，流程会永久卡在波次五，既不能推进也不能结束——这在无人值守场景下等于挂死。区分 `PARTIALLY_CLOSED` 让流程能正常收尾，同时不牺牲结论的诚实性：该缺陷既没被记为已修复，也没被静默丢弃。
+
+**什么才算真正的阻塞**：只有未被处理的 `UNRESOLVED_FINDING`、`EVIDENCE_GAP`、`COVERAGE_GAP`、`REGRESSION_SCAN_REQUIRED` 才是流程必须处理的阻塞项——它们都有对应的自动动作（派仲裁、派补采、派审计、追加回归扫描）。`HUMAN_DECISION_REQUIRED` 与 `REVOKED` 没有自动动作，因此不能按同样方式阻塞。
 
 门控失败时的行为必须写死：**主Agent不得自行降低门控标准，不得将失败子任务合并到主线程执行，不得缩小任务范围后重派**。
 
