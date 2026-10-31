@@ -2,8 +2,11 @@
 
 > **来源**：DeepSeek 分享对话 <https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8>（14 轮问答）
 > **整理时间**：2026-11-01
-> **配套文件**：本目录下 `orchestrator/`、`components/`、`templates/` 三组共 9 份文件，是从上述对话中抽取的**原文**。
+> **原对话产出**：`orchestrator/`、`components/`、`templates/` 三组共 9 份文件，为对话原文。
+> **后续续写**：`templates/wave5-verify.md`、`wrappers/` 五份、`artifacts/` 两份，共 8 份。
 > **原始转录**：`docs/reports/deepseek-share-yn99k1mum4qp5fqwj8.md`
+
+> **只想跑起来？** 直接看 [`MANUAL.md`](MANUAL.md)（使用说明书，含逐步执行流程、每波必检项、排错表、字段速查）。本文讲原理。
 
 ---
 
@@ -205,6 +208,8 @@ effective_slices = len(audit_slices) + len(unverified)
 
 | 文件 | 加载时机 | 一句话职责 |
 |---|---|---|
+| [`MANUAL.md`](MANUAL.md) | 人读，不加载 | 使用说明书：三个前置决定、三种运行方式、逐步执行流程、每波必检项、排错表、字段速查 |
+| [`PORTABILITY.md`](PORTABILITY.md) | 人读，不加载 | 跨 harness 移植：加载机制的三种落地方式、能力对照、必改三处 |
 | [`orchestrator/protocol.md`](orchestrator/protocol.md) | 主 Agent 全程常驻 | 调度协议：工具白名单、状态账本、波次门控、重派规则、冲突送仲裁、并发护栏 |
 | [`orchestrator/scale-mapping.md`](orchestrator/scale-mapping.md) | 波次一闭合后、波次二派发前 | 切片数 → 派发量与并发窗口的查找表，零裁量 |
 | [`components/evidence-policy.md`](components/evidence-policy.md) | 所有子 Agent 产出发现前 | 门 0 反捏造检查、证据/推断分离、UNKNOWN 纪律、`file:line` 精度 |
