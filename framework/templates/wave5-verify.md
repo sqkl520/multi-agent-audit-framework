@@ -89,7 +89,9 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 12 轮给出的�
 | `OBSERVED_BUT_OUT_OF_SCOPE` | 记录但不处理；写入 `payload.notes` 供主Agent决定是否下一轮派发 | 不影响本次 `verdict` |
 | `AFFECTED_ISSUES_EMPTY_CONFIRMED` | 仍须独立复核"确实没有共享符号"这一结论（抽查 `target_files` 中修改的符号是否被其他未闭合缺陷引用） | 复核发现遗漏 → `PASS_WITH_ESCALATION` |
 
-**`PASS_WITH_ESCALATION` 的语义**：本次修复在技术上通过了定向检查，但存在必须由人决定的未决事项。它在 `handoff-schema` 中对应 `kind: "HUMAN_DECISION_REQUIRED"` 的 `open_item`，`blocking: true`，**阻止本轮整体闭合**，但不触发重新修复。
+**`PASS_WITH_ESCALATION` 的语义**：本次修复在技术上通过了定向检查，但存在必须由人决定的未决事项。它在 `handoff-schema` 中对应 `kind: "HUMAN_DECISION_REQUIRED"` 的 `open_item`，`blocking: true`，**不触发重新修复**；本轮以 `PARTIALLY_CLOSED` 收尾（不是无条件 `CLOSED`），该缺陷**不记为已修复**，列入最终报告的「待人工裁决」清单。
+
+注意这里说的"`blocking: true` 但不阻止本轮终止"看似矛盾，实则不是：`blocking` 的完整语义见 `handoff-schema.md` 第 3 节——它分"可自动消解的阻塞"（必须处理完才能推进）与"人工阻塞"（只能由人清空，因此不阻止收尾）。`HUMAN_DECISION_REQUIRED` 属于后者。
 
 ---
 
@@ -100,7 +102,7 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 12 轮给出的�
 | 结论 | 条件 | `verdict` | `escalation_required` | 去向 |
 |---|---|---|---|---|
 | **通过** | 定向检查通过，影响半径全部处理，无未决标记 | `PASS` | `false` | 该缺陷关闭，写入 `closed_waves[wave-5]` 摘要 |
-| **带保留通过** | 定向检查通过，但存在需人工裁决的标记 | `PASS` | `true` | 生成 `HUMAN_DECISION_REQUIRED` 的 `open_item`，阻止整体闭合 |
+| **带保留通过** | 定向检查通过，但存在需人工裁决的标记 | `PASS` | `true` | 生成 `HUMAN_DECISION_REQUIRED` 的 `open_item`；本轮以 `PARTIALLY_CLOSED` 收尾，该缺陷不记为已修复 |
 | **不通过** | 定向检查失败，或影响半径检查发现破损 | `FAIL` | 命中第 7 节任一情形为 `true`，否则 `false` | **回到波次四**重新修复，**不回到波次二** |
 
 ### 5.1 两个必填的结构化字段
@@ -191,9 +193,9 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 12 轮给出的�
 | 验收Agent返回字段 | 写入 Resume Packet 的位置 | 规则 |
 |---|---|---|
 | `verdict: PASS` 且 `escalation_required: false` | `closed_waves[wave-5]` 的 `summary` 记一条通过；对应 `open_item` 从 `UNRESOLVED_FINDING` 中移除 | 只记结论与 `artifact_ref`，不复制 evidence 正文 |
-| `verdict: PASS` 且 `escalation_required: true` | `open_items` 新增 `kind: "HUMAN_DECISION_REQUIRED"`，`blocking: true`，`next_action: "REQUIRE_HUMAN_DECISION"` | 阻止整体闭合，但不回修复波 |
+| `verdict: PASS` 且 `escalation_required: true` | `open_items` 新增 `kind: "HUMAN_DECISION_REQUIRED"`，`blocking: true`，`next_action: "REQUIRE_HUMAN_DECISION"` | **不阻止本轮终止**，但阻止把该缺陷记为"已修复"；本轮 `wave_status` 为 `PARTIALLY_CLOSED`（见 `handoff-schema.md` 第 1 节与 `protocol.md` 第 3 节"人工阻塞项不可无限阻塞"） |
 | `verdict: FAIL` 且 `failure_category: FIX_INCOMPLETE` / `FIX_INCORRECT` | `open_items` 中对应该缺陷的条目 `next_action` 改为 `REASSIGN_TO_FIX`，`blocking: true`；新增 `verification_observation` 摘要（验收Agent的观察，非修复者说法） | 回波次四，不回波次二 |
-| `verdict: FAIL` 且 `failure_category: BASELINE_INVALID` | `open_items` 新增 `kind: "REVOKED"`，说明原发现不可复现 | 由主Agent决定是否重走锐评 |
+| `verdict: FAIL` 且 `failure_category: BASELINE_INVALID` | `open_items` 新增 `kind: "REVOKED"`，`next_action: "MARK_REVOKED"`，说明原发现不可复现 | 由主Agent决定是否重走锐评；不阻止本轮终止 |
 | `new_issues_found` | `open_items` 新增 `kind: "UNRESOLVED_FINDING"`，`source_wave: "wave-5"` | `blocking: false`（本轮不追），供下一轮审计消费 |
 | `status: RETRYABLE_FAILURE`（`ENVIRONMENT`） | `deferred_items` 新增一条，`requires_human_intervention: true` | 不判失败，但本轮不得记为已修复 |
 
