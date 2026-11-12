@@ -47,23 +47,117 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 10 轮)
 - **同目录聚合优先**：同一目录下的源文件优先归入同一切片，除非该目录文件数超过上限（见 2.2）。Fan-out auditing 的规则是“keeping same-directory files together”，因为同目录文件通常共享局部上下文，拆开反而增加每个Agent的理解成本[^ref5]。
 - **单一职责边界**：如果一个目录内明显存在多个独立子模块（例如 `src/handlers/` 下有 20 个互不依赖的 handler 文件），可以拆成多个切片，但每个切片必须在 `rationale` 中写明“为什么这些文件构成一个独立工作单元”。**不允许**为了凑文件数而把无关目录混在一起。
 
-#### 2.2 切片大小：目标区间与超限处理
+#### 2.2 切片大小：建议区间与硬约束
 
-**目标区间**：每个切片 **5–8 个源文件**。这是 Fan-out auditing 经过实测的目标值：Agent 在 5–8 个文件的范围内倾向于逐行阅读，超过这个范围开始退化为文件名模式匹配[^ref6]。LobeHub 的并行审计实践也使用“typically 5–10 files per chunk”，进一步支持这个区间[^ref7]。
+**建议区间**：每个切片 **5–8 个源文件**（仅供参考的可读性建议）。Fan-out auditing 的观察是 Agent 在 5–8 个文件的范围内倾向于逐行阅读[^ref6]。「keeping same-directory files together」这条聚合原则同样出自该文[^ref5]。
 
-**超限处理**：
+**硬约束只有一条**：`line_count ≤ 1800`。**文件数是代理指标，不是门控条件**——2026-11-04 在 `D:\Web\style` 实跑的 40 个切片里，24 个（60%）文件数 < 5 但行数合规，全部是合法切片。详见 §2.2.1 的实测修订。
 
-- 如果一个目录的文件数在 **9–15** 之间，侦察Agent**必须**拆成两个切片，按文件名排序前半后半拆分，而不是让一个切片携带 10+ 文件；
-- 如果文件数 **超过 15**，按子目录进一步拆分；如果目录扁平且无法按子目录拆，按文件名排序后每 8 个一组；
-- 如果某个目录只有 **1–4 个文件**，侦察Agent**不得**单独为其创建一个切片，必须把它与**最近的同级目录**（按路径字典序）合并，直到文件总数落入 5–8 区间。唯一的例外是：该目录是项目的唯一入口层（例如 `src/main/`），且其文件被所有其他切片依赖——此时可以单独成片并标记 `is_entry_slice: true`。
+> **注**：曾有一处引用声称「LobeHub 的并行审计实践也使用 typically 5–10 files per chunk」并挂了一个 Zenodo PDF 出处，经核实**该 PDF 全文不含此内容**（与 LobeHub、切片粒度均无关），该引用已移除。若需「5–10 files」这一说法，请另找 LobeHub 的原始页面作为出处；在找到之前，**以 `5–8` 为准**，不要引用未经核实的区间。
 
-**为什么不允许小于 5 的切片**：一个只有 2 个文件的切片会让发现波Agent“没什么可读”，倾向于从上下文外部推测问题，反而降低证据密度。合并到相邻目录可以让每个Agent都有足够的局部上下文来做出有证据的判断。
+#### 2.2.1 文件数不是唯一约束：行数上限（2026-11-01 新增）
+
+**「5–8 文件」是一个代理指标，真正要控制的是「单个 Agent 要读多少内容」。** 在内容密度差异大的项目上，只按文件数切分会失效：
+
+`D:\Web\style` 实测：198 个源文件切出 56 片，其中 **19 片（34%）无法同时满足「≥5 文件」与「不超合理行数」**——因为该项目有 `app.js`(1655 行)、`prompt-copy.js`(1817 行)、`clean-dna.mjs`(1524 行) 这类单文件巨型脚本。
+
+**因此增加第二条约束（与文件数并列，不是替代）**：
+
+```
+每个切片的 总行数 应落在 800–1800 行
+若某文件自身 > 1800 行 → 单文件成片，标 oversized_file: true
+```
+
+**两条规则的优先级**：
+
+| 情形 | 处理 |
+|---|---|
+| ≤1800 行 | **正常切片，无论文件数多少** |
+| 文件数 > 8 但可按行数拆成多片 | **优先按行数拆**（每片 ≤1800 行） |
+| 文件数 < 5 但总行数 ≤1800 | **正常切片**，`undersized` 按下方定义填写，不再视为「例外」 |
+| 单个文件 > 1800 行 | **单文件成片**，标 `oversized_file: true`，并在 `rationale` 写明「该文件自身超出切片上限，无法与其他文件合并」 |
+
+**为什么允许「单文件成片」违反 5 文件下限**：
+
+原规则说「小于 5 文件的切片会让 Agent 没什么可读，倾向于从外部推测」。但**这条理由在一个 1800 行的单文件上恰好不成立**——它内容和上下文都充足，Agent 不会「没什么可读」。**规则约束的其实是「内容量」，文件数只是内容量的粗略代理。** 当代理指标与实际目标冲突时，以实际目标为准。
+
+**2026-11-04 实测修订：文件数降为建议，行数才是硬约束。**
+
+`D:\Web\style` 实跑生成的 40 个切片里，**24 个（60%）文件数 < 5，但行数全部落在 821–1739 的合规区间**。原因很直接：一个前端原型的自然单元就是 `index.html` + `style.css` 两个文件，行数 700–1200。
+
+原规则把 `undersized` 描述成「小目录合并失败时的**合理例外**」，暗示它罕见。**实测它是常态。** 一个把 60% 合法产物标成「例外」的规则，描述的是错误的世界模型。
+
+| 字段 | 新定义 |
+|---|---|
+| `undersized` | **纯信息字段**：`files.length < 5` 时为 `true`。**不表示不合规、不触发合并、不影响门控** |
+| 硬约束 | **只有 `line_count` ≤ 1800**（超了用 `oversized_file`） |
+| 建议 | 5–8 文件/片；低于 5 时优先按模块聚簇，不要为了凑数跨模块拼接 |
+
+> **为什么不能强行凑够 5 个文件**：把 `S04-mango-collage-wall` 的 `style.css` 和另外三个不相干原型的 CSS 拼成一片，Agent 会花大量上下文判断「这几份文件到底有没有关系」，而它们其实没有。**同构小文件聚簇（同一原型、同一模块）才是正确的切片单位。**
+
+**`oversized_file` 切片的额外要求**：深挖时**必须**在报告中声明「本切片为单文件，可能存在跨文件调用链盲区」，并列出该文件的关键导出符号，供下游 Devil's Advocate 检查调用方是否未被覆盖。
+
+**超限处理**（按**行数**判定，不按文件数）：
+
+- 如果一个目录的**总行数 > 1800**，侦察Agent**必须**拆成多个切片，按文件名排序或按模块边界拆分；
+- 如果文件数 **超过 15** 且总行数合规，按子目录进一步拆分；目录扁平且无法按子目录拆时，按文件名排序后每 8 个一组（这是**可读性建议**，不是硬约束）；
+- 如果某个目录只有 **1–4 个文件**且行数 ≤1800，**允许单独成片**（见上方 2026-11-04 修订）。优先与**同构的相邻目录**合并（例如同一批原型、同一模块），但**不得**为了凑文件数把无关目录拼在一起。若合并后跨了模块边界，宁可不合并。
+
+**判断依据是行数，不是文件数。** 一个 2 文件、1200 行的前端原型切片是合规的；一个 8 文件、5000 行的切片才是不合规的。
 
 #### 2.3 文件扩展名的纳入规则
 
-侦察Agent只把**源代码文件**纳入切片。默认纳入的扩展名包括：`.py`、`.js`、`.ts`、`.tsx`、`.jsx`、`.go`、`.rs`、`.java`、`.kt`、`.rb`、`.php`、`.cs`、`.swift`、`.c`、`.cpp`、`.h`、`.hpp`、`.scala`、`.ex`、`.exs`、`.lua`、`.sh`、`.sql`。
+侦察Agent只把**源代码文件**纳入切片。默认纳入的扩展名分两组：
 
-**不纳入**：文档（`.md`、`.txt`）、配置（`.json`、`.yaml`、`.toml`）、资源文件（`.png`、`.svg`、`.css`）、锁文件。这些文件如果与某个模块强相关，侦察Agent应当在 `rationale` 中**提及**（例如“该切片依赖 `config/settings.yaml`”），但**不把它们计入切片文件数**，也不把它们作为独立切片。这样可以防止配置文件把切片撑到超出 5–8 区间，同时保留发现波Agent在需要时自行读取配置的线索。
+**第一组 · 通用编程语言**：`.py`、`.js`、`.ts`、`.tsx`、`.jsx`、`.mjs`、`.cjs`、`.go`、`.rs`、`.java`、`.kt`、`.rb`、`.php`、`.cs`、`.swift`、`.c`、`.cpp`、`.h`、`.hpp`、`.scala`、`.ex`、`.exs`、`.lua`、`.sh`、`.sql`
+
+**第二组 · Web 前端（2026-11-01 新增，此前被误判为资源）**：`.html`、`.htm`、`.css`、`.scss`、`.sass`、`.less`、`.vue`、`.svelte`、`.astro`、`.jsx`、`.tsx`
+
+> **为什么必须加第二组**：原清单把 `.css` 明确列为「资源文件，不纳入」，且完全没有 `.html` / `.mjs`。这在 Web 项目上会造成灾难性漏审。实测：`D:\Web\style` 项目共 2249 个文件，按其 19 个可纳入文件计算，**179 个 CSS/HTML/MJS（项目主体）被全部排除，覆盖率仅 9.6%，且排除理由完全合规**。
+>
+> `.css` 在现代项目里**是代码**：它含 `@import` 依赖图、可用 `calc()` / 自定义属性 / 媒体查询构成分支，也是注入面（`url()` 外链、样式覆盖导致的点击劫持）。把它与 `.png` 并列是范畴错误。
+
+**不纳入**：文档（`.md`、`.txt`）、配置（`.json`、`.yaml`、`.toml`、`.lock`）、二进制资源（图片、字体、音视频、`.woff2`、`.png`、`.jpg`、`.svg` 等）。
+
+#### 2.3.1 项目级配置覆盖（强制）
+
+**默认清单只是起点，不是终点。** 侦察Agent必须执行以下步骤：
+
+1. **读项目自身的配置文件**（如 `.gitattributes`、构建脚本、`package.json` 的 `scripts`、`Makefile`），判断项目实际是什么技术栈；
+2. **若发现默认清单外的源文件类型**（例如 `.tmpl`、`.j2`、`.hbs`、`.njk`、`.razor`、`.sol`、`.zig`、`.nim`），**必须**把它们纳入，并在 `rationale` 中说明依据；
+3. **允许项目在派发时传入 `include_extensions` / `exclude_extensions` 覆盖默认清单**，覆盖值优先。
+
+#### 2.3.2 强制暴露排除项（防止静默漏审）
+
+**排除本身不违规，静默排除才违规。** 侦察Agent必须输出 `exclusion_report`：
+
+```json
+{
+  "exclusion_report": {
+    "included_files": 209,
+    "excluded_by_type": {
+      ".md":   { "count": 277, "reason": "文档，非源码（合理）" },
+      ".woff2":{ "count": 951, "reason": "字体二进制（合理）" },
+      ".jpg":  { "count": 515, "reason": "图片资源（合理）" }
+    },
+    "excluded_source_like": [
+      { "ext": ".hbs", "count": 12, "reason": "模板文件，未确认是否含逻辑" }
+    ],
+    "exclusion_dominant": false,
+    "dominant_threshold_note": "任一被排除类型数 > 已纳入总数 × 0.2 时置 true"
+  }
+}
+```
+
+**硬规则**：
+
+| 条件 | 动作 |
+|---|---|
+| `excluded_source_like` 非空 | **必须**在 `unverified` 中逐项登记，标 `AMBIGUOUS_TYPE` |
+| 任一被排除类型的数量 > `included_files × 0.2` | 置 `exclusion_dominant: true`，**必须**在最终报告单列，由人确认 |
+| `exclusion_dominant: true` 但 `included_files == 0` | 返回 `RETRYABLE_FAILURE`，说明「扩展名规则与项目技术栈不匹配」，**不得**返回空切片 |
+
+> **这一节的由来**：`D:\Web\style` 项目的 179 个 CSS/HTML/MJS 被排除时，框架**没有任何提示**——它安静地产出了 19 个文件的切片，看起来完全正常。如果没有这道强制暴露，使用者会以为「审计完成了」，实际上 90% 的代码从未被看过。
 
 #### 2.4 切片输出的字段
 
@@ -131,7 +225,7 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 10 轮)
 |---|---|---|
 | `READ_FAILED` | 文件存在但无法读取（权限、编码、工具限制） | `{"target": "src/legacy/old.php", "reason": "READ_FAILED", "detail": "permission denied"}` |
 | `AMBIGUOUS_TYPE` | 文件扩展名不在纳入列表内，但可能是源码或强相关 | `{"target": "src/runtime/handler.wasm", "reason": "AMBIGUOUS_TYPE"}` |
-| `ORPHAN_FILE` | 文件不属于任何目录的 5–8 聚合区间，且无法合并 | `{"target": "scripts/migrate.ts", "reason": "ORPHAN_FILE", "detail": "root-level script, no sibling to merge"}` |
+| `ORPHAN_FILE` | 文件不属于任何按行数划分的切片，且无法按模块合并 | `{"target": "scripts/migrate.ts", "reason": "ORPHAN_FILE", "detail": "root-level script, no sibling to merge"}` |
 | `NO_ENTRY_FOUND` | 某个入口类别未发现任何实例 | `{"target": "CLI", "reason": "NO_ENTRY_FOUND", "detail": "no argparse/click/cobra usage found"}` |
 | `TRUNCATED` | 入口点或切片因数量过多被显式截断 | `{"target": "entry_points.HTTP_ROUTE", "reason": "TRUNCATED", "detail": "12 routes found, 5 retained"}` |
 
@@ -185,7 +279,7 @@ uncovered = all_source_files - sliced_files
 | 检查 | 通过条件 | 失败动作 |
 |---|---|---|
 | 切片独立性 | 任意两个 `audit_slices.files` 无交集 | 修正后重新校验 |
-| 切片大小 | 每个切片 `file_count` 在 5–8 之间（唯一例外：`is_entry_slice: true` 或项目仅 1 个切片且已在 `rationale` 说明） | 拆分或合并到相邻目录 |
+| 切片大小 | **每个切片 `line_count ≤ 1800`**（唯一例外：`oversized_file: true` 且 `rationale` 已说明）。`file_count` 只作参考，不作为通过条件 | 按行数拆分 |
 | 覆盖完整性 | `all_source_files - sliced_files` 为空，或每个差集文件已在 `unverified` 中 | 补写 `unverified` |
 | 入口点证据 | 每个 `entry_points` 条目有 `location` 和 `evidence_quote`，`evidence_quote` 来自本回合读取 | 删除无证据条目，写入 `unverified` |
 | UNKNOWN 完整性 | 五类 `reason` 均被检查，缺失类别有对应的 `NO_ENTRY_FOUND` 或 `READ_FAILED` 记录 | 补全 |
@@ -202,5 +296,5 @@ uncovered = all_source_files - sliced_files
 [^ref4]: [cih-agent - Continuous Improvement Harness (CIH)](https://pypi.org/project/cih-agent/0.2.5/#1)
 [^ref5]: [Fan-out auditing: making AI coding agents actually read your entire codebase - DEV Community](https://dev.to/lachiejames/fan-out-auditing-making-ai-coding-agents-actually-read-your-entire-codebase-31ba#comments#1)
 [^ref6]: [Fan-out auditing: making AI coding agents actually read your entire codebase - DEV Community](https://dev.to/lachiejames/fan-out-auditing-making-ai-coding-agents-actually-read-your-entire-codebase-31ba#comments#1)
-[^ref7]: [codebase prevents the described outcome / multi-agent-codebase-auditlisted](https://zenodo.org/records/19520243/files/orthogonal-63.pdf?download=1#8#10#8)
+[^ref7]: **（已移除）** 原引用 `zenodo.org/records/19520243/.../orthogonal-63.pdf` 声称支撑「LobeHub typically 5–10 files per chunk」，经核实该 PDF 全文不含此内容。此脚注编号保留为空，避免其他文件的脚注编号错位。
 [^ref9]: [Cloudflare Open-Sources security-audit-skill for Multi-Agent Code Auditing | TAU-HOME.COM](https://tau-home.com/en/post/dev_tool-2112125353594401162/)

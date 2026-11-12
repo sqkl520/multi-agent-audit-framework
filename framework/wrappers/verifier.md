@@ -49,3 +49,22 @@ read_only: true
 定向检查怎么构造、`residual_risks` 每个标记怎么处置、`failure_category` 怎么归因——**全部在 `templates/wave5-verify.md` 中定义**，本文件不复述。
 
 **你的结论是本轮报告"哪些缺陷真的被修好了"的唯一来源**——主Agent不会采信修复者的自我声明。
+
+## 4. 产物格式（硬要求）
+
+**你的产物文件必须以一个 ```json 代码块结尾**，里面是 `output-contract.md` §1 定义的信封。
+
+正文随便写（分析、证据、表格），但**最后一个代码块必须是完整 JSON**。
+
+写完立刻自检：
+
+```bash
+node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role verify
+```
+
+退出码非 0 → **不得返回**，按它给的修法补齐。
+
+> **为什么写这条**：2026-11-09 实测 15 个真实产物，**0 个含 JSON 信封**。
+> 根因是契约和模板只在示例里出现过一次 JSON，从没有一句「必须写」。
+> 代价是下游写了 73 行 `salvageFromMarkdown()` 去猜——**补丁，不是护栏**。
+

@@ -1,0 +1,206 @@
+{
+  "version": "3.0.0",
+  "note": "分类由 classify.mjs 实测得出，不再依赖「我以为注入了什么」。被审计物 = injected。defects 是被审计物内实有的缺陷（recall 分母）；apparatus 是只在 base 里存在、不在被审计物内的问题，不参与计分。",
+  "defects": [
+    {
+      "id": "GT-001",
+      "file": "src/index.js",
+      "line": 28,
+      "dimension": "data-consistency",
+      "severity": "CRITICAL",
+      "title": "processTasks 清空入参数组后才执行，一个任务都不跑",
+      "origin": "injected",
+      "proof": "node -e 调用返回 []"
+    },
+    {
+      "id": "GT-002",
+      "file": "src/queue.js",
+      "line": 51,
+      "dimension": "logic",
+      "severity": "HIGH",
+      "title": "dequeue 用 >= 破坏 FIFO，同优先级变 LIFO",
+      "origin": "injected"
+    },
+    {
+      "id": "GT-003",
+      "file": "src/queue.js",
+      "line": 34,
+      "dimension": "error-handling",
+      "severity": "MEDIUM",
+      "title": "容量检查用 > 允许塞进 capacity+1 个",
+      "origin": "injected"
+    },
+    {
+      "id": "GT-004",
+      "file": "src/retry.js",
+      "line": 15,
+      "dimension": "logic",
+      "severity": "HIGH",
+      "title": "指数写错：2^attempt 而非 2^(attempt-1)",
+      "origin": "injected"
+    },
+    {
+      "id": "GT-005",
+      "file": "src/config.js",
+      "line": 16,
+      "dimension": "logic",
+      "severity": "HIGH",
+      "title": "parsePositiveInt 只校验 integer 不校验 positive，0 和负数放行",
+      "origin": "injected"
+    },
+    {
+      "id": "GT-006",
+      "file": "src/config.js",
+      "line": 11,
+      "dimension": "contract",
+      "severity": "MEDIUM",
+      "title": "VALID_LOG_LEVELS 漏 warn",
+      "origin": "injected"
+    },
+    {
+      "id": "GT-007",
+      "file": "src/store.js",
+      "line": 25,
+      "dimension": "error-handling",
+      "severity": "HIGH",
+      "title": "损坏 JSON 静默返回 {}",
+      "origin": "injected"
+    },
+    {
+      "id": "GT-008",
+      "file": "src/store.js",
+      "line": 54,
+      "dimension": "data-consistency",
+      "severity": "HIGH",
+      "title": "#persist 先 rmSync 再 writeFileSync，非原子：序列化抛错时原文件已删，数据永久丢失",
+      "origin": "injected",
+      "proof": "classify.mjs GT-008：写入 BigInt 抛错后文件不存在"
+    },
+    {
+      "id": "GT-009",
+      "file": "src/worker-pool.js",
+      "line": 19,
+      "dimension": "concurrency",
+      "severity": "HIGH",
+      "title": "cursor 自增在 await 后，索引重复",
+      "origin": "injected"
+    },
+    {
+      "id": "GT-010",
+      "file": "src/queue.js",
+      "line": 82,
+      "dimension": "contract",
+      "severity": "LOW",
+      "title": "clear() 的 JSDoc 声称 @returns {boolean} 但实际返回 undefined",
+      "origin": "injected"
+    },
+    {
+      "id": "GT-011",
+      "file": "src/queue.js",
+      "line": 69,
+      "dimension": "data-consistency",
+      "severity": "MEDIUM",
+      "title": "peek() 返回内部活引用",
+      "origin": "native"
+    },
+    {
+      "id": "GT-012",
+      "file": "src/queue.js",
+      "line": 73,
+      "dimension": "contract",
+      "severity": "LOW",
+      "title": "remove(id) 缺 id 校验，与 enqueue 不一致",
+      "origin": "native"
+    },
+    {
+      "id": "GT-013",
+      "file": "src/queue.js",
+      "line": 9,
+      "dimension": "error-handling",
+      "severity": "MEDIUM",
+      "title": "capacity 校验让 NaN/Infinity/小数通过",
+      "origin": "native"
+    },
+    {
+      "id": "GT-014",
+      "file": "src/index.js",
+      "line": 32,
+      "dimension": "contract",
+      "severity": "HIGH",
+      "title": "timeoutMs 从未被用作超时，只被当成退避上限——整块能力缺失",
+      "origin": "native"
+    },
+    {
+      "id": "GT-015",
+      "file": "src/store.js",
+      "line": 31,
+      "dimension": "security",
+      "severity": "HIGH",
+      "title": "get 用 in 而非 hasOwnProperty，原型链泄漏",
+      "origin": "injected"
+    },
+    {
+      "id": "GT-016",
+      "file": "src/retry.js",
+      "line": 32,
+      "dimension": "error-handling",
+      "severity": "MEDIUM",
+      "title": "maxAttempts 只校验整数不校验正数，=0 时抛 undefined",
+      "origin": "injected"
+    },
+    {
+      "id": "GT-017",
+      "file": "src/store.js",
+      "line": 24,
+      "dimension": "data-consistency",
+      "severity": "MEDIUM",
+      "title": "#load 不校验解析结果形状，文件为 null 时构造即崩",
+      "origin": "native"
+    },
+    {
+      "id": "GT-018",
+      "file": "src/store.js",
+      "line": 35,
+      "dimension": "security",
+      "severity": "HIGH",
+      "title": "set(\"__proto__\") 依赖原型链赋值：keys() 为空、get 却能读到、delete 删不掉",
+      "origin": "injected"
+    },
+    {
+      "id": "GT-020",
+      "file": "src/index.js",
+      "line": 23,
+      "dimension": "error-handling",
+      "severity": "MEDIUM",
+      "title": "processTasks 不校验 tasks，空数组（合法输入）触发 capacity=0 抛错，且与 runWithConcurrency 的守卫不一致",
+      "origin": "native"
+    },
+    {
+      "id": "GT-021",
+      "file": "src/neg-catch.js",
+      "line": 48,
+      "dimension": "error-handling",
+      "severity": "LOW",
+      "title": "safeClose 对 async close() 返回 true 并泄漏未处理 rejection——负例文件里唯一的真缺陷",
+      "origin": "native"
+    }
+  ],
+  "apparatus": [
+    {
+      "id": "GT-022",
+      "file": "src/store.js",
+      "line": 57,
+      "dimension": "reference-error",
+      "severity": "CRITICAL",
+      "title": "base/src/store.js #persist 调用 renameSync 但未从 node:fs 导入——base 的 set() 一调用即抛 ReferenceError",
+      "origin": "base-only",
+      "note": "这是基准代码自身的错误，被审计物 injected 没有（injected 已改成 rmSync+writeFileSync）。不计入 recall。它的意义是：说明 base 不能作为「正确答案」使用，也说明 15 条旧证明没有一条覆盖 set() 写入主路径。"
+    }
+  ],
+  "retired": [
+    {
+      "id": "GT-019",
+      "reason": "与 GT-008 是同一条缺陷（同一行 injected/src/store.js #persist 先删后写）。重复登记会让该缺陷在 recall 里被算两次。已合并进 GT-008。"
+    }
+  ]
+}

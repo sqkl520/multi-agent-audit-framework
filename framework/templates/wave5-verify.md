@@ -30,7 +30,7 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 12 轮给出的�
 1. **不读取、不复述修复Agent的验证记录**。`verification_commands` 及其 `output_snippet` 不进入验收输入。如果验收Agent的 `evidence` 字段中出现"根据修复Agent的报告""修复Agent已运行过该测试"之类的表述，主Agent判定为 `CONTRACT_VIOLATION`。这条是硬约束，理由见第 2 节。
 2. **不做自我审计扩张**。验收Agent在验证过程中如果看到**其他**明显缺陷，它**不得**把它们包装成 `CONFIRMED` 发现塞进 `new_issues_found` 之外的任何字段，也不得扩大读取范围去"顺便审一遍"。它可以把观察写入 `new_issues_found`（附完整 Evidence/Inference 结构），由主Agent决定是否进入下一轮，但该条目**不阻塞**本次验收结论。
 3. **不修改任何文件**。验收Agent是**只读**角色，没有任何写权限。它不得修复自己在验证中发现的问题，也不得为了让检查通过而调整测试。如果验证需要一段临时代码（例如复现脚本），必须写在临时目录并在 `payload` 中说明路径与清理状态，**不得**写入 `target_files` 或项目源码树。
-4. **不因"测试通过"而放行未验证的标记**。如果 `residual_risks` 中有 `TEST_CONFLICT` / `ROLLBACK_UNAVAILABLE` / `BASELINE_UNVERIFIED` / `IMPACT_UNVERIFIED`，即使主要检查通过，验收结论也**不得**为无条件的 `PASS`——必须按第 4 节降级为 `PASS_WITH_ESCALATION` 并说明待人工裁决的事项。
+4. **不因"测试通过"而放行未验证的标记**。如果 `residual_risks` 中有 `TEST_CONFLICT` / `ROLLBACK_UNAVAILABLE` / `BASELINE_UNVERIFIED` / `IMPACT_UNVERIFIED`，即使主要检查通过，验收结论也**不得**为无条件的 `PASS`——必须按第 4 节改写为 `verdict: "PASS"` **且** `escalation_required: true`（下文简称「带保留通过」），并说明待人工裁决的事项。**注意这不是一个新的 verdict 枚举值**，理由见第 5.2 节。
 
 ---
 
@@ -68,7 +68,26 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 12 轮给出的�
 - 测试被跳过或标记 `skip` / `xfail`；
 - 测试依赖随机性或时序，且未固定种子（flaky 风险）。
 
-**变异检验（可选但推荐）**：如果 harness 支持，验收Agent可以对修复点做一次**微变异**——例如把修复的那一行改回原样，确认检查**确实失败**，再恢复。这能直接证明"检查瞄准了这个缺陷"而不只是"检查通过了"。做了填 `mutation_check: "performed"`，没做填 `"skipped"`（跳过原因写入 `notes`，例如"harness 不支持写入"或"修复点无法安全回退"）。取值只能是这两个，不接受 `skipped(reason)` 之类的复合写法。
+**变异检验（除下面两种例外，否则强制）**：验收Agent**必须**对修复点做一次**微变异**——把修复的那一行改回原样，确认检查**确实失败**，再恢复。这能直接证明"检查瞄准了这个缺陷"而不只是"检查通过了"。
+
+**为什么从「可选但推荐」升级为「强制」**，有三个独立理由：
+1. **量化证据**：NeurIPS 2026《Silent Regressions》给出对照——外部瞄准测试把 silent regression 压到 **4.8%**，随机/自选测试只到 **10.0%**，不验证是 **18.8%**。「有测试」与「测试瞄准了缺陷」差一倍以上。
+2. **实战证据**：`dsh-fcl-android-launcher` 的 R29 做了 5 次变异验证，其中"删掉 `--patch` 调用点""把 `gateCopied` 判据挪到 `compatOk` 之后"两次直接暴露了检查没瞄准缺陷。该项目已把「**测试打不红的修复等于没修**」写成硬规程。
+3. **纯函数陷阱**：同项目的 R28 证明，把 `homeRootfs` 改回错误实现后 **493 条测试全绿**——因为变的是调用点，不是纯函数。**因此变异检验必须至少覆盖「调用点/管线」一层，不能只在纯函数上做。**
+
+**只有两种情形允许 `skipped`**，且必须写进 `notes` 并说明属于哪一种：
+- `harness_unsupported`：harness 不支持写入（无法把实现改回原样）；
+- `unsafe_revert`：修复点无法安全回退（例如涉及不可逆迁移）。
+
+**不再接受的跳过理由**：`"时间不够"`、`"改动太大"`、`"已人工检查"`、`"逻辑上明显"`。这些一律视为 `CONTRACT_VIOLATION`，而非合法的 `skipped`。
+
+**调用点变异的最低要求**：对「某个函数的返回值决定用户看到什么」这类修复，必须做**两次**变异——
+| # | 变异 | 期望 |
+|---|---|---|
+| 1 | 把修复的**实现**改回旧行为 | 单测变红 |
+| 2 | 把**调用点**改回旧调用（如改回传旧参数、或删掉新调用） | 单测同样应红；**若仍绿，说明测试钉的是纯函数而非调用点，必须补调用点断言** |
+
+做了填 `mutation_check: "performed"`，并额外填 `mutation_scope: "implementation_only" | "implementation_and_callsite"`。只做了第 1 次变异就填 `implementation_only`，**报告须显式说明「未做调用点变异」**。
 
 **`regression_scan_performed` 的判定**：为 `true` 当且仅当验收Agent对 `affected_issues` 中的每一条缺陷都执行了一次针对性检查（确认其状态），或对 `residual_risks` 中的 `LARGE_PATCH` / `PUBLIC_API_CHANGE` / `IMPACT_UNVERIFIED` 执行了一次覆盖修改面的回归扫描。仅运行项目既有测试套件**不计入**。
 
@@ -80,16 +99,16 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 12 轮给出的�
 
 | `residual_risks` 标记 | 验收Agent必须执行的动作 | 对 `verdict` 的影响 |
 |---|---|---|
-| `LARGE_PATCH` | 对修改面做一次回归扫描，覆盖修改涉及的每个文件的关键路径 | 扫描未执行 → `FAIL`；执行但未覆盖全部文件 → `PASS_WITH_ESCALATION` |
-| `PUBLIC_API_CHANGE` | 找出所有调用方（引用该符号的文件），逐一确认调用仍成立 | 有未检查的调用方 → `PASS_WITH_ESCALATION`；有确认破损的调用方 → `FAIL` |
-| `BASELINE_UNVERIFIED` | **第一步**必须确认缺陷在修复前版本上确实可触发（取回基线或构造等价反向断言），**然后**确认修复后不再触发 | 无法取得基线 → `PASS_WITH_ESCALATION` + `requires_baseline_confirmation`；基线确认缺陷不存在 → `FAIL`（缺陷描述有误） |
-| `TEST_CONFLICT` | 不自行裁决测试取舍。记录冲突详情，标记需要人工决定 | 一律 `PASS_WITH_ESCALATION`，**不得** `PASS` |
+| `LARGE_PATCH` | 对修改面做一次回归扫描，覆盖修改涉及的每个文件的关键路径 | 扫描未执行 → `FAIL`；执行但未覆盖全部文件 → `PASS` + `escalation_required:true` |
+| `PUBLIC_API_CHANGE` | 找出所有调用方（引用该符号的文件），逐一确认调用仍成立 | 有未检查的调用方 → `PASS` + `escalation_required:true`；有确认破损的调用方 → `FAIL` |
+| `BASELINE_UNVERIFIED` | **第一步**必须确认缺陷在修复前版本上确实可触发（取回基线或构造等价反向断言），**然后**确认修复后不再触发 | 无法取得基线 → `PASS` + `escalation_required:true` + `requires_baseline_confirmation`；基线确认缺陷不存在 → `FAIL`（缺陷描述有误） |
+| `TEST_CONFLICT` | 不自行裁决测试取舍。记录冲突详情，标 `escalation_required: true` | 一律 `PASS` + `escalation_required:true`，**不得** `PASS`；本轮自动收尾并开下一轮，**不等待人工** |
 | `ROLLBACK_UNAVAILABLE` | 记录该修复无法自动回滚的事实；若验收失败，明确说明需人工回滚 | 验收失败时 → `FAIL` + `requires_human_intervention` |
-| `IMPACT_UNVERIFIED` | 为该修复追加一次独立回归扫描，覆盖修复Agent未能判断影响的区域 | 未执行 → `FAIL`；执行后仍有不确定 → `PASS_WITH_ESCALATION` |
+| `IMPACT_UNVERIFIED` | 为该修复追加一次独立回归扫描，覆盖修复Agent未能判断影响的区域 | 未执行 → `FAIL`；执行后仍有不确定 → `PASS` + `escalation_required:true` |
 | `OBSERVED_BUT_OUT_OF_SCOPE` | 记录但不处理；写入 `payload.notes` 供主Agent决定是否下一轮派发 | 不影响本次 `verdict` |
-| `AFFECTED_ISSUES_EMPTY_CONFIRMED` | 仍须独立复核"确实没有共享符号"这一结论（抽查 `target_files` 中修改的符号是否被其他未闭合缺陷引用） | 复核发现遗漏 → `PASS_WITH_ESCALATION` |
+| `AFFECTED_ISSUES_EMPTY_CONFIRMED` | 仍须独立复核"确实没有共享符号"这一结论（抽查 `target_files` 中修改的符号是否被其他未闭合缺陷引用） | 复核发现遗漏 → `PASS` + `escalation_required:true` |
 
-**`PASS_WITH_ESCALATION` 的语义**：本次修复在技术上通过了定向检查，但存在必须由人决定的未决事项。它在 `handoff-schema` 中对应 `kind: "HUMAN_DECISION_REQUIRED"` 的 `open_item`，`blocking: true`，**不触发重新修复**；本轮以 `PARTIALLY_CLOSED` 收尾（不是无条件 `CLOSED`），该缺陷**不记为已修复**，列入最终报告的「待人工裁决」清单。
+**「带保留通过」的语义**：本次修复在技术上通过了定向检查，但存在必须由人决定的未决事项。在 payload 上它写成 `verdict: "PASS"` + `escalation_required: true`（**不是**一个新的 `verdict` 枚举值，见第 5.2 节）。它在 `handoff-schema` 中对应 `kind: "HUMAN_DECISION_REQUIRED"` 的 `open_item`，`blocking: true`，**不触发重新修复**；本轮以 `PARTIALLY_CLOSED` 收尾（不是无条件 `CLOSED`），该缺陷**不记为已修复**，列入最终报告的「待人工裁决」清单。
 
 注意这里说的"`blocking: true` 但不阻止本轮终止"看似矛盾，实则不是：`blocking` 的完整语义见 `handoff-schema.md` 第 3 节——它分"可自动消解的阻塞"（必须处理完才能推进）与"人工阻塞"（只能由人清空，因此不阻止收尾）。`HUMAN_DECISION_REQUIRED` 属于后者。
 
@@ -146,7 +165,7 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 12 轮给出的�
 
 ### 5.2 为什么不做第四种 verdict
 
-有三个理由让 `PASS_WITH_ESCALATION` **不**作为 `verdict` 的枚举值，而是用两个字段组合表达：
+有三个理由让「带保留通过」**不**作为 `verdict` 的第四个枚举值，而是用两个字段组合表达：
 
 1. `output-contract.md` 第 1 节规定 `status` 与各枚举"不允许自定义状态值"，新增枚举会让所有下游的机械判定表失效；
 2. "带保留通过"在**是否进入修复波**这个维度上与 `PASS` 完全一致（都不回波次四），差异只在**是否闭合本轮**。把一个正交维度塞进同一个枚举，会让下游需要同时判断 `verdict` 和 `escalation_required` 才能确定行为——那还不如一开始就用两个字段；
@@ -182,7 +201,7 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 12 轮给出的�
 5. 修复触及公共 API 且存在无法检查的外部调用方（例如跨仓库消费者）；
 6. `BASELINE_UNVERIFIED` 且无法取得基线版本。
 
-命中任一情形，验收Agent必须返回 `PASS_WITH_ESCALATION` 或 `FAIL`，并在 `notes` 中写明"需人工裁决：<具体事项>"。主Agent据此生成 `HUMAN_DECISION_REQUIRED` 的阻塞项，**不得**在最终报告中把该类缺陷记为"已修复"。
+命中任一情形，验收Agent必须返回 `verdict: "PASS"` + `escalation_required: true`，或 `verdict: "FAIL"`，并在 `notes` 中写明"需人工裁决：<具体事项>"。主Agent据此生成 `HUMAN_DECISION_REQUIRED` 的阻塞项，**不得**在最终报告中把该类缺陷记为"已修复"。
 
 ---
 
@@ -216,7 +235,7 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 12 轮给出的�
 | 影响半径全覆盖 | `affected_issues_status` 的条目数等于修复Agent声明的 `affected_issues` 数，且每条 `status` 非空 | 补确认 |
 | 标记全处置 | `residual_risk_disposition` 覆盖 `residual_risks` 的全部 `flag`（去重后数量相等），每条 `action_taken` 是自身观察而非复述 | 补处置 |
 | 失败有归因 | `FAIL` 时 `failure_category` 与 `failure_trigger` 均非空，且有证据支撑 | 补归因 |
-| 不自行放行 | 命中第 7 节任一情形时，结论不是无条件的 `PASS` | 改为 `PASS_WITH_ESCALATION` 或 `FAIL` |
+| 不自行放行 | 命中第 7 节任一情形时，结论不是无条件的 `PASS` | 改为 `PASS` + `escalation_required:true`，或 `FAIL` |
 | 只读纪律 | 未修改任何 `target_files` 或测试文件；临时脚本路径已说明 | 回退修改，返回 `CONTRACT_VIOLATION` |
 | 返回符合契约 | `payload.finding_id`、`fix_agent_id`、`verdict`、`evidence` 齐备，`evidence` 三项布尔值均有实际依据 | 补全 |
 

@@ -1,7 +1,7 @@
 ---
 name: audit-specialist
 description: 波次二·审计。在单一维度、单一切片内产出符合门 0 的缺陷发现。不跨切片推断，不越维度报告。
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, Write
 model: inherit
 template: templates/wave2-audit.md
 requires: [components/evidence-policy.md, components/output-contract.md]
@@ -42,11 +42,31 @@ role: audit
 1. `components/evidence-policy.md` — 门 0，这是你的准入门槛
 2. `components/output-contract.md` — 返回必须符合 `role: "audit"` 的 payload schema
 3. `templates/wave2-audit.md` — 你的全部行为规则
+4. `artifacts/report-naming.md` — 产物文件名与落盘位置。**你的产物文件（`round{N}-02-audit-{slice_id}-{dimension}.md`）是返回的一部分，不写 = 这一片没做完。**
 
-## 4. 返回要求
+## 4. 产物格式（硬要求）
+
+**你的产物文件必须以一个 ```json 代码块结尾**，里面是 `output-contract.md` §1 定义的信封。
+
+正文随便写（分析、证据、表格），但**最后一个代码块必须是完整 JSON**。
+
+写完立刻自检：
+
+```bash
+node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role audit
+```
+
+退出码非 0 → **不得返回**，按它给的修法补齐。
+
+> **为什么写这条**：2026-11-09 实测 15 个真实产物，**0 个含 JSON 信封**。
+> 根因是契约和模板只在示例里出现过一次 JSON，从没有一句「必须写」。
+> 代价是下游写了 73 行 `salvageFromMarkdown()` 去猜——**补丁，不是护栏**。
+
+## 5. 返回要求
 
 顶层信封 `role` 必须为 `"audit"`。`payload` 字段定义见 `output-contract.md` 第 2.2 节。
 
 关于"没有发现怎么办""严重性怎么定"这类行为问题，**全部在 `templates/wave2-audit.md` 中定义**，本文件不复述——复述会产生两处需要同步维护的规则，迟早不一致。
 
 主Agent只检查契约合规性与 `searched_scope` 覆盖完整性，**不读取**你的发现正文。
+

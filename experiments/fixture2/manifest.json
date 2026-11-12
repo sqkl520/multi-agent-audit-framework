@@ -1,0 +1,187 @@
+{
+  "version": "2.0.0",
+  "fixture": "template-engine + event-bus + pagination + validator",
+  "note": "分类由 verify.mjs 实测得出（同 fixture1 的口径）。被审计物 = injected。F2-02 经实测不成立，已撤下；F2-08 是 base 独有（方向与原先假定相反），移入 apparatus 不计分。",
+  "defects": [
+    {
+      "id": "F2-01",
+      "file": "src/template.js",
+      "line": 118,
+      "dimension": "security",
+      "severity": "HIGH",
+      "title": "escapeHtml 把 & 放在最后替换，&lt; 被二次转义成 &amp;lt;",
+      "origin": "injected"
+    },
+    {
+      "id": "F2-05",
+      "file": "src/validate.js",
+      "line": 8,
+      "dimension": "logic",
+      "severity": "MEDIUM",
+      "title": "number 规则用 typeof 判断，Infinity 通过 —— base 也放行 Infinity，injected 还多放行了 NaN",
+      "origin": "native"
+    },
+    {
+      "id": "F2-06",
+      "file": "src/template.js",
+      "line": 96,
+      "dimension": "security",
+      "severity": "HIGH",
+      "title": "renderInline 直接拼接用户输入，escapeHtml 定义了但从未被调用（XSS）",
+      "origin": "native"
+    },
+    {
+      "id": "F2-07",
+      "file": "src/template.js",
+      "line": 77,
+      "dimension": "logic",
+      "severity": "HIGH",
+      "title": "findMatchingClose 只对「openTag 与 closeTag 同类型」计数，同类块嵌套时内层未跳过，提前返回第一个 closeTag",
+      "origin": "injected"
+    },
+    {
+      "id": "F2-09",
+      "file": "src/pagination.js",
+      "line": 15,
+      "dimension": "logic",
+      "severity": "HIGH",
+      "title": "page 未排除负数，offset 变成负值，slice 语义翻转",
+      "origin": "injected"
+    },
+    {
+      "id": "F2-10",
+      "file": "src/validate.js",
+      "line": 37,
+      "dimension": "security",
+      "severity": "MEDIUM",
+      "title": "errors 用普通 {}，字段名为 constructor 时取到 Object.prototype.constructor，错误被吞掉",
+      "origin": "native"
+    },
+    {
+      "id": "F2-11",
+      "file": "src/pagination.js",
+      "line": 37,
+      "dimension": "data-consistency",
+      "severity": "LOW",
+      "title": "paginateArray 的 slice 是浅拷贝，改元素属性会污染源数组",
+      "origin": "native"
+    },
+    {
+      "id": "F2-12",
+      "file": "src/events.js",
+      "line": 64,
+      "dimension": "error-handling",
+      "severity": "HIGH",
+      "title": "emit 只在多个监听器失败时抛 AggregateError，单个失败时错误被完全吞掉——与注释「错误会在全部执行完后一起抛出」相反",
+      "origin": "injected"
+    },
+    {
+      "id": "F2-13",
+      "file": "src/template.js",
+      "line": 106,
+      "dimension": "security",
+      "severity": "MEDIUM",
+      "title": "resolvePath 沿原型链取值，模板 {{constructor}} 能渲染出 [native code] 源码",
+      "origin": "native"
+    },
+    {
+      "id": "F2-14",
+      "file": "src/validate.js",
+      "line": 4,
+      "dimension": "logic",
+      "severity": "MEDIUM",
+      "title": "required 规则把 false 当作已填写（只排除 undefined/null/''），0 同理",
+      "origin": "native"
+    },
+    {
+      "id": "F2-15",
+      "file": "src/validate.js",
+      "line": 6,
+      "dimension": "error-handling",
+      "severity": "LOW",
+      "title": "minLength/maxLength 对非字符串直接判失败，不区分「类型不对」和「长度不符」",
+      "origin": "native"
+    },
+    {
+      "id": "F2-16",
+      "file": "src/index.js",
+      "line": 13,
+      "dimension": "error-handling",
+      "severity": "MEDIUM",
+      "title": "renderListView 对 options 不校验：'abc'/123 走默认值静默接受，null 才崩",
+      "origin": "native"
+    },
+    {
+      "id": "F2-19",
+      "file": "src/index.js",
+      "line": 16,
+      "dimension": "data-consistency",
+      "severity": "HIGH",
+      "title": "renderListView 收到非法 options 时返回错误的分页信息：3 条数据 pageSize 回退成 10，pagination 报 totalPages=1/hasNext=false，与实际不符且不报错",
+      "origin": "native"
+    },
+    {
+      "id": "F2-20",
+      "file": "src/pagination.js",
+      "line": 15,
+      "dimension": "logic",
+      "severity": "MEDIUM",
+      "title": "paginate 对 page=0 同样失守：Number.isInteger(0) 为真，offset 变成 -3",
+      "origin": "injected"
+    },
+    {
+      "id": "F2-21",
+      "file": "src/validate.js",
+      "line": 32,
+      "dimension": "security",
+      "severity": "HIGH",
+      "title": "RULES[r.rule] 裸下标查规则表，rule:'toString'/'constructor' 命中原型链成员被当作合法断言静默放行，'valueOf' 直接崩",
+      "origin": "native"
+    },
+    {
+      "id": "F2-22",
+      "file": "src/template.js",
+      "line": 62,
+      "dimension": "security",
+      "severity": "MEDIUM",
+      "title": "{{#if}} 用 ctx[key] 裸下标判定真值，key 为 constructor/toString 时取到原型链成员恒为真，条件块永远渲染",
+      "origin": "native"
+    },
+    {
+      "id": "F2-17",
+      "file": "src/validate.js",
+      "line": 37,
+      "dimension": "security",
+      "severity": "MEDIUM",
+      "title": "errors 用普通对象，字段名为 toString/constructor 时取到原型链上的函数，错误被吞掉",
+      "origin": "native"
+    },
+    {
+      "id": "F2-18",
+      "file": "src/pagination.js",
+      "line": 14,
+      "dimension": "logic",
+      "severity": "LOW",
+      "title": "total=0 时 totalPages 被 Math.max(1,...) 兜成 1，与实际空数据不符",
+      "origin": "native"
+    }
+  ],
+  "apparatus": [
+    {
+      "id": "F2-08",
+      "file": "src/events.js",
+      "line": 64,
+      "dimension": "contract",
+      "severity": "MEDIUM",
+      "title": "base 在只有一个监听器抛错时直接抛原 Error，多个时抛 AggregateError —— 异常类型不一致",
+      "origin": "base-only",
+      "note": "injected 把这行删掉了（统一抛 AggregateError），所以缺陷只在 base 里。不计入 recall。注意方向：是 injected 修好了它，不是注入。"
+    }
+  ],
+  "retired": [
+    {
+      "id": "F2-02",
+      "reason": "实测不成立。同一 handler 注册多个 once 时 #onceWrappers 确实被覆盖，但触发时 off() 用的是 wrapper 本身而不是 handler，移除路径不受影响；实测触发次数正确（2 次）、监听器正确清空。"
+    }
+  ]
+}

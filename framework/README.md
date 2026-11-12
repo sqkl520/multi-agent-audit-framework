@@ -28,33 +28,56 @@
 
 ---
 
-## 二、五种波次：为什么是这五个
+## 二、波次结构：默认四个只读波 + 一条可选路径
 
 波次不是流水线，而是**契约驱动的扇出—扇入**：每一波派出一批单一职责 Agent，拿回结构化结果，主 Agent 检查闭合条件，满足才进下一波。
 
+> **2026-11-01 结构性修订**：修复从默认路径移出。原因是 round31 实跑中 83 条待修复只完成 1 条，整轮停在 `IN_PROGRESS` 且**没有最终报告**。修复是唯一有写权限、规则最严的角色，把它放在默认路径里等于让最脆弱的环节决定整轮能否结束。
+
+### 默认路径（只读，必须跑完并出报告）
+
 | 波次 | 角色 | 核心产出 | 闭合条件（布尔判定） |
 |---|---|---|---|
-| **一 · 侦察** | recon scout | 切片清单 `audit_slices`、`slice_count`、入口点、`unverified` | `SUCCESS` 且 `slice_count` 为整数、切片非空、UNKNOWN 已标注 |
-| **二 · 审计** | audit specialist | 单一维度、带门 0 证据的 `findings` | 所有切片状态均为 `SUCCESS`，无 `CONTRACT_VIOLATION`；**不要求零发现** |
-| **三 · 锐评** | Skeptic / Devil's Advocate / Arbiter | 裁决 `UPHELD` / `DOWNGRADED` / `REVOKED` | 三方均 `SUCCESS`，`conflicts` 中无残留 `PENDING` |
-| **四 · 修复** | fix worker | 修改文件清单 + `affected_issues` + 验证命令 | 每条 `UPHELD` 都有对应修复 `SUCCESS` |
-| **五 · 验收** | verifier | 通过 / 不通过（附触发条件） | 每条修复都有验收结论；不通过**回到波次四**，不回波次二 |
+| **一 · 侦察** | recon scout | 切片清单 `audit_slices`、`slice_count`、入口点、`unverified` | 已进入终态，`slice_count` 为整数、切片非空、UNKNOWN 已标注 |
+| **二A · 宽扫** | sweep scout | **线索** `leads[]` + `reachability` | 已进入终态；`lead_count == len(leads)`；histogram 之和相符；`files_read` 覆盖切片 |
+| **二B · 深挖** | audit specialist | 单一维度、带门 0 证据的 `findings` | **所有切片已进入终态**（`SUCCESS` 或 `PERMANENT_FAILURE`），无待重派的 `CONTRACT_VIOLATION`；**不要求零发现，也不要求全部 SUCCESS** |
+| **三 · 锐评** | Skeptic / Devil's Advocate / Arbiter | 裁决 `UPHELD` / `DOWNGRADED` / `REVOKED` + `discipline_audit` | 三方均已进入终态，`conflicts` 无残留 `PENDING`，Skeptic 提交裁量稽查 |
+| **四 · 报告** | 主 Agent | `round{N}-final-report.md` | 五节齐全、每条结论带 `artifact_ref`、**文件真实写盘** |
+
+> **2026-11-03 修订：闭合条件从「全部 SUCCESS」改为「已进入终态」。**
+>
+> 原条件与「`PERMANENT_FAILURE` 是合法终态且禁止重派」直接冲突：一个切片永久失败 → 状态永远 ≠ `SUCCESS` → 门永远打不开 → 流程卡死，`IN_PROGRESS`、无报告。**这是 round31 结局的另一条独立路径**（此前把它全部归因于修复波太脆弱）。
+>
+> 「已进入终态」这个条件**一定可达**：每个 Agent 最多 3 次尝试就落到 `SUCCESS` 或 `PERMANENT_FAILURE`。失败切片写入 `unverified`，在报告的「覆盖说明」中显式列出。详见 `orchestrator/protocol.md` §3.1。
+
+### 可选路径（有副作用，独立启动）
+
+| 波次 | 角色 | 核心产出 | 闭合条件 |
+|---|---|---|---|
+| **修复** | fix worker | 修改文件清单 + `affected_issues` + 验证命令 | 每条 `UPHELD` 有对应修复 `SUCCESS` |
+| **验收** | verifier | 通过 / 不通过（附触发条件） | `mutation_check` 强制 `performed`；不通过**回到修复**，不回深挖 |
 
 几个容易忽略但很关键的细节：
 
-**波次一的产出不是"项目大小"。** 这是一个中途被纠正的设计。最初的方案是让主 Agent 按项目规模决定 Agent 数量，但对话第 2 轮指出这本身就是一个"需要理解"的判断，等于把主观推理塞回主线程。到第 3 轮彻底改掉：侦察 Agent 只返回可扇出的工作单元清单，**切片数本身就是规模**——5 个切片就派 5 个审计 Agent，40 个就派 40 个，主 Agent 只做区间匹配。这一步是整套框架"零裁量"的地基。
+**波次一的产出不是"项目大小"。** 这是一个中途被纠正的设计。最初方案让主 Agent 按项目规模决定 Agent 数量，但第 2 轮指出这本身就是一个"需要理解"的判断，等于把主观推理塞回主线程。到第 3 轮彻底改掉：侦察 Agent 只返回可扇出的工作单元清单，**切片数本身就是规模**。
 
-**波次三是唯一专门用来"杀死发现"的波次。** 它的设计前提是一个反直觉的实证结论，原文说得很直接：
+**为什么波次二拆成两遍。** 原设计「每个 `(切片, 维度)` 派一个实例」× 6 个维度，85 片需要 510 个实例（是预算的 8.5 倍）；反过来按片数派，每片只能审 1 个维度（等于悄悄放弃 5/6 的覆盖）。**宽扫负责"不漏"（1 片 1 实例），深挖负责"可信"（按线索派）**，两者的成本曲线这才都成立。宽扫产出的线索**不进锐评、不进报告正文**，只用于决定深挖派给谁。
 
-> 朴素的多Agent审查并不会自动提升质量，反而会暴露一种 **false-consensus failure mode**——Agent 们在没有足够证据的情况下倾向于互相认同。
+**宽扫强制标记 `reachability` 是本轮预算分配的关键。** round31 中 478 个首方文件里 273 个是 `fakefx`（JavaFX 移植），实际派发的 40 片里 29 片是它（约 72% 预算），而锐评波事后判定其中 162 个文件"从任何生产入口都到不了"。标了可达性，`UNREACHABLE` 的切片就不会进入深挖。
 
-所以锐评波不是"再检查一遍"，而是三种互斥角色的对抗：Skeptic 默认答案是 "not proven"，**以移除多少来衡量成功**；Devil's Advocate 攻击覆盖完整性，对抗"没有发现等于没有问题"；Arbiter 在干净上下文里只基于证据包裁决，不自己补证、不新增发现。
+**波次三是唯一专门用来"杀死发现"的波次。** 设计前提是一个受控研究的结论：
 
-**波次四和波次五必须分开，且不能复用同一个 Agent。** 让修复 Agent 自验收有一个实测层面的理由：对话引用的证据显示，让修复 Agent 自己写测试并运行，既不提高解决率也不降低回归率。所以修复 Agent 只能声明"我做了这些修改，跑了这些检查，结果如下"，**不得声称"该缺陷已修复"**。
+> 朴素的多 Agent 审查并不会自动提升质量，反而会暴露一种 **false-consensus failure mode**——Agent 们在没有足够证据的情况下倾向于互相认同。
+
+所以锐评波不是"再检查一遍"，而是三种互斥角色的对抗：Skeptic 默认答案是 "not proven"，**以移除多少来衡量成功**；Devil's Advocate 攻击覆盖完整性；Arbiter 在干净上下文里只基于证据包裁决。
+
+**Skeptic 现在还有第二项固定职责：裁量稽查。** 它必须把 `discipline_log` 与实际派发记录逐条比对，找出**未申报的裁量**。round31 的 9 处维度偏离正是 Devil's Advocate 用机械比对偶然发现的，主 Agent 事先并未申报——把这个方法固化成 Skeptic 的必做动作，它才会每次都发生。
+
+**修复与验收必须分开，且不能复用同一个 Agent。** 依据是一条逐字可核的实测结论：让修复 Agent 自己写测试并运行，**既不提高解决率也不降低回归率**；真正的降幅来自**外部提供的、能直接瞄准故障的**测试（silent regression 4.8% vs 自证 18.8%）。所以修复 Agent 只能声明"我做了这些修改，跑了这些检查"，**不得声称"该缺陷已修复"**。
 
 ---
 
-## 三、支撑这五个波次的三根柱子
+## 三、支撑这条链路的三根柱子
 
 ### 1. 证据基线（门 0）— `components/evidence-policy.md`
 
@@ -96,29 +119,56 @@ Resume Packet 是**不可变快照 + 指针清单**，硬规则是：不得包�
 
 ---
 
-## 四、两处"零裁量"的具体机制
+## 四、"零裁量"的范围与边界（2026-11-01 修订）
 
-### 规模映射（`orchestrator/scale-mapping.md`）
+原来这一节叫「两处零裁量的具体机制」。**"主 Agent 零裁量"这条原则已被证明站不住**，现改为「裁量分级」——详见 `orchestrator/protocol.md` 第 1 节。这里说明改了什么、哪部分仍然零裁量。
 
-主 Agent 只允许读六个字段，然后做一次算术和一次查表：
+**为什么改**：round31 有两处违规。并发超限（峰值 7 / 上限 4）是纯失守；但**维度偏离 9/40 是为了让 `ExpressionHelper` 等关键文件进入审计才做的**——如果不调整，那些文件就不会被审。**禁令没有消除裁量，只是把它逼成了不申报。**
+
+### 仍然零裁量的部分
+
+**规模映射**（`orchestrator/scale-mapping.md`）：主 Agent 只允许读六个字段，然后做一次算术和一次查表。
 
 ```
 effective_slices = len(audit_slices) + len(unverified)
 ```
 
-| `effective_slices` | 发现波 | 锐评波基础角色 | 锐评波追加 | 单波并发窗口 |
-|---|---|---|---|---|
-| **1–5** | `= effective_slices` | Skeptic + Arbiter | 无 | `min(5, harness_cap)` |
-| **6–20** | `= effective_slices` | + Devil's Advocate | 无 | `min(8, harness_cap)` |
-| **> 20** | `= effective_slices` | 同上 3 角色 | +1 交叉模式扫描 | `min(8, harness_cap)` |
+| `effective_slices` | 二A 宽扫 | 二B 深挖触发 | 锐评波基础角色 | 锐评波追加 | 单波并发窗口 |
+|---|---|---|---|---|---|
+| **1–5** | `= effective_slices` | 只对 `HIGH` 线索派 | Skeptic + Arbiter | 无 | `min(5, harness_cap)` |
+| **6–20** | `= effective_slices` | `lead_count ≥ 3` 时取最高 2 维 | + Devil's Advocate | 无 | `min(8, harness_cap)` |
+| **> 20** | `= effective_slices` | 同上 | 同上 3 角色 | +1 交叉模式扫描 | `min(8, harness_cap)` |
 
-修复波和验收波**按问题数派，不按切片数派**；并发窗口是上限不是目标，harness 支持 16 并发时窗口仍是 8。给出这个数值的理由是有实测支撑的：无协调的并行 Agent 在高争用下失败率可达 72–100%，引入准入控制和背压后降到 0–18%。所以**计划量（population）和并发窗口（throughput）被刻意解耦**。
+**深挖触发阈值零裁量**：有 `HIGH` 线索必深挖该维度；`lead_count ≥ 3` 取 histogram 最高 2 维；`UNREACHABLE` 不深挖。这三条没有解释空间。
 
-排队的补位顺序也是写死的：`unverified` 追加切片优先于 `audit_slices`；同优先级按原始 FIFO；`CONTRACT_VIOLATION` 重派插队首，`RETRYABLE_FAILURE` 重派插队尾。**禁止按文件数、目录名、修改时间或任何内容特征排序**。
+**排队补位顺序零裁量**：`unverified` 追加切片优先于 `audit_slices`；同优先级按原始 FIFO；`CONTRACT_VIOLATION` 重派插队首，`RETRYABLE_FAILURE` 重派插队尾。
 
-### 轮次编号（原始提案，见第七节"未完成部分"）
+**并发窗口是上限不是目标**：harness 支持 16 并发时窗口仍是 8。**8 是设计假设，不是实测最优值**——依据是切片粒度与协调开销的经验权衡。
 
-编号不依赖主 Agent 推理，而是派一个轻量 Agent 扫描 `docs/reports/` 下 `round(\d+)` 模式，取最大值 +1 作为 `RN`。文件名统一为 `round{RN}-{stage}-{agent-id}.md`，最终汇总 `round{RN}-final-report.md` **只做拼接和索引，不重写任何子 Agent 的结论**。
+### 已改为"允许但必须留痕"的部分
+
+| 裁量 | 为什么放开 |
+|---|---|
+| 按 `reachability` 调整派发顺序 | 可达性是**结构特征**（引用关系），不是内容特征 |
+| 按线索密度决定深挖哪些切片 | 这是两遍制的核心机制，不可能预先写死每个项目的阈值 |
+| 按线索指向的维度指派深挖维度 | 比无依据的轮转更合理；round31 的轮转被证明会漏掉关键文件 |
+| 预算耗尽时的截断选择 | 必须做，但必须留痕以便复核 |
+
+每条裁量必须写进 `discipline_log`，含 `mechanical_check` 字段（"复核者如何用机械手段验证"）。**写不出机械复核方法就不允许做**。**未留痕比做错更严厉**——未申报的裁量一经发现，该轮结论作废。
+
+**谁检查**：Skeptic 的固定职责（`templates/wave3-critique.md` 第 2.3 节）。round31 那 9 处偏离正是 Devil's Advocate 用机械比对偶然发现的，主 Agent 事先并未申报。
+
+### 仍然绝对禁止的部分（L0）
+
+读源码、亲自写代码、提高并发上限、降低门控标准、自己裁决冲突、缩小范围后重派。
+
+> **注意一处已修正的引用**：本节原先写「并发窗口 8 有实测支撑：无协调并行 Agent 在高争用下失败率可达 72–100%，加准入控制和背压后降到 0–18%」。经核实（HiveMind, arXiv 2604.17111），那两个数字是 **mock 服务器上的 HTTP 502/连接重置率**，不是审计失败率；论文**从未建议窗口 8**；且**仅加准入控制仍有 81.8% 失败率**，"准入+背压即降到 0–18%"是反向误读。原文已按 `scale-mapping.md` 第 3 节的正确读法改写。
+
+### 轮次编号（也需要与状态机配合）
+
+编号不依赖主 Agent 推理，而是派一个轻量 Agent 扫描 `docs/reports/` 下 `round(\d+)` 模式，取最大值 +1 作为 `RN`。
+
+**新增约束**：若 `docs/reports/round{N}/state.json` 存在且 `status != CLOSED`，**续跑它，不新开 N+1**。round31 停在 `IN_PROGRESS`，当时若新开 round32 就会重复审已审过的 40 片。详见 `artifacts/run-state.md` 第 6 节。
 
 ---
 
@@ -129,9 +179,9 @@ effective_slices = len(audit_slices) + len(unverified)
 | 状态 | 触发 | 主 Agent 动作 |
 |---|---|---|
 | `RETRYABLE_FAILURE` | 超时、限流、工具瞬时错误 | 同模板同负载**原样重派新实例**，attempt +1，最多 2 次重试；新实例拿全新超时预算，**不继承 partial output** |
-| `CONTRACT_VIOLATION` | 缺字段、无证据、越权写文件 | **作废该实例全部输出**，派全新实例从原始任务描述重跑，attempt 从 0 计数，旧输出不得作为输入 |
+| `CONTRACT_VIOLATION` | 缺字段、无证据、越权写文件 | **作废该实例全部输出**，派全新实例从原始任务描述重跑，**attempt +1**（不归零，见 `protocol.md` §4.1），旧输出不得作为输入 |
 | `PERMANENT_FAILURE` | 连续 3 次失败或 harness 明确不可恢复 | 不得缩小范围重派，写入 `unverified`，最终报告显式暴露"未能覆盖" |
-| 多失败窗口 | 同一波次 2 个以上 Agent 在 60 秒内同时失败 | 暂停该波次新派发，记录 `phase_level_failure`，等待人工介入 |
+| 多失败窗口 | 同一波次 2 个以上 Agent 在 60 秒内同时失败 | 暂停该波次新派发，失败切片标 `DEFERRED`，出报告并自动开下一轮（`protocol.md` §4） |
 
 门控失败时的行为被写成硬约束：
 
@@ -216,7 +266,7 @@ effective_slices = len(audit_slices) + len(unverified)
 | [`components/output-contract.md`](components/output-contract.md) | 所有子 Agent 返回前 | 统一信封、五种角色 payload schema、错误对象、状态机 |
 | [`components/handoff-schema.md`](components/handoff-schema.md) | 每个波次闭合时 | Resume Packet：只带指针、摘要、裁决，不带正文 |
 | [`templates/wave1-recon.md`](templates/wave1-recon.md) | 波次一 | 侦察：切片独立性、5–8 文件区间、入口点证据、UNKNOWN 标记 |
-| [`templates/wave2-audit.md`](templates/wave2-audit.md) | 波次二 | 审计：单维度隔离、门 0 特化、为 Skeptic 预留攻击面 |
+| [`templates/wave2-audit.md`](templates/wave2-audit.md) | 波次二B | 深挖：单维度隔离、门 0 的三条特有加强、三项必做自检（标识符对账 / 自带自检抽验 / 运行时验证）、为 Skeptic 预留攻击面 |
 | [`templates/wave3-critique.md`](templates/wave3-critique.md) | 波次三 | 锐评：Skeptic 五步测试、覆盖缺口枚举、Arbiter 裁决树 |
 | [`templates/wave4-fix.md`](templates/wave4-fix.md) | 波次四 | 修复：写权限硬边界、修复契约前置登记、影响半径声明 |
 | [`templates/wave5-verify.md`](templates/wave5-verify.md) | 波次五 | 验收：定向检查、变异检验、影响半径处置、失败归因、人工升级 |

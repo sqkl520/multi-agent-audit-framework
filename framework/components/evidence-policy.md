@@ -114,6 +114,13 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 7 轮)
 
 **多行引用的边界**：引用一个代码块时，必须同时给出起始行和结束行，且引用内容**不得省略中间行**（用 `...` 省略可能导致上下文丢失，使下游无法验证推断的合理性）。
 
+**注释不是证据**（2026-11-12 门 0 红队实测新增）：引用一行的**注释**（`//`、`#`、`/* */`、`--`、`<!-- -->`）来支撑代码缺陷判断，**不构成门 0 通过**——注释是作者对代码的**描述**，不是代码的**行为**。实测 `// 不安全版本：容量检查写错` 行号准确、引文逐字存在，旧版判 PASS，因为校验器只比对文本。
+
+- quote 是**纯注释行**、用来支撑代码缺陷 → **门 0 失败**（须另附实际代码行）
+- quote 是**代码行**（含行尾注释）→ 通过，代码部分才是证据主体
+- 缺陷本身是**「注释与实现不符」**（JSDoc 声称返回 `boolean` 但无 `return`）→ **通过**，注释在此是被审对象而非证据
+- **声明范围必须能被证据支撑（G7）**：`searched_scope.files_read` 每个文件要么有 quote 指向、要么列进 `files_scanned_without_findings`，两者皆无者过半 → 警告。实测：声称读 20 个、19 个无 quote 曾判 PASS 而诚实报「只读 1 个」反挨 19 条 G3 警告——**规则在奖励撒谎**。这不是说「没 quote 就没读」，是用产物区分不了读没读
+
 ---
 
 ## 第 6 节：证据合规的机械检查（供锐评波与验收波使用）
@@ -146,11 +153,53 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 7 轮)
 
 ---
 
+## 第 8 节：引用分级与可核验性（2026-11-01 新增，强制）
+
+本节约束的**不只是框架自身的主张**，也约束所有子Agent在报告里引用外部资料（文档、规范、上游代码、issue、博客）时的写法。加这一节的直接原因是：本框架自己的 25 个外部引用经逐条核实后，**无一 404，但有一批「链接真实、用错地方」**——用一个「某包存在」的页面撑起一个「某结论已被证明」的论断。
+
+### 8.1 四级引用
+
+| 等级 | 定义 | 允许的措辞 |
+|---|---|---|
+| **A · 研究证据** | 有 arXiv / DOI / 会议页，且**你实际读过摘要确认它支持该论断** | 「某项研究（含样本量与场景）表明……」 |
+| **B · 工程文档** | 可核查的仓库、规范、工程博客中的具体做法 | 「某项目的做法是……」**不得**写成「已被证明」 |
+| **C · 包注册页 / 第三方 prompt / 论坛帖** | 只能证明「该物存在」 | 「存在这样的实现」**不得**承担举证责任 |
+| **D · 无法核实** | URL 打不开、检索无命中、或内容与论断无关 | **必须改写为「设计约定」或「设计假设」，不得假装有出处** |
+
+### 8.2 三条硬规则
+
+1. **引用 A 级来源时，必须同时写出它的限定条件**——样本量、实验场景、以及**关键指标的定义**。只摘数字不写口径，视为引用不合规。
+   > 反面教材（本框架曾犯）：某论文报告「并行 Agent 失败率 72–100%」，但该「失败」的定义是 **mock 服务器上的 HTTP 502/连接重置**，不是审计失败；且论文从未建议本框架采用的并发窗口值。摘走数字、丢掉口径，就是误导。
+2. **一个脚注只能支撑一个论断。** 同一锚点被复用来支撑 N 个不同结论时，这 N 条**全部**降为 D 级，直到各自补齐独立出处。
+3. **任何数字必须带单位与口径。** 「失败率 72–100%」缺了「什么算失败」即不合规；「回归率 18.8%」必须能说清分母是什么。
+
+### 8.3 对审计发现中「引用上游代码」的具体要求
+
+当发现涉及第三方依赖或仓库快照时，引用格式必须为 **`包名@版本/文件:行号`**。版本对不上时必须明写「未在该版本复核」。
+
+**不得把仓库里的快照当作「用户实际在跑的代码」的证据**——快照版本与运行版本不一致时，结论从根上不成立。正确做法是取用户实际版本的产物（如 `npm pack <pkg>@<version>` 解包）后再引用。
+
+### 8.4 机械可检的部分
+
+以下三项可以机械检查，`wave3-critique` 与 `wave5-verify` 应当据此判定 `EVIDENCE_INSUFFICIENT`：
+
+| 检查项 | 通过条件 |
+|---|---|
+| 引用格式 | 每个外部引用都有 URL 或 `包@版本/文件:行号` |
+| 口径完整 | 引用带数字时，同段落内出现该数字的定义或分母 |
+| 等级一致 | A 级措辞（「研究表明」）只出现在有 A 级出处的段落；B/C 级不得使用 A 级措辞 |
+
+---
+
 ---
 
 ## 参考来源
 
-[^ref8]: [Orchestration Schemas (the review runtime's data contracts)](https://raw.githubusercontent.com/pedrohcgs/claude-code-my-workflow/refs/heads/main/.claude/references/orchestration-schemas.md#1)
-[^ref14]: [phionyx-pipeline-mcp / 用 AI 扫 AI：一个把"证据链"当底线的 Agent 代码安全扫描器 - 448](https://pypi.org/project/phionyx-pipeline-mcp/0.1.0/#files#1)
-[^ref16]: [Orchestration Schemas (the review runtime's data contracts)](https://raw.githubusercontent.com/pedrohcgs/claude-code-my-workflow/refs/heads/main/.claude/references/orchestration-schemas.md#1)
-[^ref18]: [Orchestration Schemas (the review runtime's data contracts)](https://raw.githubusercontent.com/pedrohcgs/claude-code-my-workflow/refs/heads/main/.claude/references/orchestration-schemas.md#1)
+> **说明**：以下 4 个脚注经核实均为**真实可访问**的页面（`orchestration-schemas.md` 与 `phionyx-pipeline-mcp` 均返回 200，内容与所支撑论断吻合），等级为 **B（工程文档）** 或 **C（包注册页）**。它们支撑的是「存在这样的字段约定/这样的做法」，**不是**「某结论已被实证」。
+>
+> 其中 `[^ref14]`（`phionyx-pipeline-mcp`）仅能证明该包存在，属 **C 级**，不承担举证责任。
+
+[^ref8]: [Orchestration Schemas (the review runtime's data contracts)](https://raw.githubusercontent.com/pedrohcgs/claude-code-my-workflow/refs/heads/main/.claude/references/orchestration-schemas.md) — B 级，第 2 节 `Evidence`/`Inference` 结构参考。
+[^ref14]: [phionyx-pipeline-mcp](https://pypi.org/project/phionyx-pipeline-mcp/0.1.0/) — **C 级**，仅为「证据链为底线」这一表述的同类实践示例，不承担举证责任。
+[^ref16]: [Orchestration Schemas (the review runtime's data contracts)](https://raw.githubusercontent.com/pedrohcgs/claude-code-my-workflow/refs/heads/main/.claude/references/orchestration-schemas.md) — B 级，第 4 节 `NO_EVIDENCE_FOUND` 纪律参考。
+[^ref18]: [Orchestration Schemas (the review runtime's data contracts)](https://raw.githubusercontent.com/pedrohcgs/claude-code-my-workflow/refs/heads/main/.claude/references/orchestration-schemas.md) — B 级，第 5 节 `file:line` 锚定格式参考。

@@ -8,6 +8,71 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 6 轮)
 
 # orchestrator/scale-mapping.md
 
+## 第 0 节：先查你的 harness 有没有原生能力（2026-11-09 新增，优先级最高）
+
+> **这一节的结论如果成立，第 2 节之后的全部算术都可以跳过。**
+
+**本文件原本写了 302 行并发与预算算术。2026-11-09 观察到的事实是：现代 harness 已经在运行时层面提供了这些能力，且比本框架精确。**
+
+| 能力 | 本文件怎么做 | harness 原生提供什么 | 该用哪个 |
+|---|---|---|---|
+| 并发上限 | `concurrency_window` 查表 | 原生并发批次（实测见 5 agent / 7 agent 批次） | **harness** |
+| 扇出数量 | `planned_sweep_agents` 算术 | 原生批量派发 | **harness** |
+| 单次 Runtime 统计 | 主 Agent 手工 `stat` mtime 猜测 | **精确到秒**（如 `47m48s`） | **harness** |
+| token 计量 | **完全没有** | **精确计数**（如 `243.8K` / `638K`） | **harness** |
+| 任务终态 | `state.json` + 推测 | 原生 `✓ / 进行中` 状态 | **harness** |
+| 相位编排 | `protocol.md` 的五波次 + 门控 | 原生 `Phases`（如 `Verify 2/5`） | **看情况**（见下） |
+| 每任务模型选择 | **完全没有** | 逐任务标注（如 `Fable 5.1M`） | **harness** |
+
+### 0.1 判定流程
+
+```
+你的 harness 是否有原生能力？
+  ├─ 有并发批次 / 任务状态 / token 计量
+  │    → 第 2~6 节的并发与预算算术**全部跳过**
+  │    → 只保留第 1 节的输入契约（那是数据格式，不是调度策略）
+  │    → 派发量由 harness 在运行时决定，本文件不预设
+  │
+  └─ 没有（纯提示词驱动、无运行时）
+       → 回退使用第 2~6 节的算术
+       → 必须承认：本文件的估计值不如运行时精确
+```
+
+### 0.2 为什么要降级（实测依据）
+
+2026-11-09 观察到的真实运行时数据：
+
+| 工作流 | agent 数 | 单 agent Runtime | 总 token |
+|---|---|---|---|
+| `round3-verify-batch1` | 5 | 28m36s / 47m48s ×3 / 40m31s | 243.8K |
+| `round3-fix-batch2` | 7 | 33m40s / 47m34s / 11m29s / 20m08s / 8m33s / 16m29s / 22m51s | 638K |
+
+**这批数据推翻了本框架此前的一个核心假设**：我们按「8–10 分钟」估单个 agent 的工作量，而实际是 **47 分钟**，差一个数量级。
+
+| 本文件的假设 | 实测 |
+|---|---|
+| 单 agent 约 10 分钟 | **47 分钟是常态** |
+| 用 mtime 判断是否卡住 | harness 直接给 Runtime，mtime 无意义 |
+| 用 `agent_count` 做预算 | token 是更真实的成本单位，而本文件从未计量 |
+
+**结论：在 harness 有原生能力的场景下，本文件的算术不是「简化版」，而是「更差的版本」。** 保留它只为兼容没有运行时的纯提示词环境。
+
+### 0.3 仍然必须由框架负责的部分
+
+降级不等于全部交给 harness。以下这些 **harness 不提供，且不能提供**：
+
+| 能力 | 为什么 harness 管不了 |
+|---|---|
+| 审**什么**（切片规则、维度划分） | harness 不知道你的代码结构 |
+| 什么算**证据**（门 0） | harness 不判断结论对错 |
+| 什么情况下发现**不成立**（锐评） | 需要领域判断 |
+| 报告**长什么样**（交付物规范） | 这是产品的形状，不是运行时的形状 |
+| **严重性定级** | 需要专业知识（本框架至今没解决） |
+
+**这一栏才是本框架的价值。第 2 节之后的算术属于上一栏。**
+
+---
+
 ## 文件头部：强制加载声明
 
 > scale-mapping.md
@@ -15,6 +80,8 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 6 轮)
 > 本文件是查找表 + 算术规则，不是分析指南。
 > 主Agent不得修改、合并或覆盖本文件中的任何映射值。
 > 如果 harness 的并发上限低于本文件的并发窗口，取 min(本文件值, harness_cap)。
+>
+> **2026-11-09 补充**：先执行第 0 节的判定。harness 有原生能力时，本文件第 2~6 节不适用。
 
 ---
 
@@ -61,20 +128,90 @@ effective_slices = effective_slices - skip_count
 
 这张表是 `scale-mapping.md` 的核心。主Agent拿到 `effective_slices` 后，**只做区间匹配，不做区间内的微调**。
 
-| `effective_slices` | 发现波计划量 | 锐评波基础角色 | 锐评波追加 | 修复波 | 验收波 | 单波并发窗口 |
-|---|---|---|---|---|---|---|
-| **1–5** | `= effective_slices` | Skeptic + Arbiter | 无 | 每条 `UPHELD` 1 个 | 每条修复 1 个 | `min(5, harness_cap)` |
-| **6–20** | `= effective_slices` | Skeptic + Devil's Advocate + Arbiter | 无 | 每条 `UPHELD` 1 个 | 每条修复 1 个 | `min(8, harness_cap)` |
-| **> 20** | `= effective_slices` | 同上 3 角色 | +1 交叉模式扫描 | 每条 `UPHELD` 1 个 | 每条修复 1 个 + 1 回归扫描 | `min(8, harness_cap)` |
+> **2026-11-01 重要修订：波次二拆成 二A 宽扫 / 二B 深挖。** 原表把「发现波计划量」写成 `= effective_slices`，与 `README.md` 的「每个 `(切片, 维度)` 派一个独立实例」（6 维）**直接矛盾**：按前者算，每片只审 1 维（等于放弃 5/6 覆盖）；按后者算，85 片需 510 个实例（是预算的 8.5 倍）。**两遍制消除这个矛盾**：宽扫按片派（算术 = 片数），深挖按线索派（算术 = 命中切片 × 适用维度，且命中数远小于总片数）。
 
-**逐条解释**：
+| `effective_slices` | 二A 宽扫 | 二B 深挖 | 锐评波基础角色 | 锐评波追加 | 单波并发窗口 |
+|---|---|---|---|---|---|
+| **1–5** | `= effective_slices` | 只对 `HIGH` 线索派 | Skeptic + Arbiter | 无 | `min(5, harness_cap)` |
+| **6–20** | `= effective_slices` | 按第 3.2 节阈值 | + Devil's Advocate | 无 | `min(8, harness_cap)` |
+| **> 20** | `= effective_slices` | 按第 3.2 节阈值 | 同上 3 角色 | +1 交叉模式扫描 | `min(8, harness_cap)` |
 
-- **发现波计划量永远等于 `effective_slices`**。侦察Agent返回 17 个切片，发现波就计划 17 个Agent；返回 3 个，就计划 3 个。主Agent不得因为“17 个太多”而合并，也不得因为“3 个太少”而拆分。
-- **锐评波不随切片数线性增长**。6–20 档和 >20 档的基础角色都是 3 个（Skeptic、Devil's Advocate、Arbiter），>20 档只追加 1 个交叉模式扫描，因为大规模代码库中“未被任何切片覆盖的模块”风险更高，而不是因为“切片多所以锐评也要按比例多”。
-- **修复波和验收波按问题数派，不按切片数派**。一个切片可能产出 0 条或 5 条 `UPHELD` 发现；修复Agent的数量由仲裁后的发现数决定，与 `effective_slices` 无关。
-- **并发窗口是上限，不是目标**。`min(8, harness_cap)` 意味着：harness 支持 16 并发时，窗口仍然是 8；harness 只支持 4 并发时，窗口是 4。主Agent不得因为“窗口没用满”而提高并发数。
+### 3.1 二A 宽扫：一片一实例
 
-**为什么并发窗口不随切片数增长**：HiveMind 的实测数据显示，无协调的并行Agent在高争用下失败率可达 72–100%，而引入准入控制和背压后失败率降至 0–18%[^ref1]。并发窗口的作用是**把瞬时争用控制在可协调的范围内**，而不是把硬件或API配额吃满。计划量（population）和并发窗口（throughput）是两个独立变量，必须解耦。
+**宽扫的计划量永远等于 `effective_slices`**。侦察返回 17 片就派 17 个宽扫 agent；返回 3 片就派 3 个。主 Agent 不得因为「17 个太多」而合并，也不得因为「3 个太少」而拆分。
+
+宽扫产出**线索**（`lead`），不是发现。线索不进锐评波、不进最终报告正文，只用于决定二B 派给谁。详见 `templates/wave2a-sweep.md`。
+
+### 3.2 二B 深挖：按线索派，不按切片派
+
+**深挖的触发阈值（写死，零裁量）**：
+
+| 条件 | 动作 |
+|---|---|
+| 切片有 ≥1 条 `confidence: HIGH` 线索 | **必深挖**，维度取该线索的 `suspected_dimension` |
+| 切片 `lead_count ≥ 3` | 深挖，维度取 `dimension_histogram` 计数最高的 **2** 个 |
+| 切片 `reachability == UNREACHABLE` | **不深挖** |
+| 其余 | 不深挖，线索进最终报告的「未深挖线索」附录 |
+
+**深挖成本的界（主 Agent 必须验算）**：
+
+```
+deep_dive_cost = Σ(每个命中切片的深挖维度数)      # 每片最多 2 个维度（除 HIGH 线索指定）
+total_wave2    = planned_sweep_agents + deep_dive_cost
+必须满足：total_wave2 ≤ discovery_budget
+```
+
+**若超出**：按 `reachability`（`PROD` 优先）→ `lead_count` 降序 → 切片原始 FIFO 的顺序截断，其余标 `DEFERRED_DEEP_DIVE`。**禁止按文件名/目录名/修改时间排序**；`reachability` 与 `lead_count` 是**结构特征**，不违反这条禁令。
+
+> **⚠ 已知的算术陷阱（必须读，否则会误以为新公式没解决问题）**
+>
+> 用 round31 的真实数据（85 片、`discovery_budget = 40`）代入上式会得到：
+>
+> ```
+> planned_sweep_agents = min(85, 40) = 40        ← 宽扫已经吃满全部 discovery_budget
+> 剩余给深挖的预算   = 40 - 40 = 0
+> → 深挖永远无法进行
+> ```
+>
+> **也就是说：只要 `effective_slices ≥ discovery_budget`，两遍制会退化成"只宽扫、零深挖"——比原设计更糟**（原设计至少审了 40 个维度，现在只剩 40 份线索）。
+>
+> **这不是设计缺陷，是 discovery_budget 的定义造成的**：它原本是为「单遍审计」定的，现在要同时装下"宽扫 + 深挖"两笔开销。**因此当 `effective_slices ≥ discovery_budget` 时，主 Agent 必须先做一次显式的预算分配，而不是让宽扫先吃光：**
+>
+> ```
+> # 宽扫是廉价遍，深挖是昂贵遍。两者按固定比例分配，而不是先到先得。
+> sweep_budget = ceil(discovery_budget × 0.4)     # 40% 给宽扫
+> deep_dive_budget = discovery_budget - sweep_budget   # 60% 给深挖
+>
+> planned_sweep_agents = min(effective_slices, sweep_budget)
+> affordable_deep_dive = deep_dive_budget
+> ```
+>
+> 代入 round31：`sweep_budget = 16`、`deep_dive_budget = 24`。即**宽扫 16 片，深挖约 12 片 × 2 维**。覆盖的切片数从 40 降到 16，但**深挖的 16 片是经可达性筛选后的 PROD 代码**，而原设计那 40 片里有 29 片是死代码。
+>
+> **这个比例是启发式，不是实测最优值**，必须在最终报告中声明用了哪个比例，以及为何该比例适用于本项目。**若 `effective_slices < discovery_budget`**（小项目），宽扫可以全量覆盖，剩余预算全部给深挖，不需要切分。
+>
+> **诚实的代价**：在超大仓库上，"每片都宽扫一遍"和"每片都深入审计"**不可能同时满足**。两遍制能保证「宽扫过的一定被记录、深挖过的一定可信」，但**不能保证每片都被深挖**。最终报告必须写明"宽扫覆盖率"与"深挖覆盖率"两个独立数字，不得合并成一个数字来假装覆盖完整。
+
+> **为什么每片最多 2 个深挖维度**：这是成本上限，不是质量主张。有 `HIGH` 线索时按线索走（可能 1 个维度就够）；无线索密度支撑时，同时深挖 3+ 维度大概率是在给低价值代码花高价预算。若某片确实需要更多维度，走 L1 裁量留痕（`protocol.md` 第 1.2 节），并说明依据。
+
+### 3.3 逐条解释
+
+- **宽扫计划量 = `effective_slices`**，因为它必须覆盖每一片——这一遍的使命是「不漏」。
+- **深挖计划量 ≠ 切片数**，因为它由**线索密度**驱动，而线索密度在宽扫完成前无法预知。这与「修复/验收按发现数派」是同一个道理。
+- **锐评波不随切片数线性增长**。6–20 档和 >20 档基础角色都是 3 个，>20 档只追加 1 个交叉模式扫描，因为大规模代码库中「未被任何切片覆盖的模块」风险更高，不是因为「切片多所以锐评也要按比例多」。
+- **并发窗口是上限，不是目标**。`min(8, harness_cap)` 意味着 harness 支持 16 并发时窗口仍是 8。主 Agent 不得因为「窗口没用满」而提高并发数。
+
+**为什么并发窗口不随切片数增长**：并发窗口的作用是**把瞬时争用控制在可协调的范围内**，而不是把硬件或 API 配额吃满。计划量（population）和并发窗口（throughput）是两个独立变量，必须解耦。
+
+**窗口值 8 的来源与限度（必须读，否则会误用）**：8 是一个**设计假设**，不是实测得出的最优值。它的依据是切片粒度（每片 5–8 文件）与协调开销的经验权衡。harness 上限更低时取 `min`，**不得**因为"可能支持更高并发"而上调。
+
+> **关于 HiveMind 数据的正确读法**（`arxiv.org/abs/2604.17111`，Agemang 等，2026-04，cs.DC）：
+> 该文确实报告了「10+ agent 直连时失败率 100%、replay-11 为 73%」与「HiveMind 为 10%/18%」两组数字[^ref1]。但引用时必须带三个限定，否则是误用：
+> 1. **实验场景是 mock API server**，agent 做的是「重复顺序 API 调用」，**不是代码审计**；
+> 2. **「失败」的定义是首个不可恢复的 HTTP 502 / 连接重置**——它衡量的是**API 层争用死亡率**，与审计质量、发现准确率无关；
+> 3. **论文从未建议并发窗口 = 8**（其测试档位是 5/10/11/20/50）。
+>
+> 更关键：论文的消融明确写「**transparent retry 是影响最大的单一原语**」，且**仅加准入控制仍有 81.8% 的失败率**。所以「准入 + 背压即把失败率降到 0–18%」是对原文的**反向误读**。正确的推论是：**背压必须与重试配对**，单靠限流不解决问题——这恰好是 `RETRYABLE_FAILURE` 原样重派规则（`protocol.md` 第 4 节）的依据。
 
 ---
 
@@ -106,11 +243,11 @@ admission_ceiling = min(60, effective_slices + 30)
 
 ### 「计划量 = 切片数」与队列上限的关系
 
-第 3 节的映射表说"发现波计划量永远等于 `effective_slices`"，本节又说超过 60 的部分要 `DEFERRED`。这两个规则不矛盾，因为它们描述的是**两个不同阶段的数字**：
+第 3 节的映射表说"宽扫计划量永远等于 `effective_slices`"，本节又说超过 60 的部分要 `DEFERRED`。这两个规则不矛盾，因为它们描述的是**两个不同阶段的数字**：
 
 | 数字 | 阶段 | 定义 |
 |---|---|---|
-| `planned_discovery_agents = effective_slices` | 波次二**规划时** | 每一片都必须有对应的审计 Agent，**不允许合并切片**。这是"计划量"，写入账本后不再修改 |
+| `planned_sweep_agents = effective_slices` | 波次二A**规划时** | 每一片都必须有一个宽扫 Agent，**不允许合并切片**。这是"计划量"，写入账本后不再修改 |
 | `admission_ceiling` | 波次二**执行时** | 同时在队列中（`PENDING + RUNNING`）的实例数上限，是**背压阀**，不是总量限制 |
 
 **关键区分**：`admission_ceiling` 限制的是**队列中同时存在的实例数**，不是**总共能派多少个**。滚动窗口的机制是：一个实例进入终态、结果被主Agent收集后，从队列中移除，下一个 `PENDING` 切片补位。因此 100 个切片、`admission_ceiling = 60` 时，不是"只能派 60 个"，而是"任意时刻队列里最多 60 个"。
@@ -193,23 +330,40 @@ deferred_slices = effective_slices - affordable_slices
 ```
 ledger.scale_decision:
   effective_slices: int
-  planned_discovery_agents: int      # = affordable_slices，见第 4 节预算分配
   concurrency_window: int            # = min(窗口值, harness_cap)
   admission_ceiling: int             # 队列背压阀，= min(60, effective_slices + 30)
   total_budget: int                  # = 60，跨波次累计硬护栏
   reserved_for_downstream: int       # = 20，锐评+修复+验收预留
   discovery_budget: int              # = total_budget - reserved_for_downstream
-  affordable_slices: int             # = min(effective_slices, discovery_budget)
+
+  # --- 波次二A 宽扫（1 片 1 实例，算术 = 片数）---
+  planned_sweep_agents: int          # = min(effective_slices, discovery_budget)
+  affordable_slices: int             # 同上；超出部分 DEFERRED
+  deferred_slices: [string]
+
+  # --- 波次二B 深挖（按线索派，在宽扫完成后才确定）---
+  deep_dive_trigger: object          # 阈值快照，便于复核（HIGH 线索 / lead_count>=3）
+  planned_deep_dive_agents: int|null # 宽扫完成前为 null
+  deep_dive_slices: [string]|null    # 命中深挖的切片
+  deep_dive_dims: {slice_id: [dim]}  # 每片深挖哪几个维度
+  deep_dive_truncated: [string]      # 因预算截断的深挖，标 DEFERRED_DEEP_DIVE
+
   critique_roles: ["Skeptic", "Devil's Advocate", "Arbiter"]  # 或子集
   critique_extra: "cross-pattern-scan" | "regression-scan" | null
   skipped_slices: [string]           # SKIP_REAUDIT 的切片标识
-  deferred_slices: [string]          # 因 discovery_budget 或 admission_ceiling 未派发的切片
+  deferred_deep_dive: [string]       # 有线索但未深挖的切片
 ```
 
-主Agent在波次二启动前将 `scale_decision` 写入账本，之后**不再回头修改**。如果运行过程中发现 `effective_slices` 的初始计算有误，修复方式是**派一个全新的侦察Agent重新执行切片**，而不是在运行中热改 `scale_decision`。
+**两阶段冻结规则**（2026-11-01 修订）：
+
+- `planned_sweep_agents` / `concurrency_window` / `total_budget` 在**波次二A 启动前**冻结，之后不得修改；
+- `planned_deep_dive_agents` / `deep_dive_dims` 在**波次二A 闭合后**写入并冻结。这是因为深挖数量依赖线索密度，宽扫前无法预知——**这不是裁量，是设计上的两阶段决策点**；
+- 若深挖阶段的成本超出 `discovery_budget`，按第 3.2 节的确定性规则截断，并把截断决策写进 `discipline_log`（`BUDGET_TRUNCATION` 类）。
+
+**禁止**：在运行中热改 `effective_slices`。若发现切片计算有误，修复方式是**派一个全新的侦察 Agent 重新执行切片**。
 
 ---
 
 ## 参考来源
 
-[^ref1]: [HiveMind: OS-Inspired Scheduling forConcurrent LLM Agent Workloads](https://ar5iv.labs.arxiv.org/html/2604.17111#1)
+[^ref1]: [HiveMind: OS-Inspired Scheduling for Concurrent LLM Agent Workloads](https://arxiv.org/abs/2604.17111) — 注意：其「失败」指 **HTTP 502/连接重置**，场景为 mock API server，**不是**审计失败率；且仅加准入控制仍有 81.8% 失败率，透明重试才是主导原语。

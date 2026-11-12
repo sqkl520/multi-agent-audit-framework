@@ -1,0 +1,156 @@
+#!/usr/bin/env node
+/**
+ * check-all.mjs — 一条命令跑完全部机械检查
+ *
+ * 存在的理由：框架有 4 个检查器，分散调用必然会漏跑一个。
+ * 而「漏跑一个」在这套框架里已经造成过真实损失——
+ * 改一处规则没同步另外三处副本，导致「等待人工」的旧规则一直活着。
+ *
+ * 用法：node tools/check-all.mjs
+ * 退出码：0 全绿 / 1 有失败
+ */
+
+import { execFileSync } from 'node:child_process';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { existsSync } from 'node:fs';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+const CHECKS = [
+  {
+    name: '产物机械校验（门 0 / 产物真实性 / 账本对账）',
+    script: 'verify-artifacts.test.mjs',
+    desc: '自测：48 个用例，含编造引用、空产物、数字不符、注释当证据',
+  },
+  {
+    name: '自动续轮规则模拟',
+    script: 'simulate-round-chain.mjs',
+    desc: '23 个用例：多轮推进、max_rounds、STALLED、§6/§6.5 一致性',
+  },
+  {
+    name: '失败分类器',
+    script: 'classify-failures.test.mjs',
+    desc: '16 个用例：NO_OUTPUT / SCRIPT_TIMEOUT / EMPTY_RESULT 及各自的重派策略',
+  },
+  {
+    name: '交付物规范检查',
+    script: 'check-deliverables.test.mjs',
+    desc: '13 个用例：两类必交付、报告六节、账本四节、自由命名、子目录',
+  },
+  {
+    name: '环境探测器',
+    script: 'detect-harness.test.mjs',
+    desc: '11 个用例：版本比较、unknown 不猜值、探测脚本可执行',
+  },
+  {
+    name: '契约准入检查器',
+    script: 'check-payload.test.mjs',
+    desc: '77 个用例：JSON 信封、顶层字段、角色必填、计数自洽、空 findings、空 quote（事前门，非事后补救）',
+  },
+  {
+    name: '门 0 伪造手法逐条对照（红队）',
+    script: 'fixtures/gate0-probe/run.mjs',
+    desc: '10 个探针：跨行拼接 / 引错函数 / 行号偏 1 / 注释当证据 / 引注释作被审对象',
+  },
+  {
+    name: 'Agent 间一致性计算器',
+    script: 'consistency.mjs',
+    desc: '14 个用例：Jaccard、随机基线、理论上限、达成度（防止把「报告大」当成「有共识」）',
+  },
+  {
+    name: '声明范围可伪造性对照（红队）',
+    script: 'fixtures/scope-probe/run.mjs',
+    desc: '4 个探针：声称读 N 个文件却只有 1 个有 quote / 诚实标注应当放行',
+  },
+  {
+    name: '契约判据逐条对照（红队）',
+    script: 'fixtures/contract-probe/run.mjs',
+    desc: '19 个探针：契约里每条「CONTRACT_VIOLATION」都造一份违反它的产物，看校验器是否执行',
+  },
+  {
+    name: 'state.json 校验器',
+    script: 'check-state.test.mjs',
+    desc: '18 个用例：枚举、FAILED 诊断、DONE 产物、attempt、budget、CLOSED 联动',
+  },
+  {
+    name: 'attempt 计数器',
+    script: 'attempt-ledger.test.mjs',
+    desc: '15 个用例：digest 对 agent_id 不敏感、连续同因即停、上限即停',
+  },
+  {
+    name: '门禁系统',
+    script: 'gate.test.mjs',
+    desc: '18 个用例：四道门的放行与拒绝路径（dispatch/accept/close/release）',
+  },
+  {
+    name: '框架自主性静态检查',
+    script: 'lint-autonomy.test.mjs',
+    desc: '19 条规则的放行与拒绝路径（含 L16 加载量、L19 模式清单完整性）',
+  },
+  {
+    name: '盲区模式检测器',
+    script: 'check-blindspots.test.mjs',
+    desc: '9 个用例：B1 返回活引用 / B2 同类守卫差异 / B3 缺 isFinite / B4 调用未导入的名字',
+  },
+  {
+    name: '承诺兑现检查器',
+    script: 'check-promises.test.mjs',
+    desc: '12 个用例：@returns 无 return / @throws 不抛错 / 声称只读却返回可变对象',
+  },
+  {
+    name: '子 Agent 结局扫描（转录大小 ≠ 工作痕迹）',
+    script: 'scan-agent-outcomes.mjs',
+    desc: '7 个用例：转录 0 字节但工作目录有文件（WORKED_SILENTLY）/ 未知时必须报 UNKNOWN',
+  },
+  {
+    name: 'Agent 状态判定（产物 vs 活动痕迹）',
+    script: 'agent-status.test.mjs',
+    desc: '11 个用例：产物已落盘判 DONE / 只有活动痕迹判 RUNNING / 久无动静判 STALLED',
+  },
+  {
+    name: 'Stop hook 相位守卫',
+    script: 'stop-hook.test.mjs',
+    desc: '12 个用例：相位未闭合时拒绝结束回合',
+  },
+];
+
+let failed = 0;
+console.log('\n══════════════════════════════════════════');
+console.log('  框架机械检查（全部）');
+console.log('══════════════════════════════════════════\n');
+
+for (const c of CHECKS) {
+  const p = join(HERE, c.script);
+  if (!existsSync(p)) {
+    console.log(`✗ ${c.name}\n  脚本缺失: ${c.script}\n`);
+    failed++;
+    continue;
+  }
+  process.stdout.write(`${c.name}\n  ${c.desc}\n  → `);
+  try {
+    const out = execFileSync('node', [p], { encoding: 'utf8', cwd: HERE });
+    const last = out.trim().split('\n').filter(Boolean).pop() ?? '';
+    console.log(`${last || 'OK'}`);
+  } catch (e) {
+    const out = (e.stdout ?? '') + (e.stderr ?? '');
+    const lines = out.trim().split('\n').filter(Boolean);
+    // 2026-11-12：只打印「失败」无法区分「测试真的失败」和「进程被信号杀掉 / 超时 / 输出超限」。
+    // 实测 attempt-ledger 单独跑 15/15 通过，但在 check-all 里偶发判失败——
+    // 没有退出码和信号信息，根本没法判断是哪一种。
+    const sig = e.signal ? ` signal=${e.signal}` : '';
+    const code = e.status != null ? ` exit=${e.status}` : '';
+    console.log(`失败${code}${sig}`);
+    if (lines.length) for (const l of lines.slice(-8)) console.log(`    ${l}`);
+    else console.log(`    （没有任何输出——进程可能被杀或超时）`);
+    failed++;
+  }
+}
+
+console.log('\n──────────────────────────────────────────');
+if (failed === 0) {
+  console.log('✅ 全部通过\n');
+} else {
+  console.log(`✗ ${failed} 项失败\n`);
+}
+process.exit(failed > 0 ? 1 : 0);

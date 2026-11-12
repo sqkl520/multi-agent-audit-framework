@@ -124,7 +124,7 @@ Resume Packet 是一个**不可变快照**，在每个波次闭合时由主Agent
 | `COVERAGE_GAP` | wave-3 | Devil's Advocate 指出的覆盖缺口（切片未被审计、文件未被读取、维度被省略、入口未映射） | 由主Agent决定是否在后续轮次补派审计；**不由 Devil's Advocate 自行补审** |
 | `AFFECTED_BY_FIX` | wave-4 | 修复Agent声明“可能受本次修改影响”的其他已发现缺陷 | 转验收波复核，`next_action: REASSIGN_TO_VERIFY` |
 | `REGRESSION_SCAN_REQUIRED` | wave-4 | 修复声明了 `LARGE_PATCH` / `PUBLIC_API_CHANGE` / `IMPACT_UNVERIFIED`，必须追加回归扫描 | 验收波必须包含回归扫描，否则不得闭合 |
-| `HUMAN_DECISION_REQUIRED` | wave-4 / wave-5 | 存在必须由人裁决的事项（`TEST_CONFLICT`、`ROLLBACK_UNAVAILABLE` 且验收失败、基线无法确认等） | **不自动放行**，阻止本轮整体闭合，等待人工 |
+| `HUMAN_DECISION_REQUIRED` | wave-4 / wave-5 | 存在必须由人裁决的事项（`TEST_CONFLICT`、`ROLLBACK_UNAVAILABLE` 且验收失败、基线无法确认等） | **不阻塞流程推进**：不记为已修复，列入最终报告「待人工裁决」，本轮正常收尾并自动开下一轮 |
 | `REVOKED` | wave-3 / wave-5 | 经裁决或复验确认原发现不成立（误报、不可触发、越界推断） | 不进入修复波；保留记录供审计追溯 |
 
 **`next_action` 的枚举语义**：
@@ -137,7 +137,7 @@ Resume Packet 是一个**不可变快照**，在每个波次闭合时由主Agent
 | `REASSIGN_TO_FIX` | 回波次四重新修复 | `UNRESOLVED_FINDING`（验收失败且归因为 `FIX_INCOMPLETE` / `FIX_INCORRECT`） |
 | `REASSIGN_TO_VERIFY` | 转验收波复核 | `AFFECTED_BY_FIX` |
 | `SCHEDULE_REGRESSION_SCAN` | 验收波必须追加回归扫描 | `REGRESSION_SCAN_REQUIRED` |
-| `REQUIRE_HUMAN_DECISION` | 阻塞，等待人工裁决 | `HUMAN_DECISION_REQUIRED` |
+| `REQUIRE_HUMAN_DECISION` | 记为待人工裁决事项（**不阻塞流程推进**，只阻止把该缺陷记为已修复） | `HUMAN_DECISION_REQUIRED` |
 | `MARK_REVOKED` | 标记该发现作废 | `REVOKED` |
 | `MARK_UNVERIFIED` | 标记未能覆盖 | `PERMANENT_FAILURE` / `UNVERIFIED_TARGET` |
 | `NONE` | 无后续动作（`blocking: false` 的透传项） | 任意非阻塞 kind |
@@ -233,7 +233,7 @@ Resume Packet 是一个**不可变快照**，在每个波次闭合时由主Agent
 {
   "scale_decision": {
     "effective_slices": 17,
-    "planned_discovery_agents": 17,
+    "planned_sweep_agents": 17,
     "concurrency_window": 8,
     "admission_ceiling": 60,
     "critique_roles": ["Skeptic", "Devil's Advocate", "Arbiter"],

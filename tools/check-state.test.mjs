@@ -1,0 +1,277 @@
+#!/usr/bin/env node
+/**
+ * check-state.test.mjs — state.json 校验器自测
+ *
+ * 这些用例全部来自真实出过的问题：
+ *   - IN_PROGRESS 停在 round31
+ *   - FAILED 没有 failure 诊断（2026-11-05）
+ *   - SKELETON_ONLY 改名后 schema 没同步（2026-11-09）
+ *   - DONE 但没有产物路径（我自己写的 state.json 就有）
+ */
+
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const SCRIPT = join(HERE, 'check-state.mjs');
+
+let pass = 0, fail = 0;
+const expect = (n, c, d = '') => {
+  if (c) { pass++; console.log(`  ✓ ${n}`); }
+  else { fail++; console.log(`  ✗ ${n}${d ? ' — ' + d : ''}`); }
+};
+
+function run(state) {
+  const dir = mkdtempSync(join(tmpdir(), 'cs-'));
+  const f = join(dir, 'state.json');
+  writeFileSync(f, JSON.stringify(state, null, 2));
+  try {
+    const out = execFileSync('node', [SCRIPT, f, '--json'], { encoding: 'utf8' });
+    return { code: 0, r: JSON.parse(out) };
+  } catch (e) {
+    try { return { code: e.status ?? 1, r: JSON.parse(e.stdout) }; }
+    catch { return { code: e.status ?? 1, r: null }; }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const base = (over = {}) => ({
+  schema_version: 'run-state-v1',
+  trace_id: 't1',
+  round_id: 'round1',
+  path_mode: 'AUDIT_ONLY',
+  phase: 'report',
+  status: 'PARTIALLY_CLOSED',
+  slices: {},
+  ...over,
+});
+
+const has = (r, rule) => (r.r?.errors ?? []).some(e => e.rule === rule);
+
+console.log('\n=== state.json 校验器自测 ===\n');
+
+console.log('case 1: 最小合规状态 → 通过');
+{
+  const r = run(base());
+  expect('退出码 0', r.code === 0, `got ${r.code}`);
+  expect('无错误', (r.r?.errors ?? []).length === 0, JSON.stringify(r.r?.errors));
+}
+
+console.log('case 2: IN_PROGRESS（round31 的死法）→ 报错');
+{
+  const r = run(base({ status: 'IN_PROGRESS' }));
+  expect('报 invalid_enum 或 deprecated_status',
+    has(r, 'invalid_enum') || has(r, 'deprecated_status'));
+}
+
+console.log('case 3: 缺顶层字段 → 报错');
+{
+  const s = base();
+  delete s.trace_id;
+  const r = run(s);
+  expect('报 missing_top_field', has(r, 'missing_top_field'));
+}
+
+console.log('case 4: FAILED 但没有 failure 诊断 → 报错');
+{
+  const r = run(base({ slices: { 'slice-01': { state: 'FAILED' } } }));
+  expect('报 missing_failure_diagnosis', has(r, 'missing_failure_diagnosis'));
+}
+
+console.log('case 5: 用已废弃的 SCRIPT_TIMEOUT → 报错并提示改名');
+{
+  const r = run(base({
+    slices: { 'slice-01': { state: 'FAILED', failure: { error_type: 'SCRIPT_TIMEOUT' } } },
+  }));
+  const e = (r.r?.errors ?? []).find(x => x.rule === 'deprecated_enum');
+  expect('报 deprecated_enum', !!e);
+  expect('提示改为 SKELETON_ONLY', /SKELETON_ONLY/.test(e?.msg ?? ''));
+}
+
+console.log('case 6: SKELETON_ONLY（新名字）→ 合规');
+{
+  const r = run(base({
+    slices: { 'slice-01': { state: 'FAILED',
+      failure: { error_type: 'SKELETON_ONLY', artifact_bytes: 44 } } },
+  }));
+  expect('无 deprecated 错误', !has(r, 'deprecated_enum'));
+  expect('无 invalid_enum', !has(r, 'invalid_enum'));
+}
+
+console.log('case 7: DONE 但没有产物路径 → 报错');
+{
+  const r = run(base({ slices: { 'slice-01': { state: 'DONE' } } }));
+  expect('报 done_without_artifact', has(r, 'done_without_artifact'));
+}
+
+console.log('case 8: DONE 且有产物路径 → 合规');
+{
+  const r = run(base({
+    slices: { 'slice-01': { state: 'DONE', artifact_paths: ['/x/y.md'] } },
+  }));
+  expect('无 done_without_artifact', !has(r, 'done_without_artifact'));
+}
+
+console.log('case 9: attempt=0 → 报错（第一次尝试应是 1）');
+{
+  const r = run(base({ slices: { 'slice-01': { state: 'PENDING', attempt: 0 } } }));
+  expect('报 invalid_attempt', has(r, 'invalid_attempt'));
+}
+
+console.log('case 10: budget 超支 → 报错');
+{
+  const r = run(base({ budget: { total_cap: 10, spent: 15 } }));
+  expect('报 over_budget', has(r, 'over_budget'));
+}
+
+console.log('case 11: CLOSED 但没有报告路径 → 报错');
+{
+  const r = run(base({ status: 'CLOSED' }));
+  expect('报 closed_without_report', has(r, 'closed_without_report'));
+}
+
+console.log('case 12: CLOSED 且有报告 → 合规');
+{
+  const r = run(base({
+    status: 'CLOSED',
+    report: { final_report_path: '/x/report.md', is_complete: true },
+  }));
+  expect('无 closed_without_report', !has(r, 'closed_without_report'));
+}
+
+console.log('case 13: CLOSED 但 is_complete=false → 报错（自相矛盾）');
+{
+  const r = run(base({
+    status: 'CLOSED',
+    report: { final_report_path: '/x/r.md', is_complete: false },
+  }));
+  expect('报 closed_but_incomplete', has(r, 'closed_but_incomplete'));
+}
+
+console.log('case 14: phase=closed 但 status=RUNNING → 报错');
+{
+  const r = run(base({ phase: 'closed', status: 'RUNNING' }));
+  expect('报 phase_status_mismatch', has(r, 'phase_status_mismatch'));
+}
+
+console.log('case 15: 切片 state 非法枚举 → 报错');
+{
+  const r = run(base({ slices: { 'slice-01': { state: 'FINISHED' } } }));
+  expect('报 invalid_enum', has(r, 'invalid_enum'));
+}
+
+// ── fix_contracts（2026-11-09 新增）──
+console.log('case 19: fix_contracts 字段齐全 → 通过');
+{
+  const r = run(base({
+    fix_contracts: [{
+      finding_id: 'F1', fix_agent_id: 'fx1', registered_at: '2026-11-09T10:00:00Z',
+      defect_statement: '当 X 时 Y 发生，预期 Z',
+      disproof_condition: 'node check.mjs 应红',
+      baseline_result: 'exit 1: assertion failed at line 12',
+      rollback_command: 'git checkout -- a.js',
+      test_path: 'tests/a.test.js',
+    }],
+  }));
+  expect('无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
+}
+
+console.log('case 20: fix_contract 缺 rollback_command → 报错');
+{
+  const r = run(base({
+    fix_contracts: [{
+      finding_id: 'F1', fix_agent_id: 'fx1', registered_at: '2026-11-09T10:00:00Z',
+      defect_statement: 'x', disproof_condition: 'y',
+      baseline_result: 'ok', test_path: 't.js',
+    }],
+  }));
+  expect('报 fix_contract_incomplete',
+    r.r?.errors?.some(x => x.rule === 'fix_contract_incomplete' && /rollback_command/.test(x.field ?? '')));
+}
+
+console.log('case 21: 既无 baseline_result 也未声明 unverified → 报错');
+{
+  const r = run(base({
+    fix_contracts: [{
+      finding_id: 'F1', fix_agent_id: 'fx1', registered_at: '2026-11-09T10:00:00Z',
+      defect_statement: 'x', disproof_condition: 'y',
+      rollback_command: 'git checkout -- a.js', test_path: 't.js',
+    }],
+  }));
+  expect('报 baseline_not_recorded', r.r?.errors?.some(x => x.rule === 'baseline_not_recorded'));
+}
+
+console.log('case 22: 无 baseline_result 但声明 baseline_unverified=true → 通过');
+{
+  const r = run(base({
+    fix_contracts: [{
+      finding_id: 'F1', fix_agent_id: 'fx1', registered_at: '2026-11-09T10:00:00Z',
+      defect_statement: 'x', disproof_condition: 'y',
+      baseline_result: null, baseline_unverified: true,
+      rollback_command: 'git checkout -- a.js', test_path: 't.js',
+    }],
+  }));
+  expect('无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
+}
+
+console.log('case 23: 执行相位无 current_plan → 报错（§0.8.4）');
+{
+  const r = run(base({ phase: 'wave2a', status: 'RUNNING' }));
+  expect('报 missing_plan_in_execution_phase',
+    r.r?.errors?.some(x => x.rule === 'missing_plan_in_execution_phase'));
+}
+
+console.log('case 24: current_plan 缺 exit_condition → 报错');
+{
+  const r = run(base({ phase: 'wave2a', status: 'RUNNING',
+    current_plan: { phase: 'wave2a', steps: [{ action: 'a', done_when: 'b' }] } }));
+  expect('报 plan_without_exit_condition',
+    r.r?.errors?.some(x => x.rule === 'plan_without_exit_condition'));
+}
+
+console.log('case 25: 计划步骤缺 done_when → 报错');
+{
+  const r = run(base({ phase: 'wave2a', status: 'RUNNING',
+    current_plan: { phase: 'wave2a', steps: [{ action: '派 16 个 agent' }],
+      exit_condition: '全部终态' } }));
+  expect('报 plan_step_without_done_when',
+    r.r?.errors?.some(x => x.rule === 'plan_step_without_done_when'));
+}
+
+console.log('case 26: 完整计划 → 通过');
+{
+  const r = run(base({ phase: 'wave2a', status: 'RUNNING',
+    current_plan: { phase: 'wave2a',
+      steps: [{ action: '派宽扫', done_when: '全部终态' },
+              { action: '派深挖', done_when: '预算内派完' }],
+      exit_condition: '账本更新完' } }));
+  expect('无 current_plan 相关错误',
+    !r.r?.errors?.some(x => /plan/i.test(x.rule ?? '')));
+}
+
+console.log('case 27: 计划超过 12 步 → 警告（过细会损害质量）');
+{
+  const steps = Array.from({length: 15}, (_, i) => ({ action: '步骤' + i, done_when: 'done' }));
+  const r = run(base({ phase: 'wave2a', status: 'RUNNING',
+    current_plan: { phase: 'wave2a', steps, exit_condition: 'x' } }));
+  expect('报 plan_too_granular 警告',
+    r.r?.warnings?.some(x => x.rule === 'plan_too_granular'));
+}
+
+console.log('case 28: 计划 5 步 → 无过细警告');
+{
+  const steps = Array.from({length: 5}, (_, i) => ({ action: '阶段' + i, done_when: 'done' }));
+  const r = run(base({ phase: 'wave2a', status: 'RUNNING',
+    current_plan: { phase: 'wave2a', steps, exit_condition: 'x' } }));
+  expect('无 plan_too_granular',
+    !r.r?.warnings?.some(x => x.rule === 'plan_too_granular'));
+}
+
+console.log(`
+=== 结果: ${pass} 通过 / ${fail} 失败 ===
+`);
+process.exit(fail > 0 ? 1 : 0);

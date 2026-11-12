@@ -52,3 +52,22 @@ role: recon
 返回一个符合 `output-contract.md` 的顶层信封，`role` 必须为 `"recon"`。`payload` 的字段定义见 `output-contract.md` 第 2.1 节，与 `orchestrator/scale-mapping.md` 第 1 节的输入契约精确对齐。
 
 主Agent只检查两件事：契约是否合规、`slice_count == len(audit_slices)` 是否成立。它**不读取**你的切片内容。
+
+## 4. 产物格式（硬要求）
+
+**你的产物文件必须以一个 ```json 代码块结尾**，里面是 `output-contract.md` §1 定义的信封。
+
+正文随便写（分析、证据、表格），但**最后一个代码块必须是完整 JSON**。
+
+写完立刻自检：
+
+```bash
+node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role recon
+```
+
+退出码非 0 → **不得返回**，按它给的修法补齐。
+
+> **为什么写这条**：2026-11-09 实测 15 个真实产物，**0 个含 JSON 信封**。
+> 根因是契约和模板只在示例里出现过一次 JSON，从没有一句「必须写」。
+> 代价是下游写了 73 行 `salvageFromMarkdown()` 去猜——**补丁，不是护栏**。
+

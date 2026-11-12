@@ -93,9 +93,21 @@ agent = spawn(system=system, tools=["Read", "Grep", "Glob", "Bash"])
 ### 4.3 文件读写权限：`wrappers/*.md` 的 `tools`
 
 - `fix-worker.md` 需要 `Edit` / `Write`；
-- 其余四个 wrapper 只需要只读工具。
+- 其余五个 wrapper（`recon-scout` / `sweep-scout` / `audit-specialist` / `critique-panel` / `verifier`）只需要只读工具。
 
 如果目标 harness 用不同的工具命名（例如 `str_replace_editor`、`write_file`），**必须**改写 `tools` 字段，否则子 Agent 会拿不到写权限，或拿到不该有的写权限（验收 Agent 有写权限会破坏"只读验收"的设计）。
+
+### 4.4 状态持久化能力（2026-11-01 新增）
+
+`artifacts/run-state.md` 定义的 `state.json` 是断点续跑的唯一依据。按 harness 能力分三档：
+
+| 档位 | 判定 | 落地方式 |
+|---|---|---|
+| **A · 支持外部状态** | 调度器可读写文件、可查 agent 运行状态 | `state.json` 由调度器维护，可靠性最高 |
+| **B · 只能写文件** | 模型能写文件，但查不到 agent 运行状态 | `state.json` 由主 Agent 写；`in_flight` 的清理只能靠「查产物是否存在」判断，**禁止用文件 mtime**（见 `run-state.md` 第 4 节） |
+| **C · 无文件系统** | 纯对话 | **无法实现续跑**。必须明确告知用户：本框架在此环境下无法从中断恢复，只能一次跑完 |
+
+**C 档的处理原则**：不要假装支持续跑。宁可少一个能力，也不要让用户以为中断后能接上——那会让他在长任务里失去保存进度的机会。
 
 ---
 

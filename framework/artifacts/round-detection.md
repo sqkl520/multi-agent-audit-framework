@@ -3,7 +3,7 @@ file: artifacts/round-detection.md
 title: 轮次探测（机械规则）
 group_order: 5
 loaded: 主Agent在波次一启动前派一个轻量Agent执行；主Agent本身不执行本文件中的任何读取动作
-source: 续写，遵守 orchestrator/protocol.md 的"主Agent零裁量"原则
+source: 续写，遵守 orchestrator/protocol.md 第 1 节的裁量分级（L0 禁止 / L1 留痕 / L2 自由）
 ---
 
 # artifacts/round-detection.md
@@ -90,7 +90,7 @@ source: 续写，遵守 orchestrator/protocol.md 的"主Agent零裁量"原则
 
 1. **优先**：由主Agent保证同一时刻只有一个探测Agent在跑。这是默认情况——轮次探测在波次一**之前**串行执行，不参与并发扇出。
 2. **若 harness 支持原子创建**：探测Agent在算出 `round_number` 后，立即以**独占方式**创建占位文件 `docs/reports/.round-claims/round{N}.claim`（注意：占位文件放在 `docs/reports` 下的**独立隐藏目录** `.round-claims/`，不放进 `round{N}/` 内，以免污染该轮次的产物目录、也不被 `report-naming.md` 的命名正则约束）。创建成功即锁定该号；若创建失败（已存在），说明被其他实例抢占，**重新扫描并取 max+1**，最多重试 3 次。
-3. **若 harness 不支持原子创建**：探测Agent在返回中附带 `claim_token`（时间戳 + 随机串），主Agent负责校验唯一性。若发现两个探测结果冲突，主Agent作废两者并按 `protocol.md` 第 4 节派、全量重跑探测。
+3. **若 harness 不支持原子创建**：探测Agent在返回中附带 `claim_token`（时间戳 + 随机串），主Agent负责校验唯一性。若发现两个探测结果冲突，主Agent作废两者，按 `protocol.md` 第 4.0 节的**分类重派**处理——重派探测 Agent，不重跑已完成的其他 Agent。
 
 **禁止**：用"当前时间戳"代替轮次号（会破坏历史连续性），或用"随机数"（会导致目录膨胀）。
 

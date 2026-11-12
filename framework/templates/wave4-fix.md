@@ -9,6 +9,19 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 12 轮)
 # templates/wave4-fix.md
 `templates/wave4-fix.md` 是整条链路中**唯一授予写权限**的模板。它的设计难点不在“怎么改代码”，而在**如何让一个写操作受限、可审计、可回滚，且不把副作用留给下游验收波去发现**。搜索到的材料给出了几个必须吸收的锚点：Active Remediation 的 `minimal-safe-diff` 把“安全修复”定义为**≤10 行、单生产文件 + 测试文件、不跨文件、不改公共 API**[^ref0]；sdd-parallel 用**三层范围守卫**拦截越界编辑，并靠 AST + 调用图计算**语义爆炸半径**来防止“孤立分支测试通过、合并后灾难性失败”[^ref1]；break-ai-fix-loops 的核心纪律是**三次尝试预算 + 真实路径证明 + 已测试的回滚**，而不是 patch-and-retry[^ref2]；callsphere 明确指出**爆炸半径由授予的权限决定**——文件系统范围、命令权限、网络与密钥访问，而不是由 Agent 的自我声明决定[^ref3]；NeurIPS 的 silent regression 证据进一步证明，**让修复Agent自己写测试并运行，既不提高解决率也不降低回归率**，部署时验证必须依赖外部提供的、能直接瞄准故障的测试，而不是 Agent 自证的“通过”[^ref4]。这些原则共同决定了：修复Agent必须是**窄边界、可回滚、不自我验收**的执行单元。
 
+> **本框架证据链中最硬的一条，必须读懂它的完整含义**：NeurIPS 2026 的《Silent Regressions: The Verification Gap in Coding Agents》[^ref4] 逐字给出：「**Prompting GPT-5 to write and run a failing test moves neither resolve nor regression rate**，与基线在 10 个百分点边际内等价」。它的对照实验更关键：
+>
+> | 验证方式 | silent regression 率 |
+> |---|---|
+> | FAIL TO PASS **外部**测试（能直接瞄准故障） | **4.8%** |
+> | 让修复 Agent 自己随机写测试 | 10.0% |
+> | **不验证 / 自证**（基线） | **18.8%** |
+>
+> **三个推论，分开说清楚，不要混用：**
+> 1. 「让修复 Agent 自己写并跑测试」**既不提高解决率也不降低回归率**——这是波次四/五必须分离、且修复 Agent 不得自称"已修复"的直接依据；
+> 2. 真正的降幅来自「**外部提供的、能直接瞄准故障的**测试」——这决定了 `wave5-verify.md` 的验收必须**独立构造**触发条件，而不是复用修复者选的检查；
+> 3. 随机/自选测试只把回归率从 18.8% 降到 10.0%，与外部瞄准测试的 4.8% 差一倍以上——**「有测试」不等于「测试瞄准了缺陷」**，这是变异检验（`mutation_check`）不可省略的量化理由。
+
 
 ## 文件头部：强制加载与写权限边界
 
@@ -42,7 +55,9 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 12 轮)
 
 ## 第 2 节：修复契约的前置登记——编辑之前必须写下来的五个字段
 
-break-ai-fix-loops 的核心实践是：**在第一次编辑之前，记录精确的缺陷、能证伪它的行为、被测路径、基线结果、以及回滚命令**[^ref9]。修复Agent在动手修改之前，必须在内部（或账本的 `fix_contract` 字段中）登记以下五个字段。这些字段不直接出现在 `output-contract` 的最终 `payload` 中，但它们是修复Agent执行修改的前置条件；缺失任一字段，修复Agent**不得**进入编辑阶段。
+break-ai-fix-loops 的核心实践是：**在第一次编辑之前，记录精确的缺陷、能证伪它的行为、被测路径、基线结果、以及回滚命令**[^ref9]。修复Agent在动手修改之前，**必须**把这五个字段写进主 Agent 的 `state.json` 的 `fix_contracts` 数组（见 `artifacts/run-state.md`），并且 `registered_at` 必须早于你对该缺陷的第一次 `Edit`。缺失任一字段，修复Agent**不得**进入编辑阶段，主 Agent 判 `CONTRACT_VIOLATION`。
+
+> **⚠ 2026-11-09 修正**：本节原文写的是「在内部（或账本的 `fix_contract` 字段中）登记」。「在内部」不是可接受的落点——子 Agent 的内部推理不落盘，主 Agent 和验收波都读不到，`rollback_command` 也就无人可用。`state.json` 里此前也没有 `fix_contracts` 字段，规则要求往一个不存在的地方写。现已在 `artifacts/run-state.md` 补上该字段，并由 `tools/check-state.mjs` 机械校验。
 
 | 前置字段 | 内容 | 用途 |
 |---|---|---|
@@ -120,8 +135,8 @@ break-ai-fix-loops 的核心实践是：**在第一次编辑之前，记录精�
 | `affected_issues` | `open_items` 中新增 `kind: "AFFECTED_BY_FIX"` 条目 | 每一条 `affected_issues` 生成一个 `open_item`，`blocking: false`，`next_action: "REASSIGN_TO_VERIFY"` |
 | `residual_risks` 中的 `LARGE_PATCH` / `PUBLIC_API_CHANGE` / `IMPACT_UNVERIFIED` | `open_items` 中新增 `kind: "REGRESSION_SCAN_REQUIRED"`，`blocking: true` | 阻止 wave-5 对该修复仅做单点验收；验收波必须包含回归扫描 |
 | `residual_risks` 中的 `BASELINE_UNVERIFIED` | 写入对应 `open_item` 的 `summary`，并标记 `requires_baseline_confirmation: true` | 验收波第一步必须是基线确认 |
-| `residual_risks` 中的 `TEST_CONFLICT` | `open_items` 中新增 `kind: "HUMAN_DECISION_REQUIRED"`，`blocking: true` | 不进入自动验收，等待人工裁决 |
-| `residual_risks` 中的 `ROLLBACK_UNAVAILABLE` | `deferred_items` 中新增一条，`requires_human_intervention: true` | 验收失败时无法自动回滚，必须人工介入 |
+| `residual_risks` 中的 `TEST_CONFLICT` | `open_items` 中新增 `kind: "HUMAN_DECISION_REQUIRED"`，`blocking: true` | **不阻止本轮终止**：该条不记为已修复，进最终报告「待人工裁决」清单，本轮自动收尾并开下一轮 |
+| `residual_risks` 中的 `ROLLBACK_UNAVAILABLE` | `deferred_items` 中新增一条，`requires_human_intervention: true` | 验收失败时无法自动回滚；该条标 `UNVERIFIED_TARGET` 进下一轮，**不等待人工** |
 | `verification_commands` | 不写入 Resume Packet | 验收Agent**不得**读取修复Agent的验证命令作为验收依据；验收必须独立执行 |
 
 **关键纪律**：修复Agent的 `verification_commands` **不进入** Resume Packet 的 `open_items` 或 `closed_waves` 摘要，因为验收Agent一旦看到“修复Agent说已经通过了”，就会倾向于复述而不是独立验证。验收Agent只从 `handoff-schema` 中的 `finding_ref` 和**原始验收标准**出发，修复Agent的执行记录留在其 `artifact_path` 指向的文件中，只供审计追溯，不作为验收输入。
@@ -172,12 +187,12 @@ break-ai-fix-loops 的核心实践是：**在第一次编辑之前，记录精�
 [^ref1]: [sdd-parallel](https://pypi.org/project/sdd-parallel/)
 [^ref2]: [break-ai-fix-loops](https://opensmartroute.ai/marketplace/sickn33-agentic-awesome-skills-break-ai-fix-loops)
 [^ref3]: [Risk Management for Parallel Claude Code Agents on Desktop](https://callsphere.ai/blog/risk-management-for-parallel-claude-code-agents-on-desktop)
-[^ref4]: [Silent Regressions: The Verification Gap in Coding Agents](https://neurips.cc/virtual/2026/loc/atlanta/171452)
+[^ref4]: Aman Mehta, *Silent Regressions: The Verification Gap in Coding Agents*, NeurIPS 2026 Poster (Workshop 137562) — [规范地址](https://neurips.cc/virtual/2026/poster/171452)
 [^ref5]: [Risk Management for Parallel Claude Code Agents on Desktop](https://callsphere.ai/blog/risk-management-for-parallel-claude-code-agents-on-desktop)
 [^ref6]: [Active Remediation — Mechanics](https://raw.githubusercontent.com/event4u-app/agent-config/refs/heads/main/docs/guidelines/agent-infra/active-remediation-mechanics.md#1)
-[^ref7]: [Silent Regressions: The Verification Gap in Coding Agents](https://neurips.cc/virtual/2026/loc/atlanta/171452)
+[^ref7]: Aman Mehta, *Silent Regressions: The Verification Gap in Coding Agents*, NeurIPS 2026 Poster (Workshop 137562) — [规范地址](https://neurips.cc/virtual/2026/poster/171452)
 [^ref8]: [Active Remediation — Mechanics](https://raw.githubusercontent.com/event4u-app/agent-config/refs/heads/main/docs/guidelines/agent-infra/active-remediation-mechanics.md#1)
 [^ref9]: [break-ai-fix-loops](https://opensmartroute.ai/marketplace/sickn33-agentic-awesome-skills-break-ai-fix-loops)
-[^ref10]: [Silent Regressions: The Verification Gap in Coding Agents](https://neurips.cc/virtual/2026/loc/atlanta/171452)
-[^ref11]: [Silent Regressions: The Verification Gap in Coding Agents](https://neurips.cc/virtual/2026/loc/atlanta/171452)
+[^ref10]: Aman Mehta, *Silent Regressions: The Verification Gap in Coding Agents*, NeurIPS 2026 Poster (Workshop 137562) — [规范地址](https://neurips.cc/virtual/2026/poster/171452)
+[^ref11]: Aman Mehta, *Silent Regressions: The Verification Gap in Coding Agents*, NeurIPS 2026 Poster (Workshop 137562) — [规范地址](https://neurips.cc/virtual/2026/poster/171452)
 [^ref12]: [break-ai-fix-loops](https://opensmartroute.ai/marketplace/sickn33-agentic-awesome-skills-break-ai-fix-loops)

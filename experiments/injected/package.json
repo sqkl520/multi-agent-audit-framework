@@ -1,0 +1,6 @@
+{
+  "name": "gt-fixture",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Ground truth fixture: a small, correct task-queue service"
+}

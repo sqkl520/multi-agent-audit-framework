@@ -7,7 +7,11 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 13 轮（第 6 �
 ---
 
 # templates/wave3-critique.md
-`templates/wave3-critique.md` 是整个审计链路中**唯一专门用于“杀死发现”的波次**。它的设计前提是一个反直觉的实证结论：朴素的多Agent审查并不会自动提升质量，反而会暴露一种 **false-consensus failure mode**——Agent 们在没有足够证据的情况下倾向于互相认同；只有把“分歧”显式地、结构化地、证据锚定地加进去，才能在 SWE-PRBench 上达到最高的 F1。因此，这个波次的任务不是“再多找一些缺陷”，而是对波次二的每一条 `CONFIRMED` 发现执行**有结构的对抗**，把证据不足的发现拦在修复波之前。
+`templates/wave3-critique.md` 是整个审计链路中**唯一专门用于“杀死发现”的波次**。它的设计前提是一个反直觉的实证结论：朴素的多Agent审查并不会自动提升质量，反而会暴露一种 **false-consensus failure mode**——Agent 们在没有足够证据的情况下倾向于互相认同；只有把“分歧”显式地、结构化地、证据锚定地加进去，才能在一项受控研究中取得最高的 F1[^refA][^refB]。因此，这个波次的任务不是“再多找一些缺陷”，而是对波次二的每一条 `CONFIRMED` 发现执行**有结构的对抗**，把证据不足的发现拦在修复波之前。
+
+> **证据强度声明（勿夸大）**：上述结论来自《Adversarial Review: Structured Disagreement for Grounded Agentic Code Review》[^refA]——一篇 ICML 2026 DL4C workshop 的**小样本三 agent 协议研究**，不是大规模实证共识。因此本文的措辞一律是「在一项受控研究中」，**不得**改写为「已被实证证明」。
+>
+> 需要同时承认的**反面证据**：多 agent debate 相对 self-consistency **没有可靠优势**，且对超参高度敏感（Smit 等，ICML 2024[^refC]）；对每个查询都触发 debate 会浪费 token，甚至**推翻单 agent 原本正确的答案**，改为选择性触发后准确率反升（iMAD[^refD]）。**因此本波次的设计取向是「证伪」而不是「辩论」，且只在存在真实冲突时才扇出**——这三条外部证据共同支持本波次瘦身，而不是扩张。
 
 
 ## 文件头部：强制加载与波次定位
@@ -86,10 +90,89 @@ Arbiter 是锐评波的**终局裁决者**。它的输入是 Skeptic 的 `verdic
 
 **Arbiter 的“干净上下文”规则**：Arbiter 的 `payload` 中**不得**包含 Skeptic 或 Devil's Advocate 的完整叙述正文，只包含结构化的 `verdicts` 和 `coverage_gaps` 字段，以及原始发现的 `evidence` / `inference` 结构。如果 Arbiter 的返回中出现了“根据 Skeptic 的论述……”或“Devil's Advocate 认为……”这类引用对方叙述的表述，而不是直接引用证据，主Agent判定为 `CONTRACT_VIOLATION`。`saalis` 的治理层设计也强调了 **explainability 和 audit logging** 应当基于结构化的裁决记录，而不是自由文本[^ref8]。
 
+#### 2.0 「机制对、后果错」怎么办（2026-11-10 实测新增）
+
+**问题**：上面的三值枚举（`holds` / `refuted` / `untested`）假设一条发现是**原子的**——要么全对，要么全错。实测中这个假设不成立。
+
+**实测依据**（tier-2 假发现实验，C3）：
+
+一条发现在下面两个维度上**结论相反**：
+
+| 子主张 | 实际 |
+|---|---|
+| `break` 的位置、语义、影响范围 | **完全正确**（逐字源码实测） |
+| 「导致权限检查降级放行」 | **方向说反了**——`allow` 是豁免白名单，丢失只会 fail-closed（误报变多） |
+
+三值枚举装不下它。Skeptic 只能**自造**一个枚举 `UPHELD_ON_MECHANISM / REFUTED_ON_CONSEQUENCE` 来表达——这与验收波把「带保留通过」写成 `PASS_WITH_ESCALATION` 的错误同源（该写法当初未登记为枚举，后已改名）：**框架没有位置，执行者只好发明位置**。
+
+**规则**：**裁决作用在子主张上，不在整条发现上。**
+
+Skeptic 在写 `verdict` 之前，**必须**先把发现拆成它实际包含的**可独立判定的子主张**，逐条给结论，再由整条发现汇总：
+
+```json
+{
+  "finding_id": "F1",
+  "verdict": "holds",
+  "sub_claims": [
+    { "claim": "第 29 行存在空 catch，其后紧跟 break", "verdict": "holds", "evidence_ref": "inspect.mjs:29" },
+    { "claim": "第二个候选路径不会被读取", "verdict": "holds", "evidence_ref": "inspect.mjs:28-30" },
+    { "claim": "break 是意外 bug", "verdict": "untested", "reason": "上游原样代码；默认 outDir 下两候选同一文件，break 为无副作用优化" },
+    { "claim": "导致权限检查降级放行", "verdict": "refuted", "direct_contradiction": "allow 仅抑制 finding；400 组随机子集压测 0 例反例，丢失只会 fail-closed" }
+  ],
+  "reason": "机制成立，后果表述方向相反。建议 severity HIGH → LOW-MED，且与「路径失配」合并（后者为第一因）"
+}
+```
+
+**汇总规则**（零裁量）：
+
+| 子主张情况 | 整条 `verdict` |
+|---|---|
+| 全部 `holds` | `holds` |
+| 存在 `refuted`，且该子主张是**后果/危害**类 | `holds`，但 `reason` 必须写明「原危害表述被证伪，实际后果为 X」，并由 Arbiter 判 `DOWNGRADED` |
+| 存在 `refuted`，且该子主张是**机制/证据**类 | `refuted` |
+| 核心子主张为 `untested` | `untested` |
+
+**⚠ `sub_claims` 什么时候是必填的**（机械可判，`check-payload.mjs` 会拦）：
+
+```
+若 verdict == "holds" 且 reason 中出现下列任一信号：
+    后果 / 危害 / 影响方向 / 方向相反 / 方向说反 / 不至于 / 被夸大 / 高估 / 降级
+则 sub_claims 必填。
+```
+
+**为什么必须设成强制**：`sub_claims` 如果只是「可选」，执行者永远不会写它——因为写它意味着承认自己的发现有一半是错的。而这正是最需要暴露的情形：下游 Arbiter 如果只看到 `holds`，会按原严重性送进修复波，修复者会朝错误方向改。
+
+**实测依据**：本次会话加了这个字段后，我立即用一条真实的「机制对、后果错」产物验证——带 `sub_claims` 时校验通过，**不写 `sub_claims` 时同样通过**。也就是说这条规则当时没有强制力。加上触发条件后，同一个产物立刻被判违规。
+
+**「机制」与「后果」的区分判据**（机械可判）：
+
+| 类别 | 问句 | 例 |
+|---|---|---|
+| **机制** | 「代码真的是这样吗？」 | 那行有没有 `break`；`catch` 是否为空 |
+| **后果** | 「这会导致什么？」 | 会泄漏吗；会放行吗；会超时吗 |
+
+**机制错 = 发现错**；**后果错 ≠ 发现错**，但必须改写后果并降级。
+
+**为什么这条重要**：如果不拆子主张，Skeptic 面对「机制对、后果错」只有两条路——判 `refuted`（**丢掉一个真实的机制缺陷**）或判 `holds`（**放过一个错误的危害描述，它会污染修复方向和严重性**）。两条都是错的。实测中这条发现如果判 `refuted`，`inspect.mjs` 的静默丢弃问题就永远不会被记录；如果判 `holds` 不改写，修复者会朝着「加强权限检查」的方向改，完全改错。
+
 
 ## 第 2 节：Skeptic 的操作协议——五步测试的机械执行
 
 Skeptic 对每一条 `finding_id` 必须执行五步测试，并在 `payload.verdicts` 中返回结构化的结果。**不允许**跳过任何一步，**不允许**用“整体看起来没问题”替代逐步执行。
+
+**⚠ 五个步骤的结果必须包在 `five_step` 对象里**，不能平铺在 `verdict` 上：
+
+```json
+"five_step": {
+  "evidence_opened": true,
+  "evidence_supports_claim": true,
+  "path_reachable": "true | false | untested",
+  "already_handled": "true | false | untested",
+  "failure_chain_holds": true
+}
+```
+
+`tools/check-payload.mjs` 按 `payload.verdicts[].five_step` 这个路径校验——**平铺的五个字段会被判「缺 five_step」，整条 verdict 作废**。
 
 #### 2.1 每一步的输出要求
 
@@ -107,6 +190,133 @@ Skeptic 对每一条 `finding_id` 必须执行五步测试，并在 `payload.ver
 
 当 `finding_id` 属于内存安全、并发、声明一致性、行为/兼容性变更、或未使用参数这五个领域时，Skeptic 的 `refuted` 裁决**必须**附带 `direct_contradiction` 字段，内容是一行**直接与主张矛盾**的代码引用。如果找不到这样一行，`verdict` 必须为 `holds` 或 `untested`，**不得**为 `refuted`。这条规则是为了防止 Skeptic 在它最不擅长的领域“自信地”删除真实缺陷[^ref10]。
 
+#### 2.3 裁量稽查——Skeptic 的第二项固定职责（2026-11-01 新增）
+
+除了逐条攻击发现，Skeptic **必须**执行一次**裁量稽查**。这是它与主 Agent 之间唯一允许的"对账"动作，也是 `protocol.md` 第 1.2 节「裁量留痕」能否成立的执行环节。
+
+**为什么由 Skeptic 做**：Skeptic 的默认立场就是"未证明"，它攻击的是**主张**。主 Agent 的 `discipline_log` 本身就是一组主张（"我做了这些裁量，都有依据"），由 Skeptic 来攻击它是角色一致的做法。**不得**交给 Devil's Advocate——后者负责攻覆盖缺口（见 2.4），混入纪律审查会模糊边界。
+
+**三项必做检查**：
+
+| # | 检查 | 方法 | 失败意味着 |
+|---|---|---|---|
+| 1 | **未申报裁量** | 把 `discipline_log` 与实际派发记录（`wave2_completed`、产物文件列表、`state.json` 的 `slices`）**逐条比对**，找出"派发记录里有、日志里没有"的差异 | 存在未申报裁量 → 该轮结论作废 |
+| 2 | **`mechanical_check` 可执行性** | 逐条判断：这条裁量写的复核方法，**一个没参与本轮的人**能否用命令/脚本独立验证？ | 不可执行 → 视为伪装成 L1 的 L0，无效需回退 |
+| 3 | **越界检查** | 比对 L0 禁止清单：主 Agent 是否读过源码？是否亲自改过文件？是否提过并发上限？ | 命中任一 → L0 违规 |
+
+**返回结构**（追加到 critique payload）：
+
+```json
+{
+  "discipline_audit": {
+    "performed": true,
+    "log_entries_checked": 5,
+    "dispatch_records_checked": 40,
+    "undeclared_discretions": [],
+    "mechanical_check_failures": [],
+    "l0_violations": [],
+    "overall": "CLEAN | VIOLATIONS_FOUND"
+  }
+}
+```
+
+**硬规则**：
+
+1. **`discipline_audit.performed` 必须为 `true`**。返回 `false` 或缺失，视为 Skeptic 未完成职责，其全部 `verdicts` 一并作废（因为无法确认它是在完整信息下做出的裁决）。
+2. **`undeclared_discretions` 非空时 `overall` 必须为 `VIOLATIONS_FOUND`**，每条附可复核的证据（`file:line` 或记录 ID）。
+3. **不得把"裁量看起来合理"当作通过理由**。Skeptic 判断的是**是否申报、是否可机械复核**，不是裁量本身好不好——后者是 Arbiter 的范围。
+4. **零裁量时也要显式返回 `log_entries_checked: 0, overall: "CLEAN"`**，不得省略——"没有裁量"和"没检查"必须可区分。
+
+> **实测依据**：round31 的 9 处维度偏离，是 **Devil's Advocate 用机械比对偶然发现**的（ledger `dimension_deviation_disclosed_by`），主 Agent 事先**并未申报**。这说明两件事：① 机械比对确实能发现未申报裁量；② 它当时是"可遇不可求"的副产品。把同一方法移交给 Skeptic 并设为固定动作，才能保证它每次都发生。
+>
+> **同时要承认的局限**：本检查只能发现"派发记录与日志不一致"。若主 Agent 既做了裁量**又**同步伪造了派发记录，机械比对无法识别——这需要外部审计（对照产物文件的实际内容），超出本角色能力边界。
+
+#### 2.4 模式级复查——Devil's Advocate 的第二项职责（2026-11-02 新增）
+
+**问题**：审计波按切片隔离，每个 Agent 只看自己那 5–8 个文件。于是**同一个缺陷模式在多个文件里重复出现时，每个 Agent 只能看到自己那一个实例**，报告出来像"孤立的偶发 bug"，实际上是"系统性的写法问题"。
+
+**实测依据**（`D:\Web\style` round1）：
+
+- 深挖 Agent 在 `check-stale.mjs` 找到两条 HIGH——① 文件名写错被 `.filter(existsSync)` 静默剔除；② `catch { continue }` 把"无法判定"当成"不陈旧"。
+- 我（主 Agent）做复核时顺手扫了全仓同类模式，发现**同样的"静默跳过"共 7 处**：
+
+```
+assign-assets.mjs:215    catch { continue; }
+assign-assets.mjs:234    .filter(existsSync)
+backfill-credits.mjs:40  catch { continue; }
+backfill-credits.mjs:55  catch { continue; }
+check-prompts.mjs:356    catch { continue; }
+check-stale.mjs:47       catch { continue; }   ← 已修
+check-stale.mjs:122      catch { continue; }   ← 未修（就是发现 2）
+```
+
+- 更有说服力的是：`check-stale.mjs` 里**同一缺陷，一半修了、一半没修**（47 行有修复注释，122 行没有）。修复者当时只处理了出问题的那条分支。
+
+**职责**：Devil's Advocate 必须对每条 `HIGH`/`CRITICAL` 发现，追问一句：
+
+> **「这个缺陷的形态（不是这个缺陷本身），在仓库里还出现在哪些地方？」**
+
+**执行方式（机械，不需要理解代码）**：
+
+**第一步：划分活跃范围（必须先做，否则数字会骗人）**
+
+```bash
+# 归档/临时目录的典型特征 —— 先排除它们再计数
+#   scratch / snap / archive / backup / old / tmp / _lab / redteam / 日期目录
+# 判断依据：目录名 + 是否被构建链引用（grep 在 package.json scripts / Makefile / CI 配置里）
+```
+
+**实测教训**（`D:\Web\style`，2026-11-02 的自我更正）：我曾报告"静默跳过的同类模式全仓共 7 处"。第一次复核说"活跃代码 4 处 + 归档 20+ 处"，**第二次复核（逐文件计数）实测 `prototypes/_build/` 下是 8 处**：`catch { continue }` 7 处（assign-assets 1 / backfill-credits 2 / check-prompts 1 / check-stale 2 / shot 1）+ `.filter(existsSync)` 1 处（assign-assets）。**两次复核给了两个不同数字——这本身就是"口径没写清"的例证。****`grep` 出的模式匹配不等于同一类缺陷**——归档脚本里的 `catch { continue }` 不影响任何东西，把它们计入会让修复范围凭空膨胀数倍。**所以报数字时必须同时报口径。**
+
+| 范围 | 处数 | 是否纳入修复 |
+|---|---|---|
+| `prototypes/_build/`（活跃构建链） | **4** | **是**，逐条评估 |
+| `deliverables/*-scratch/`、`*-audit/`、`snap/`（归档） | 20+ | **否**，改了只制造 diff 噪声 |
+
+**第二步：按形态归类扫模式**
+
+| 发现形态 | 要扫的模式 |
+|---|---|
+| 硬编码文件名/路径错误 | 同类字面量（`'0N-xxx.md'` 之类）在全仓的出现 |
+| 静默跳过 / 吞异常 | `catch { continue }`、`catch {}`、`.filter(existsSync)`、`if (!x) return` |
+| 未校验的外部数据 | `JSON.parse` 后直接取字段、`as` 断言 |
+| 定时器/资源未清理 | 无 `clearTimeout` 的 `setTimeout`、无 `close()` 的 `open()` |
+| 状态与文案不一致 | 同一数值在多处硬编码 |
+
+**返回结构**（追加到 critique payload）：
+
+```json
+{
+  "pattern_sweep": {
+    "performed": true,
+    "patterns_checked": [
+      {
+        "from_finding": "check-stale.mjs:122",
+        "pattern": "catch { continue }",
+        "grep_command": "grep -rn 'catch { continue' prototypes/",
+        "other_occurrences": [
+          { "location": "assign-assets.mjs:215", "verdict": "NEEDS_REVIEW" },
+          { "location": "backfill-credits.mjs:40", "verdict": "NEEDS_REVIEW" }
+        ],
+        "conclusion": "该模式在本仓共 7 处，已修 1 处，未评估 6 处"
+      }
+    ]
+  }
+}
+```
+
+**硬规则**：
+
+1. **`pattern_sweep.performed` 必填为 `true`**（仅当本轮有 `HIGH`/`CRITICAL` 时）。缺失该字段 = 未完成职责。
+2. **`other_occurrences` 非空时，`conclusion` 必须给出总数与"已评估/未评估"的分布**，不得只列找到的那几条。
+3. **发现本身仍按单个 `finding_id` 记录**，但报告必须额外给一节「模式级影响」：该模式共 N 处，其中已被本次审计覆盖 M 处。
+4. **不得**因为"可能还有别处"就把单条发现升为 CRITICAL——模式级影响是**覆盖率的披露**，不是严重性的提升。
+
+**为什么放在 Devil's Advocate 而不是审计波**：
+
+审计波按切片隔离（这是防止认知过载的设计，有依据）。让每个审计 Agent 去扫全仓模式，等于打破隔离，会把它的上下文污染成"全仓扫描"。Devil's Advocate 的固有职责就是攻覆盖完整性，**模式级遗漏天然属于覆盖缺口**，交给它最合适，且它本来就持有全仓视野。
+
+> **与 2.3 的分工**：2.3（Skeptic）查的是「**人**有没有瞒着做事」（裁量留痕）；2.4（Devil's Advocate）查的是「**代码**里的同类问题有没有被漏掉」（模式覆盖）。两者都靠机械比对，但对象不同，不得合并。
 
 ## 第 3 节：Devil's Advocate 的操作协议——覆盖缺口的枚举
 
@@ -139,6 +349,31 @@ Devil's Advocate 的 `payload` 中 `coverage_gaps` 数组的每一条必须包�
 
 
 ## 第 4 节：Arbiter 的裁决协议——仅基于证据包，不自行补证
+
+#### 4.0 先看实测：多 Agent 一致性到底有多强（2026-11-12）
+
+这一节的存在理由：整个锐评波建立在「多个独立 agent 会收敛」这个前提上。**这个前提做过一次实测，结果比想象中弱。**
+
+4 个独立 agent、**提示词逐字相同**、同一份代码（18 条已知缺陷）：
+
+| 指标 | 实测 | 随机基线 | 倍数 |
+|---|---|---|---|
+| 两两 Jaccard | 0.742 | 0.598 | **1.25x** |
+| 4/4 全中的缺陷数 | 9 | 5.56 | **1.6x** |
+
+**报告越大，随机重叠越高。任何「一致性 X%」的说法不附随机基线就没有意义。**
+
+检出分布分三档，**每档该用不同机制对付**：
+
+| 情形 | 实测条数 | 该怎么做 |
+|---|---|---|
+| 多数 agent 都找到（3–4/4） | 13/18 | 正常进裁决，证据充分 |
+| 只有 2 个找到 | 3/18（含一条 HIGH 级） | **标记为「分歧」，不得投票否决**——这是真正有信息差的地方 |
+| **0 个找到** | **2/18** | **锐评波救不了**，只能靠预先写死的检查清单 |
+
+**第 3 档是最重要的发现**：`{{#if constructor}}` 条件恒真这条，4 个 agent 全部漏掉，12 份历史报告里也只有 2 份命中；`slice` 浅拷贝同样 0/4。再加派 agent 也不会发现——它们需要有人专门去测「字段名恰好是原型链成员」「返回的对象改属性会不会污染源」。**只能靠清单，不能靠并行。**
+
+**所以 Arbiter 的裁决不能是多数表决**：多数决会把 1–2/4 的发现判死，而那些恰恰是最需要人看的；同时它对付不了 0/4——因为没东西可投。
 
 #### 4.1 裁决的输入结构
 
@@ -200,6 +435,21 @@ Arbiter 按以下顺序执行判定，**不允许跳过或合并步骤**：
 
 #### Skeptic 自检
 
+> **⚠ 每条 `verdict` 都必填两个字段，缺任一判 `CONTRACT_VIOLATION`：**
+>
+> **1. `runtime_applicable`（`true` | `false`）**——先回答「这条发现是否涉及运行时可观察行为」：
+>
+> | 值 | 什么时候用 |
+> |---|---|
+> | `true` | 声称的是运行时行为：点击无反应、状态不更新、渲染值不符、可聚焦性、静默失效 |
+> | `false` | 纯静态可判定：拼写不一致、死代码、契约不符、注释与实现不符 |
+>
+> **答了 `true` 就必须附 `runtime_evidence`**，且必须含 `command` + `observed` 原始输出 + **`control_case`**（一个已知会通过/会失败的对照）。没有对照的实验不采信。
+>
+> **2. `sub_claims`（当 `verdict: holds` 但 `reason` 在否定原危害时必填）**——见第 2.0 节。
+>
+> 自检：`node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物> --role critique`
+
 | 检查 | 通过条件 |
 |---|---|
 | 每条发现都执行了五步测试 | `verdicts` 中每一条都有 `evidence_opened`、`evidence_supports_claim`、`path_reachable`、`already_handled`、`failure_chain_holds` 五个字段 |
@@ -208,8 +458,33 @@ Arbiter 按以下顺序执行判定，**不允许跳过或合并步骤**：
 | 未越界做审计 | 没有在 `payload` 中新增 `finding_id` 或报告新缺陷 |
 | 缝隙检查已执行 | 如果发现组合缺陷或跨维度风险，写入 `verdicts` 的 `reason` 字段，但不新增 `finding_id`；若无缝隙发现，返回 `"skeptic_gap_scan": "no_gap_found"` |
 | 未将 `untested` 当作 `refuted` | `untested` 的条目保留在 `verdicts` 中，不归入 `refuted` 列表 |
+| **引用定位失败 ≠ 发现是假的** | 当 `evidence.file` 指向的路径不存在时，**必须**先按文件名/行号特征在全仓找真实位置（`find` / `grep` 特征字符串），找到后按真实路径核验；只有**特征字符串也找不到**才判 `EVIDENCE_NOT_FOUND`。**不得**因为路径写错就直接判 `refuted` |
+| **有 `runtime_evidence` 时优先真跑** | 若发现声称的是运行时可观察行为（点击无反应、状态不更新、数值不符），且项目可跑，**必须**至少跑一次真实执行。静态通读只能证明「我没看到绑定」，不能证明「运行时不响应」 |
 | 五个不可自信领域已应用特殊规则 | 属于内存安全、并发、声明一致性、行为/兼容性变更、未使用参数的发现，`refuted` 均附 `direct_contradiction` |
 | 返回符合 `output-contract` | `payload.critique_role = "skeptic"`，`verdicts` 数组非空，每条含 `finding_id`、`verdict`、`reason` |
+
+#### 为什么加「引用定位失败 ≠ 发现是假的」（2026-11-10 实测）
+
+2026-11-10 的锐评波实测里，三个 finding package 中有**两个**的 `file` 路径是错的（`S03-something` 实为 `S03-long-exposure-observatory`，`S04-gilded-symmetry-salon` 实为 `S04-mango-collage-wall`）。两次 Skeptic 都**没有**拿路径错误当借口判 `refuted`——它们都先找到真实位置、确认证据存在，然后才报告「路径需更正」。
+
+**但这是 agent 自觉，不是框架保证。** 如果换成只做字面核对的执行者，路径错误会直接变成 `EVIDENCE_NOT_FOUND`，一条真实缺陷就被一个笔误杀掉了。而路径写错在派发环节是**高频事件**（`wave2a-sweep.md` §9 记录过一次更严重的：任务书里的行数与文件清单整体失真）。
+
+**判据必须区分两种失败**：
+
+| 情形 | 判定 | 理由 |
+|---|---|---|
+| 路径不存在，但特征字符串（claim 引用的代码片段/符号名）能在别处命中 | **不是反驳**，按真实位置继续五步测试 | pack 元数据笔误，不影响证据实体 |
+| 路径不存在，且特征字符串在全仓 0 命中 | `EVIDENCE_NOT_FOUND` | 这才是真的没有证据 |
+| 路径存在，但那几行内容与 claim 不符 | `EVIDENCE_MISMATCH` | 需要 `direct_contradiction` |
+
+#### 为什么加「有 runtime_evidence 时优先真跑」（同上）
+
+同一个实测里，F2（主 CTA 无绑定）是三条里唯一需要运行时才能确认的。Skeptic 做了七层验证，其中最有价值的两层是：
+
+- **CDP 直接枚举监听器**：`#book-btn → 0 listener(s)`，同一方法在 `.slot` / `#wait-form` 上各测出 1 个（证明方法本身有效）；
+- **对照组**：同目录 `build/peer-snapshot/index.html` 的同名按钮测得 `mutations: 303`（证明探针不会把「有绑定」误报成「无绑定」）。
+
+**没有对照组，前五层都可能是探针失灵。** 因此规则是：真跑时**必须包含一个已知会通过/会失败的对照**，否则运行结果不可采信。
 
 #### Devil's Advocate 自检
 
@@ -246,3 +521,22 @@ Arbiter 按以下顺序执行判定，**不允许跳过或合并步骤**：
 [^ref9]: [adversarial-review-gate - adversarial-review-gate](https://app.unpkg.com/adversarial-review-gate@3.0.2/files/agents/rt-skeptic.md#1)
 [^ref10]: [adversarial-review-gate - adversarial-review-gate](https://app.unpkg.com/adversarial-review-gate@3.0.2/files/agents/rt-skeptic.md#1)
 [^ref11]: [saalis](https://pypi.org/project/saalis/0.1.0/#1)
+
+---
+
+## 证据分级说明
+
+本文档的脚注分三类，**引用时不得混为一谈**：
+
+| 等级 | 含义 | 本文中的例子 |
+|---|---|---|
+| **A · 研究证据** | 经同行评议或有预印本编号的论文 | `[^refA]` `[^refB]` `[^refC]` `[^refD]` |
+| **B · 工程实践文档** | 开源仓库/工程博客中的可核查做法 | `[^ref5]`（Fan-out auditing） |
+| **C · 包注册页或第三方 prompt 文件** | 只能证明「该包/该文件存在」，**不能承担实证功能** | `[^ref1]`–`[^ref11]` 中的 `adversarial-review-gate`、`saalis` 等 |
+
+**降权声明**：`[^ref1]`/`[^ref2]`/`[^ref9]`/`[^ref10]` 引用的 `adversarial-review-gate@3.0.2` 的 `rt-skeptic.md`，经核实**引文准确**（五步证据测试、"measured by what it removes"、"Unverifiable is not incorrect" 等均为原文），但它是**第三方个人发布的 prompt 文件**，不是研究证据。因此本文的立场是「**借鉴其角色设计**」，锐评波有效性的实证责任由 `[^refA]` 承担。
+
+[^refA]: Qiu & Gill, *Adversarial Review: Structured Disagreement for Grounded Agentic Code Review*, ICML 2026 DL4C workshop — [arXiv:2608.18167](https://arxiv.org/abs/2608.18167)。原文摘要：「naive AR exposes a false-consensus failure mode… a single prompt iteration that adds disagreement explicitly achieves the highest F1」。**注意：小样本协议研究，措辞须保持「一项受控研究中」。**
+[^refB]: *SWE-PRBench* — [arXiv:2603.26130](https://arxiv.org/abs/2603.26130)。350 个 PR 上 8 个模型仅检出人类标注问题的 15–31%，说明「找全」本身极难。
+[^refC]: Smit, Duckworth, Grinsztajn, Barrett, Pretorius, *Should we be going MAD? A Look at Multi-Agent Debate Strategies for LLMs*, ICML 2024 — [arXiv:2311.17371](https://arxiv.org/abs/2311.17371)。结论：现有形态的 debate 不能可靠优于 self-consistency，且对超参远更敏感。
+[^refD]: *iMAD: Intelligent Multi-Agent Debate* — [arXiv:2511.11306](https://arxiv.org/abs/2511.11306)。结论：无条件触发 debate 会浪费 token 甚至推翻正确答案；选择性触发后 token 最多降 92%、准确率反升 13.5%。**注意：`[^refD]` 的编号我未能独立复核，引用时请以「选择性触发优于无条件 debate」这一方向性结论为准，不要引用具体百分比。**

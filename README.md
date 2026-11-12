@@ -2,10 +2,10 @@
 
 一套「主 Agent 只调度、子 Agent 干活」的代码审计提示词框架，用上下文隔离来对抗长链路审计中的判断漂移。
 
-给任何 harness 和模型用，分五个波次做代码审计：
+给任何 harness 和模型用，默认路径分四个只读波次做代码审计（修复为独立的可选路径）：
 
 ```
-侦察 → 审计 → 锐评 → 修复 → 验收
+侦察 → 宽扫 → 深挖 → 锐评 → 报告
 ```
 
 核心主张是一句反常识的话：**让主 Agent 什么都不做**。主 Agent 不读代码、不读报告、不做判断，只负责派 Agent、看结构化返回、按写死的规则调度。所有需要「看一眼」才能决定的事，都必须转化为一个子 Agent 任务。
@@ -70,9 +70,27 @@ ls docs/reports/ | grep -i '^round' | sort -V | tail -5
 
 ## 执行流程
 
-### 步骤 0 · 轮次探测
+> **🔒 第一原则 · 零写入**：除非你在本次对话中**明确要求**，主 Agent 与所有子 Agent **不得对被审仓库做任何写入**——不 `commit`、不 `push`、不 `add`、不编辑文件、不新建文件、不安装依赖。审计是纯只读活动，报告写到被审仓库之外（或 `.gitignore` 覆盖的目录）。
+>
+> **「修复」授权不等于「提交」授权**：即使你让它修代码，它也只能改 `target_files`，**不得 commit**。改文件 ≠ 可以提交，这是两道独立的授权门。
+>
+> 报告末尾必须附 `git status` 自检输出，证明跟踪文件零改动。详见 [`framework/orchestrator/protocol.md`](framework/orchestrator/protocol.md) 第 0 节。
 
-主 Agent 派子 Agent 执行 `artifacts/round-detection.md`，返回 `round_id` 写入账本。
+> **2026-11-01 结构性修订**：默认路径已改为**只读**，修复移出默认流程。原因：round31 实跑中 83 条待修复只完成 1 条，整轮停在 `IN_PROGRESS` 且**没有最终报告**。修复是唯一有写权限、规则最严的角色，把它放在默认路径里等于让最脆弱的环节决定整轮能否结束。
+>
+> 详见 [`docs/analysis/2026-11-01-proposal.md`](docs/analysis/2026-11-01-proposal.md) 与 [`framework/orchestrator/protocol.md`](framework/orchestrator/protocol.md) 第 0.7 节。
+
+```
+【默认路径 · 只读】侦察 → 宽扫 → 深挖 → 锐评 → 出报告
+                  全程无写权限、无副作用；终止状态必然是 CLOSED 或 PARTIALLY_CLOSED
+【可选路径 · 有副作用】修复 → 验收（独立启动，消费默认路径报告的 UPHELD 发现）
+```
+
+### 步骤 0 · 轮次探测 + 状态机初始化
+
+主 Agent 派子 Agent 执行 `artifacts/round-detection.md`，返回 `round_id`。
+
+**关键**：若 `docs/reports/round{N}/state.json` 已存在且 `status != CLOSED`，**续跑它，不要新开 round{N+1}**。round31 停在 `IN_PROGRESS`，新开一轮会重复审已审过的 40 片。
 
 **门控**：`round_id` 非空。返回 `PERMANENT_FAILURE`（目录读不了）则**停止，不要猜一个编号**。
 
@@ -95,62 +113,83 @@ effective_slices = len(audit_slices) + len(unverified)
         ↓ 若账本有 covered_modules 且带"上轮成功"标记，按 30% 上限折减
         ↓ 查 scale-mapping 第 3 节映射表
 scale_decision = {
-  effective_slices:         <上面结果>,
-  planned_discovery_agents: min(effective_slices, 40),
-  concurrency_window:       min(8, harness_cap),      # 1–5 切片档是 min(5, cap)
-  admission_ceiling:        min(60, effective_slices + 30),
+  effective_slices:              <上面结果>,
+  concurrency_window:            min(8, harness_cap),      # 1–5 切片档是 min(5, cap)
+  planned_sweep_agents:          <见下：宽扫与深挖共享 discovery_budget，不能先到先得>,
+  admission_ceiling:             min(60, effective_slices + 30),
   total_budget: 60,  reserved_for_downstream: 20,  discovery_budget: 40,
-  critique_roles:           <按切片数档位查表>,
-  critique_extra:           null | "cross-pattern-scan"
+  critique_roles:                <按切片数档位查表>,
+  critique_extra:                null | "cross-pattern-scan",
+  planned_deep_dive_agents:      null,     # 宽扫完成后才确定
 }
-写入账本，之后不再修改
+写入账本，之后不再修改（深挖相关字段在二A 闭合后第二段冻结）
 ```
 
-锐评角色随规模变化：`1–5` 切片 → `[Skeptic, Arbiter]`；`6–20` → 加 `Devil's Advocate`；`>20` → 再加 1 个交叉模式扫描。
+**宽扫预算必须与深挖切分，否则两遍制会失效**：
+
+```
+if effective_slices < discovery_budget:
+    planned_sweep_agents = effective_slices
+    deep_dive_budget     = discovery_budget - effective_slices
+else:
+    sweep_budget         = ceil(discovery_budget × 0.4)
+    planned_sweep_agents = min(effective_slices, sweep_budget)
+    deep_dive_budget     = discovery_budget - planned_sweep_agents
+```
+
+> **为什么**：若写成 `planned_sweep_agents = min(effective_slices, discovery_budget)`，当 `effective_slices ≥ discovery_budget` 时（round31 是 85 ≥ 40），宽扫会**吃光全部预算**，深挖可用预算为 0，两遍制退化成"只宽扫、零深挖"——**比原设计更糟**。代入 round31：宽扫 16 片 + 深挖约 24 个实例，覆盖片数变少但**深挖的是经可达性筛选的 PROD 代码**。
 
 **易错点**：`concurrency_window` 在 1–5 档是 `min(5, cap)`，6 以上才是 `min(8, cap)`，不要一律写 8。
 
-### 步骤 2 · 审计
+**报告必须给两个独立覆盖率**：「宽扫覆盖率」和「深挖覆盖率」。不得合并成一个数字假装覆盖完整。
 
-每个 `(slice_id, dimension)` 组合派**一个独立实例**。同一切片的不同维度必须是不同实例，不允许一个 Agent 承担多个维度。
+### 步骤 2A · 宽扫（sweep）
+
+**每个切片派一个宽扫实例**，它看全部 6 个维度，但只产出**线索**（`file:line` + 一行原文 + 疑似维度 + 置信度），**不判严重性、不进锐评、不进报告正文**。
+
+同时为切片标记 **`reachability`**（`PROD` / `TEST_ONLY` / `UNREACHABLE`）——这是把预算从死代码里救回来的关键。
+
+**门控**：`lead_count == len(leads)`；`dimension_histogram` 之和 == `lead_count`；`files_read` 覆盖切片文件或缺失项在 `files_unreadable` 中。
+
+> **为什么这一步是必需的**：原设计「每个 `(切片, 维度)` 派一个实例」× 6 维，85 片需要 510 个实例（预算的 8.5 倍）；按片数派则每片只能审 1 维（放弃 5/6 覆盖）。宽扫按片派，算术成立。
+
+### 步骤 2B · 深挖（audit）
+
+**只对宽扫标记为「该深挖」的切片派**，每片按线索指向的维度拆实例，走完整门 0 证据链。
+
+**触发阈值（写死，零裁量）**：有 `HIGH` 线索 → 必深挖该维度；`lead_count ≥ 3` → 深挖计数最高的 2 个维度；`UNREACHABLE` → 不深挖。
 
 **门控**：所有实例达到终态；无 `CONTRACT_VIOLATION`；每个实例的 `searched_scope.files_read` 覆盖了 `files` + `shared_dependencies`，或缺失文件列在 `unreadable_files` 里。
 
-**不要求「零发现」**——`NO_EVIDENCE_FOUND` 是合法且有价值的结果。但 `findings` 数组不能为空，空数组一律视为 `CONTRACT_VIOLATION`，因为「没查」和「查了没发现」必须可区分。
+**不要求「零发现」**——`NO_EVIDENCE_FOUND` 是合法且有价值的结果。但 `findings` 数组不能为空，空数组一律视为 `CONTRACT_VIOLATION`。
 
 ### 步骤 3 · 锐评
 
 三种角色互斥，一个实例只承担一种。Skeptic 杀发现、Devil's Advocate 找覆盖缺口、Arbiter 在干净上下文中裁决。
 
+**Skeptic 新增固定职责**：用机械比对检查 `discipline_log` 与实际派发记录，找出**未申报的裁量**，输出 `discipline_violations[]`。
+
 **门控**：Skeptic 与 Devil's Advocate 均 `SUCCESS`；所有 `conflicts` 的 `resolution` 不再是 `PENDING`。
 
-**关键规则**：Arbiter 的 `verdict` **不得**为 `EVIDENCE_GAP`。证据不足时它必须返回 `RETRYABLE_FAILURE`，由主 Agent 派证据补采实例，而不是自己下场补证。
+**关键规则**：Arbiter 的 `verdict` **不得**为 `EVIDENCE_GAP`。证据不足时它必须返回 `RETRYABLE_FAILURE`，由主 Agent 派证据补采实例。
 
-### 步骤 4 · 修复
+### 步骤 4 · 出报告（**默认路径的终点，不可跳过**）
 
-每条 `UPHELD` 的发现派一个修复实例。不同 `target_files` 可并行；**共享同一文件的必须串行**。
+生成 `docs/reports/round{N}/round{N}-final-report.md`，固定五节：元信息 → 裁决索引表 → 覆盖率 → 未闭合项 → 裁量记录 + 未深挖线索附录。
 
-**门控**：每条 `UPHELD` 都有对应修复返回 `SUCCESS`；每条修复都带了 `affected_issues`（空数组必须配 `AFFECTED_ISSUES_EMPTY_CONFIRMED`）。
+**铁律**：每个结论单元都要带 `artifact_ref` 指向原始文件。主 Agent **只做排序、加索引、加统计**。
 
-**预算检查**：修复 + 验收数量不要超过预留的 20。超出部分按 FIFO 处理前若干个，其余标 `UNRESOLVED_FINDING` + `blocking: false` 留给下一轮。
+**「跑完了但没有报告」不是合法终态。** 任何终止路径（正常完成 / 预算耗尽 / 用户中断 / 连续失败）都必须先出报告再退出，详见 `artifacts/final-report.md`。
 
-### 步骤 5 · 验收
+### 步骤 5 · 修复（**可选路径，独立启动**）
 
-派发时**不要传**修复 Agent 的 `verification_commands` 和 `output_snippet`。
+用户发出「修复 round{N}」指令才启动。消费默认路径报告里 `UPHELD` 的发现，**不重新侦察、不重新切片**。
 
-| 返回 | 动作 |
-|---|---|
-| `PASS` + `escalation_required: false` | 关闭该缺陷 |
-| `PASS` + `escalation_required: true` | 列入「待人工裁决」，本轮 `PARTIALLY_CLOSED` |
-| `FAIL` + `FIX_INCOMPLETE` / `FIX_INCORRECT` | 回步骤 4 重修，**不回步骤 2** |
-| `FAIL` + `BASELINE_INVALID` | 标 `REVOKED`，原发现是误报 |
-| `RETRYABLE_FAILURE` + `ENVIRONMENT` | 无法验证，标 `deferred`，需人工 |
+每条发现独立记账：一条失败（回滚、需人工、环境不可用）只影响该条，**不阻塞其他条，也不影响已产出的报告**。
 
-### 步骤 6 · 生成最终报告
+**验收的硬约束**：派发时**不要传**修复 Agent 的 `verification_commands` 和 `output_snippet`。且变异验证是**强制**的（除 `harness_unsupported` / `unsafe_revert`），并要求覆盖**调用点**一层——只测纯函数会导致「改回错误实现仍全绿」。
 
-`docs/reports/round{N}/round{N}-final-report.md`，固定五节：元信息 → 裁决索引表 → 验收结果表 → 未闭合项 → 覆盖说明。
-
-**铁律**：每个结论单元都要带 `artifact_ref` 指向原始文件。主 Agent **只做排序、加索引、加统计**，不得改写任何子 Agent 的措辞、严重性或裁决结论。
+---
 
 ---
 
@@ -257,18 +296,44 @@ framework/
 ├── README.md              ← 总纲：设计原理
 ├── PORTABILITY.md         ← 跨 harness 移植指南
 ├── orchestrator/          ← 主 Agent 唯一常驻加载
-│   ├── protocol.md            调度协议：工具白名单、账本、门控、重派、护栏
-│   └── scale-mapping.md       切片数 → 派发量与并发窗口，零裁量
+│   ├── protocol.md            调度协议：两条路径、裁量分级、账本、门控、重派、护栏
+│   └── scale-mapping.md       切片数 → 宽扫/深挖派发量与并发窗口，零裁量
 ├── components/            ← 叶子节点，无内部依赖
-│   ├── evidence-policy.md     证据基线（门 0）
-│   ├── output-contract.md     统一返回契约
+│   ├── evidence-policy.md     证据基线（门 0）+ 引用分级纪律
+│   ├── output-contract.md     统一返回契约（六个角色，含 sweep）
 │   └── handoff-schema.md      波次间 Resume Packet
-├── templates/             ← 五个波次模板
-├── wrappers/              ← 五个角色包装器（身份 + 触发 + 引用）
-└── artifacts/             ← 轮次探测、报告命名（机械规则）
+├── templates/             ← 波次模板
+│   ├── wave1-recon.md         侦察
+│   ├── wave2a-sweep.md        宽扫（1 片 1 实例，产出线索 + 可达性）
+│   ├── wave2-audit.md         深挖（按维度，完整门 0）
+│   ├── wave3-critique.md      锐评（+ 裁量稽查）
+│   ├── wave4-fix.md           修复（可选路径）
+│   └── wave5-verify.md        验收（可选路径）
+├── wrappers/              ← 角色包装器（身份 + 触发 + 引用）
+└── artifacts/             ← 机械规则
+    ├── round-detection.md     轮次编号探测
+    ├── report-naming.md       产物命名
+    ├── run-state.md           状态机：断点续跑的唯一依据
+    └── final-report.md        最终报告：必须产出，不允许缺席
 ```
 
 依赖单向：`wrappers → templates → components`，无反向引用，组件间不横向依赖。
+
+---
+
+## 与旧版的差异（2026-11-01）
+
+| 项 | 旧 | 新 | 原因 |
+|---|---|---|---|
+| 默认路径 | 五波次连跑（含修复） | **只读四波 + 出报告** | round31：83 待修 / 1 完成，无最终报告 |
+| 波次二 | 每 `(切片,维度)` 一实例 | **二A 宽扫 + 二B 深挖** | 6 维 × 85 片 = 510 实例，算术不可行 |
+| 主 Agent 裁量 | 零裁量 | **L0 禁止 / L1 留痕 / L2 自由** | 禁令把裁量逼成不申报（round31 9/40 偏离） |
+| 状态 | 内存账本 | **`state.json` 落盘 + 续跑协议** | 中断是常态；R22 双实例覆盖事故 |
+| 报告 | 跑完才出 | **任何终止路径都必须出** | round31 停在 IN_PROGRESS 且无报告 |
+| 变异检验 | 可选但推荐 | **强制 + 覆盖调用点** | R28：只看纯函数，改回错误实现 493 条测试全绿 |
+| 引用 | 不分级 | **A/B/C/D 四级 + 口径要求** | 25 个 URL 无一 404，但存在「用错地方」 |
+
+---
 
 ---
 
@@ -304,9 +369,14 @@ framework/
 
 ## 诚实说明
 
-- **来源**：这套东西的设计出自一段 DeepSeek 对话（转录在 `docs/reports/`）。其中 9 份文件是对话原文，8 份是本仓库续写。
+- **来源**：这套东西的设计出自一段 DeepSeek 对话（转录在 `docs/reports/`）。其中 9 份文件是对话原文，8 份是本仓库续写。该分享链接现返回 **429**，无法复核——也就是说**多数论断的真实上游是一段 LLM 对话，而非论文**。它的正确定位是「一套设计约定的集合」，不是「实证研究的汇总」。
 - **局限**：Markdown 文件本身没有加载器，所谓「波次一加载某文件」不会被任何 harness 自动执行。要做可靠加载，得用调度器代码强制拼接，或依赖 harness 的 skill 机制。纯提示词方案下，加载靠模型自律。
-- **未验证**：这套框架没有在真实项目上跑过完整一轮。它的逻辑一致性经过多轮交叉审查，但实际效果未经实测。
+- **已在真实项目上跑过一轮，结果是「部分失效」**：`dsh-fcl-android-launcher` 的 round31 是五波次的首次完整实跑，暴露了三个结构性问题（详见 [`docs/analysis/2026-11-01-structural-diagnosis.md`](docs/analysis/2026-11-01-structural-diagnosis.md)）：
+  1. **覆盖率**：侦察出 85 个有效切片，实际只派发 40 个，38 片 `DEFERRED`；
+  2. **预算被死代码吃掉**：40 片里有 29 片是 `fakefx`（JavaFX 移植），而锐评波事后判定其中 162 个文件「从任何生产入口都到不了」；
+  3. **没有跑完**：83 条待修复只完成 1 条，`wave_status` 停在 `IN_PROGRESS`，**没有最终报告**。
+- **框架的引用经逐条核实，发现「链接真实、用错地方」**：25 个外部 URL 无一 404，但有把「API 掉线率」当「审计失败率」、把「某包存在」当「某结论已证明」等问题。已修复并新增引用分级纪律（`components/evidence-policy.md` 第 8 节），核实详情见 [`docs/analysis/2026-11-01-citation-audit.md`](docs/analysis/2026-11-01-citation-audit.md)。
+- **当前状态**：本文档的**引用与契约一致性**已修复；**覆盖率、断点续跑、两遍制**等结构性改造仍是提案，见 [`docs/analysis/2026-11-01-proposal.md`](docs/analysis/2026-11-01-proposal.md)。
 
 ## License
 
