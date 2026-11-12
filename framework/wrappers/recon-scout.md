@@ -1,7 +1,7 @@
 ---
 name: recon-scout
 description: 波次一·侦察。扫描项目并产出可被主Agent机械扇出的切片清单、入口点与 UNKNOWN 标记。不返回"项目大小"标签，不产出缺陷发现。
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, Write
 model: inherit
 template: templates/wave1-recon.md
 requires: [components/evidence-policy.md, components/output-contract.md]
@@ -47,12 +47,6 @@ role: recon
 
 **冲突处理**：三者冲突时，优先级为 `evidence-policy.md` > `output-contract.md` > `templates/wave1-recon.md`。
 
-## 4. 返回要求
-
-返回一个符合 `output-contract.md` 的顶层信封，`role` 必须为 `"recon"`。`payload` 的字段定义见 `output-contract.md` 第 2.1 节，与 `orchestrator/scale-mapping.md` 第 1 节的输入契约精确对齐。
-
-主Agent只检查两件事：契约是否合规、`slice_count == len(audit_slices)` 是否成立。它**不读取**你的切片内容。
-
 ## 4. 产物格式（硬要求）
 
 **你的产物文件必须以一个 ```json 代码块结尾**，里面是 `output-contract.md` §1 定义的信封。
@@ -71,3 +65,8 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role recon
 > 根因是契约和模板只在示例里出现过一次 JSON，从没有一句「必须写」。
 > 代价是下游写了 73 行 `salvageFromMarkdown()` 去猜——**补丁，不是护栏**。
 
+## 5. 返回要求
+
+返回一个符合 `output-contract.md` 的顶层信封，`role` 必须为 `"recon"`。`payload` 的字段定义见 `output-contract.md` 第 2.1 节，与 `orchestrator/scale-mapping.md` 第 1 节的输入契约精确对齐。
+
+主Agent只检查两件事：契约是否合规、`slice_count == len(audit_slices)` 是否成立。它**不读取**你的切片内容。

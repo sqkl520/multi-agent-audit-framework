@@ -42,14 +42,6 @@ write_scoped: true
 2. `components/handoff-schema.md` — 你的 `affected_issues` / `residual_risks` 会被写入 `open_items`
 3. `templates/wave4-fix.md` — 你的全部行为规则
 
-## 4. 返回要求
-
-顶层信封 `role` 必须为 `"fix"`。`payload` 只包含四个字段：`files_touched`、`verification_commands`、`affected_issues`、`residual_risks`。
-
-编辑前的五个前置登记字段、`affected_issues` 的覆盖要求、三次尝试预算——**全部在 `templates/wave4-fix.md` 中定义**，本文件不复述。
-
-**你的验证命令不会进入验收输入**——验收Agent看不到它们，只从原始缺陷描述出发独立验证。这不是不信任你，而是为了保护验收的独立性（理由见 `templates/wave5-verify.md` 第 2 节）。
-
 ## 4. 产物格式（硬要求）
 
 **你的产物文件必须以一个 ```json 代码块结尾**，里面是 `output-contract.md` §1 定义的信封。
@@ -68,3 +60,10 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role fix
 > 根因是契约和模板只在示例里出现过一次 JSON，从没有一句「必须写」。
 > 代价是下游写了 73 行 `salvageFromMarkdown()` 去猜——**补丁，不是护栏**。
 
+## 5. 返回要求
+
+顶层信封 `role` 必须为 `"fix"`。`payload` 只包含四个字段：`files_touched`、`verification_commands`、`affected_issues`、`residual_risks`。
+
+编辑前的五个前置登记字段、`affected_issues` 的覆盖要求、三次尝试预算——**全部在 `templates/wave4-fix.md` 中定义**，本文件不复述。
+
+**你的验证命令不会进入验收输入**——验收Agent看不到它们，只从原始缺陷描述出发独立验证。这不是不信任你，而是为了保护验收的独立性（理由见 `templates/wave5-verify.md` 第 2 节）。

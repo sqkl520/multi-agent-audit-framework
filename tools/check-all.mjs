@@ -84,6 +84,11 @@ const CHECKS = [
     desc: '18 个用例：四道门的放行与拒绝路径（dispatch/accept/close/release）',
   },
   {
+    name: 'Wrapper 完整性（结构 + 关键段落 + tools 权限）',
+    script: 'check-wrapper-integrity.mjs',
+    desc: '7 个文件：必备小节齐全 / 每节非空 / Write 权限 / 交叉引用存在',
+  },
+  {
     name: '框架自主性静态检查',
     script: 'lint-autonomy.test.mjs',
     desc: '19 条规则的放行与拒绝路径（含 L16 加载量、L19 模式清单完整性）',

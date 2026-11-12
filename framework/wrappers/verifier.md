@@ -1,7 +1,7 @@
 ---
 name: verifier
 description: 波次五·验收。独立验证某条修复是否真的消除了某条缺陷。不读取修复Agent的验证记录，只从原始缺陷描述与验收标准出发。只读角色。
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, Write
 model: inherit
 template: templates/wave5-verify.md
 requires: [components/evidence-policy.md, components/output-contract.md]
@@ -42,14 +42,6 @@ read_only: true
 2. `components/output-contract.md` — 返回必须符合 `role: "verify"` 的 payload schema
 3. `templates/wave5-verify.md` — 你的全部行为规则
 
-## 4. 返回要求
-
-顶层信封 `role` 必须为 `"verify"`。`payload` 字段见 `output-contract.md` 第 2.5 节。
-
-定向检查怎么构造、`residual_risks` 每个标记怎么处置、`failure_category` 怎么归因——**全部在 `templates/wave5-verify.md` 中定义**，本文件不复述。
-
-**你的结论是本轮报告"哪些缺陷真的被修好了"的唯一来源**——主Agent不会采信修复者的自我声明。
-
 ## 4. 产物格式（硬要求）
 
 **你的产物文件必须以一个 ```json 代码块结尾**，里面是 `output-contract.md` §1 定义的信封。
@@ -68,3 +60,10 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role verify
 > 根因是契约和模板只在示例里出现过一次 JSON，从没有一句「必须写」。
 > 代价是下游写了 73 行 `salvageFromMarkdown()` 去猜——**补丁，不是护栏**。
 
+## 5. 返回要求
+
+顶层信封 `role` 必须为 `"verify"`。`payload` 字段见 `output-contract.md` 第 2.5 节。
+
+定向检查怎么构造、`residual_risks` 每个标记怎么处置、`failure_category` 怎么归因——**全部在 `templates/wave5-verify.md` 中定义**，本文件不复述。
+
+**你的结论是本轮报告"哪些缺陷真的被修好了"的唯一来源**——主Agent不会采信修复者的自我声明。

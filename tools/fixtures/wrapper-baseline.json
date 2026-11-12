@@ -1,0 +1,10 @@
+{
+  "_note": "2026-11-12 会话开始时记录的 wrapper 行数。用于发现「文件被回退/内容丢失」。",
+  "audit-specialist": 104,
+  "critique-panel": 145,
+  "fix-worker": 109,
+  "planner": 158,
+  "recon-scout": 106,
+  "sweep-scout": 109,
+  "verifier": 105
+}

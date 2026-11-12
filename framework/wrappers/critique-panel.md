@@ -1,7 +1,7 @@
 ---
 name: critique-panel
 description: 波次三·锐评。三种互斥子角色之一：Skeptic 攻击可触发性、Devil's Advocate 枚举覆盖缺口、Arbiter 裁决维持/降级/撤销。本波次专门用来"杀死发现"。
-tools: Read, Grep, Glob
+tools: Read, Grep, Glob, Write
 model: inherit
 template: templates/wave3-critique.md
 requires: [components/handoff-schema.md, components/output-contract.md]
@@ -53,14 +53,6 @@ subroles: [skeptic, devils_advocate, arbiter]
 
 如需核对证据合规性，可额外加载 `components/evidence-policy.md` 第 6 节的机械检查清单。
 
-## 4. 返回要求
-
-顶层信封 `role` 必须为 `"critique"`，`payload.critique_role` 必须是 `skeptic` / `devils_advocate` / `arbiter` 之一。
-
-Skeptic 五步测试怎么执行、Devil's Advocate 扫哪几类缺口、Arbiter 的裁决判定树——**全部在 `templates/wave3-critique.md` 中定义**，本文件不复述。
-
-主Agent只消费结构化裁决字段，**不读取**你的论证正文。
-
 ## 4. 产物格式（硬要求）
 
 **你的产物文件必须以一个 ```json 代码块结尾**，里面是 `output-contract.md` §1 定义的信封。
@@ -79,3 +71,10 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role critiq
 > 根因是契约和模板只在示例里出现过一次 JSON，从没有一句「必须写」。
 > 代价是下游写了 73 行 `salvageFromMarkdown()` 去猜——**补丁，不是护栏**。
 
+## 5. 返回要求
+
+顶层信封 `role` 必须为 `"critique"`，`payload.critique_role` 必须是 `skeptic` / `devils_advocate` / `arbiter` 之一。
+
+Skeptic 五步测试怎么执行、Devil's Advocate 扫哪几类缺口、Arbiter 的裁决判定树——**全部在 `templates/wave3-critique.md` 中定义**，本文件不复述。
+
+主Agent只消费结构化裁决字段，**不读取**你的论证正文。
