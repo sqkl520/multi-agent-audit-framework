@@ -664,7 +664,52 @@ if (envelope && envelope.payload && envelope.role) {
 }
 
 // ────────────────────────────────────────────────────────────────────
-// 4 · 验收角色是只读的，但它必须能写自己的产物
+// 4 · 验收角色：FAIL 时必须给出归因与可复现触发条件
+// ────────────────────────────────────────────────────────────────────
+// 2026-11-14 补：契约 §2.5 白纸黑字写了两条条件必填——
+//   `failure_category`  `verdict: FAIL` 时必填（决定回波次四还是判 REVOKED）
+//   `failure_trigger`   `verdict: FAIL` 时必填（可复现的触发条件）
+// 但校验器此前**完全不检查**。实测一个 `verdict: "FAIL"`、没有任何归因的
+// 产物被判「✅ 契约合规」——规则写在文档里，要求没有强制力。
+//
+// 为什么这两条重要：没有 `failure_category`，主Agent无法判断该重派（FIX_INCOMPLETE）
+// 还是该撤稿（FIX_INCORRECT）；没有 `failure_trigger`，下一轮修复 Agent
+// 只能盲猜复现路径，等于把验收结论退化成一句「没过」。
+if (envelope && envelope.role === 'verify') {
+  const vp = envelope.payload ?? {};
+  if (vp.verdict === 'FAIL') {
+    if (!vp.failure_category) {
+      errors.push({
+        field: 'payload.failure_category', rule: 'missing_failure_category',
+        msg: 'verdict=FAIL 时必须给出 failure_category（FIX_INCOMPLETE / FIX_INCORRECT / '
+          + 'BASELINE_INVALID / ENVIRONMENT）——主Agent靠它判断该重派还是该撤稿',
+      });
+    } else if (!['FIX_INCOMPLETE', 'FIX_INCORRECT', 'BASELINE_INVALID', 'ENVIRONMENT'].includes(vp.failure_category)) {
+      errors.push({
+        field: 'payload.failure_category', rule: 'invalid_failure_category',
+        msg: `failure_category="${vp.failure_category}" 不在闭集内`
+          + '（FIX_INCOMPLETE | FIX_INCORRECT | BASELINE_INVALID | ENVIRONMENT）',
+      });
+    }
+    if (!vp.failure_trigger || String(vp.failure_trigger).trim() === '') {
+      errors.push({
+        field: 'payload.failure_trigger', rule: 'missing_failure_trigger',
+        msg: 'verdict=FAIL 时必须给出可复现的触发条件——否则下一轮修复 Agent 只能盲猜复现路径',
+      });
+    }
+  }
+  // ENVIRONMENT 归因与 FAIL 状态自相矛盾：环境问题是可重试的，不该判 FAIL
+  if (vp.failure_category === 'ENVIRONMENT' && vp.verdict === 'FAIL') {
+    warnings.push({
+      field: 'payload.failure_category', rule: 'environment_should_be_retryable',
+      msg: 'failure_category=ENVIRONMENT 时应改用 RETRYABLE_FAILURE 顶层状态而非 FAIL'
+        + '（契约 §2.5 明文）',
+    });
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// 5 · 验收角色的变异检验 vs 只读身份
 // ────────────────────────────────────────────────────────────────────
 if (envelope && envelope.role === 'verify' && envelope.payload?.evidence?.mutation_check === 'performed') {
   // 变异检验要求改文件再改回来——验收 Agent 是只读角色（wrappers/verifier.md）

@@ -1,0 +1,213 @@
+#!/usr/bin/env node
+/**
+ * check-enum-consistency.mjs — 同一个枚举在「契约 / 校验器 / 示例」三处是否一致
+ *
+ * 为什么需要：
+ *   这个仓库里枚举是闭集，写错一个词整个产物作废（契约 §1「不允许自定义状态值」）。
+ *   而同一个枚举会出现在至少三处：
+ *
+ *     契约切片   给人读的说明          "CRITICAL | HIGH | MEDIUM | LOW"
+ *     校验器     ENUM_CHECKS 里的数组  ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
+ *     示例       生成出来的产物         "severity": "HIGH"
+ *
+ *   三处漂移不会让任何单独一方报错——校验器只会说「你这个值不合法」，
+ *   不会说「因为文档和我的清单不一致」。agent 于是陷入「我按文档写的却被拒」。
+ *
+ *   历史上真发生过：模板里写过 `NONE` 这个严重性，而契约的闭集不含它。
+ *   （见 templates/wave2-audit.md 里那段专门解释为什么不能写 NONE 的说明。）
+ *
+ * 做法：从校验器的 ENUM_CHECKS 抽出「字段 → 合法值集合」，
+ *       再逐处比对契约切片与示例里该字段的写法。
+ *
+ * 用法：node check-enum-consistency.mjs [--json]
+ * 退出码：0 = 一致   1 = 有漂移   2 = 结构异常
+ */
+
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(HERE, '..');
+const VALIDATOR = join(HERE, 'check-payload.mjs');
+const SLICE_DIR = join(ROOT, 'framework', 'components', 'output-contract');
+const EXAMPLE_DIR = join(SLICE_DIR, 'examples');
+const WRAPPERS = join(ROOT, 'framework', 'wrappers');
+
+const jsonOut = process.argv.includes('--json');
+
+const toolSrc = readFileSync(VALIDATOR, 'utf8');
+
+// ── 从 ENUM_CHECKS 抽出字段 → 合法值 ──
+// 形如 { path: 'findings[].severity', values: ['CRITICAL', 'HIGH', ...] }
+const enumDefs = [];
+const enumBlock = toolSrc.match(/const ENUM_CHECKS\s*=\s*\[([\s\S]*?)\n\s*\];/);
+if (!enumBlock) {
+  console.error('无法从 check-payload.mjs 解析出 ENUM_CHECKS');
+  process.exit(2);
+}
+
+for (const m of enumBlock[1].matchAll(
+  /path:\s*'([\w.\[\]]+)'\s*,\s*values:\s*\[([^\]]*)\]/g,
+)) {
+  const path = m[1];
+  const raw = m[2].split(',').map((v) => v.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+
+  // 有些枚举的 values 里混了布尔字面量（如
+  //   values: ['true', 'false', 'untested', true, false]
+  // 表示「字符串 'true' 或布尔 true 都接受」。
+  // 不能把它们过滤掉——否则闭集只剩 'untested'，示例里合法的 "true" 会被误报非法。
+  const values = [...new Set(raw.map((v) => {
+    const s = String(v).trim();
+    // 布尔字面量规范成小写字符串：JSON 里通常写成 "true"（字符串），
+    // 校验器两种都接受
+    if (s === 'true' || s === 'false') return s.toLowerCase();
+    return s;
+  }))].filter((v) => v !== 'null' && v !== 'undefined');
+
+  if (values.length === 0) continue;
+
+  const field = path.split(/[.\[]/).pop().replace(/\]$/, '');
+  enumDefs.push({ path, field, values });
+}
+
+if (enumDefs.length === 0) {
+  console.error('ENUM_CHECKS 解析出 0 条，结构可能变了');
+  process.exit(2);
+}
+
+const problems = [];
+const notes = [];
+
+/**
+ * 在文本里找该字段的「管道写法」声明，例如：
+ *   "severity": "CRITICAL | HIGH | MEDIUM | LOW"
+ *   `severity` 取 `CRITICAL` / `HIGH` / `MEDIUM` / `LOW`
+ * 抽出其中的词，与校验器的清单比对。
+ */
+function checkPipedDeclaration(text, field, legalValues, where) {
+  const results = [];
+
+  // 形式 1: "field": "A | B | C"
+  const re1 = new RegExp(`"${field}"\\s*:\\s*"([^"]+)"`, 'g');
+  for (const m of text.matchAll(re1)) {
+    if (!m[1].includes('|')) continue;         // 不是枚举声明（是具体取值）
+    results.push(m[1]);
+  }
+
+  // 形式 2: `field` 取 `A` | `B` | `C`
+  const re2 = new RegExp('`' + field + '`[^\\n]{0,40}?([' + '`A-Z_(/|)\\s]{6,})\\n', 'g');
+  for (const m of text.matchAll(re2)) {
+    if (!m[1].includes('|') && !m[1].includes('/')) continue;
+    results.push(m[1]);
+  }
+
+  for (const decl of results) {
+    const declared = decl
+      .split(/[|/]/)
+      .map((v) => v.replace(/[`\s]/g, ''))
+      .filter(Boolean)
+      .filter((v) => /^[A-Z][A-Z0-9_]*$/.test(v));   // 只认全大写下划线形态
+
+    if (declared.length === 0) continue;
+
+    const missingInValidator = declared.filter((v) => !legalValues.includes(v));
+    const missingInDoc = legalValues.filter((v) => !declared.includes(v));
+
+    if (missingInValidator.length > 0) {
+      problems.push({
+        where, field, kind: 'doc_has_illegal_value',
+        detail: `${where} 里 ${field} 的声明含校验器不接受的值: ${missingInValidator.join(', ')}`
+          + `（校验器闭集: ${legalValues.join(' | ')}）`,
+      });
+    }
+    if (missingInDoc.length > 0) {
+      problems.push({
+        where, field, kind: 'doc_missing_legal_value',
+        detail: `${where} 里 ${field} 的声明缺校验器接受的合法值: ${missingInDoc.join(', ')}`,
+      });
+    }
+  }
+
+  return results.length;
+}
+
+// ── 检查契约切片 ──
+let docDeclsFound = 0;
+if (existsSync(SLICE_DIR)) {
+  for (const f of readdirSync(SLICE_DIR)) {
+    if (!f.endsWith('.md')) continue;
+    const text = readFileSync(join(SLICE_DIR, f), 'utf8');
+    for (const { field, values } of enumDefs) {
+      docDeclsFound += checkPipedDeclaration(text, field, values, `切片 ${f}`);
+    }
+  }
+}
+
+// ── 检查 wrapper ──
+for (const f of readdirSync(WRAPPERS)) {
+  if (!f.endsWith('.md')) continue;
+  const text = readFileSync(join(WRAPPERS, f), 'utf8');
+  for (const { field, values } of enumDefs) {
+    docDeclsFound += checkPipedDeclaration(text, field, values, `wrapper ${f}`);
+  }
+}
+
+// ── 检查示例里用到的值是否合法（这是最容易出错的：示例写了个不存在于闭集的值）──
+let exampleValuesChecked = 0;
+if (existsSync(EXAMPLE_DIR)) {
+  for (const f of readdirSync(EXAMPLE_DIR)) {
+    if (!f.endsWith('.md')) continue;
+    const text = readFileSync(join(EXAMPLE_DIR, f), 'utf8');
+    const re = /```json\s*\n([\s\S]*?)```/g;
+    for (const m of text.matchAll(re)) {
+      let obj;
+      try { obj = JSON.parse(m[1]); } catch { continue; }
+
+      for (const { field, values } of enumDefs) {
+        // 在 payload 里递归找该字段
+        const found = [];
+        (function walk(node) {
+          if (!node || typeof node !== 'object') return;
+          if (Array.isArray(node)) { node.forEach(walk); return; }
+          for (const [k, v] of Object.entries(node)) {
+            if (k === field && typeof v === 'string') found.push(v);
+            walk(v);
+          }
+        })(obj.payload ?? {});
+
+        for (const v of found) {
+          exampleValuesChecked++;
+          if (!values.includes(v)) {
+            problems.push({
+              where: `示例 ${f}`, field, kind: 'example_illegal_value',
+              detail: `示例里 ${field} = "${v}"，但校验器闭集是 ${values.join(' | ')}`,
+            });
+          }
+        }
+      }
+    }
+  }
+}
+
+if (jsonOut) {
+  console.log(JSON.stringify({ enumDefs, problems, docDeclsFound, exampleValuesChecked }, null, 2));
+  process.exit(problems.length ? 1 : 0);
+}
+
+console.log('\n=== 枚举跨层一致性 ===\n');
+console.log(`校验器定义 ${enumDefs.length} 个枚举字段；扫描到文档声明 ${docDeclsFound} 处、示例取值 ${exampleValuesChecked} 个。\n`);
+
+console.log('字段'.padEnd(22) + '闭集');
+for (const { field, values } of enumDefs) {
+  console.log(field.padEnd(22) + values.join(' | '));
+}
+
+console.log('');
+if (problems.length === 0) {
+  console.log('结论：契约 / wrapper / 示例三处与校验器闭集一致。');
+  process.exit(0);
+}
+console.log(`发现 ${problems.length} 处漂移：`);
+for (const p of problems) console.log(`  [${p.kind}] ${p.where} — ${p.detail}`);
+process.exit(1);

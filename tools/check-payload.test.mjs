@@ -864,6 +864,70 @@ console.log('case 75: CRITICAL 且有调用链证据 → 通过');
     JSON.stringify(r.r?.errors?.map(x=>x.rule)));
 }
 
+// ── 2026-11-14：verdict=FAIL 的条件必填（契约 §2.5 明文，此前校验器完全不查）──
+console.log('case 76: verify verdict=FAIL 但缺 failure_category → 必须报错');
+{
+  const e = {
+    schema_version: 'output-contract-v1', agent_id: 'v1', role: 'verify',
+    status: 'SUCCESS', contract_valid: true, artifact_path: 'x.md',
+    payload: { finding_id: 'F1', verdict: 'FAIL' }, error: null,
+  };
+  const r = run(wrap(JSON.stringify(e, null, 2)), ['--no-exists']);
+  expect('报 missing_failure_category',
+    r.r?.errors?.some(x => x.rule === 'missing_failure_category'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+  expect('报 missing_failure_trigger',
+    r.r?.errors?.some(x => x.rule === 'missing_failure_trigger'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 77: verify verdict=FAIL 且归因/触发条件齐全 → 通过');
+{
+  const e = {
+    schema_version: 'output-contract-v1', agent_id: 'v1', role: 'verify',
+    status: 'SUCCESS', contract_valid: true, artifact_path: 'x.md',
+    payload: {
+      finding_id: 'F1', verdict: 'FAIL',
+      failure_category: 'FIX_INCOMPLETE',
+      failure_trigger: '把 src/store.js:57 改回旧实现后重跑 test/persist.test.js，观察到 EBUSY',
+    }, error: null,
+  };
+  const r = run(wrap(JSON.stringify(e, null, 2)), ['--no-exists']);
+  expect('不报 failure 相关错误',
+    !r.r?.errors?.some(x => /failure_category|failure_trigger/.test(x.rule)),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 78: verify 的 failure_category 用了闭集外的值 → 必须报错');
+{
+  const e = {
+    schema_version: 'output-contract-v1', agent_id: 'v1', role: 'verify',
+    status: 'SUCCESS', contract_valid: true, artifact_path: 'x.md',
+    payload: {
+      finding_id: 'F1', verdict: 'FAIL',
+      failure_category: 'WHATEVER',
+      failure_trigger: '某条可复现描述',
+    }, error: null,
+  };
+  const r = run(wrap(JSON.stringify(e, null, 2)), ['--no-exists']);
+  expect('报 invalid_failure_category',
+    r.r?.errors?.some(x => x.rule === 'invalid_failure_category'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 79: verdict=PASS 时不要求 failure_category（不能过度执法）');
+{
+  const e = {
+    schema_version: 'output-contract-v1', agent_id: 'v1', role: 'verify',
+    status: 'SUCCESS', contract_valid: true, artifact_path: 'x.md',
+    payload: { finding_id: 'F1', verdict: 'PASS' }, error: null,
+  };
+  const r = run(wrap(JSON.stringify(e, null, 2)), ['--no-exists']);
+  expect('PASS 不报 failure_category',
+    !r.r?.errors?.some(x => x.rule === 'missing_failure_category'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

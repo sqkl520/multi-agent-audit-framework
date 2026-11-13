@@ -148,6 +148,11 @@ const CHECKS = [
     script: 'check-contract-examples.test.mjs',
     desc: '14 个用例：示例被破坏 / 缺文件 / 目录不见 / role 不匹配 / 缺必填字段 / 占位路径不随 cwd 变',
   },
+  {
+    name: '枚举跨层一致性（契约 / wrapper / 示例 vs 校验器闭集）',
+    script: 'check-enum-consistency.test.mjs',
+    desc: '13 个用例：文档多写 NONE / 少写 GENERATED / 示例用非法值 / 布尔枚举不得误报',
+  },
 ];
 
 let failed = 0;
