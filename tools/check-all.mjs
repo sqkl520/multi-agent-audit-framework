@@ -111,7 +111,7 @@ const CHECKS = [
   {
     name: 'Agent 状态判定（产物 vs 活动痕迹）',
     script: 'agent-status.test.mjs',
-    desc: '11 个用例：产物已落盘判 DONE / 只有活动痕迹判 RUNNING / 久无动静判 STALLED',
+    desc: '13 个用例：产物已落盘判 DONE / 只有活动痕迹判 RUNNING / 久无动静判 STALLED / 传目录必须拒绝',
   },
   {
     name: 'Stop hook 相位守卫',
