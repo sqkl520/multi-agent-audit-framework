@@ -4,8 +4,7 @@ description: 任务分级与拆解。判定 TIER、列出子任务、指定每�
 tools: Read, Grep, Glob, Bash, Write
 model: inherit
 template: orchestrator/triage.md
-requires: [orchestrator/triage.md, components/output-contract-roles.md]
-# 注意：output-contract-roles.md 里只读 2.0 规划角色 那一节，不要读其它角色的分支
+requires: [orchestrator/triage.md, components/output-contract/planner.md]
 wave: 0
 trigger_event: TASK_RECEIVED
 role: planner

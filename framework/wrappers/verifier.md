@@ -4,7 +4,7 @@ description: 波次五·验收。独立验证某条修复是否真的消除了�
 tools: Read, Grep, Glob, Bash, Write
 model: inherit
 template: templates/wave5-verify.md
-requires: [components/evidence-policy.md, components/output-contract.md]
+requires: [components/evidence-policy.md, components/output-contract/verify.md]
 wave: 5
 trigger_event: FIX_COMPLETED
 role: verify
@@ -39,7 +39,7 @@ read_only: true
 在开始任何工作前，必须按顺序加载：
 
 1. `components/evidence-policy.md` — 门 0 同样适用于验收观察
-2. `components/output-contract.md` — 返回必须符合 `role: "verify"` 的 payload schema
+2. `components/output-contract/verify.md` — 返回必须符合 `role: "verify"` 的 payload schema
 3. `templates/wave5-verify.md` — 你的全部行为规则
 
 ## 4. 产物格式（硬要求）

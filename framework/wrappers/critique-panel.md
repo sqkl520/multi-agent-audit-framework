@@ -4,7 +4,7 @@ description: 波次三·锐评。三种互斥子角色之一：Skeptic 攻击可
 tools: Read, Grep, Glob, Write
 model: inherit
 template: templates/wave3-critique.md
-requires: [components/handoff-schema.md, components/output-contract.md]
+requires: [components/handoff-schema.md, components/output-contract/critique.md]
 wave: 3
 trigger_event: WAVE_2_CLOSED
 role: critique
@@ -48,7 +48,7 @@ subroles: [skeptic, devils_advocate, arbiter]
 在开始任何工作前，必须按顺序加载：
 
 1. `components/handoff-schema.md` — 你的输入来源（`open_items`、`closed_waves`、`conflicts`）
-2. `components/output-contract.md` — 返回必须符合 `role: "critique"` 的 payload schema
+2. `components/output-contract/critique.md` — 返回必须符合 `role: "critique"` 的 payload schema
 3. `templates/wave3-critique.md` — 你的全部行为规则
 
 如需核对证据合规性，可额外加载 `components/evidence-policy.md` 第 6 节的机械检查清单。

@@ -707,12 +707,20 @@ for (const d of docs) {
   CRITICAL_FIELDS.length = 0;
   CRITICAL_FIELDS.push(...UNIQ);
 
+  // 2026-11-13 修：原来三处都用 .includes()（子串匹配），而字段之间大量存在前缀关系：
+  //   score / score_breakdown、findings / findings_count、verdict / verdicts
+  // 子串匹配会让「字段 A 只在字段 B 里出现」被判成「A 已定义」——假绿。
+  // 实测用这三对做过区分力验证：子串匹配 true、词边界匹配 false，
+  // 说明当前契约恰好没有假绿是**侥幸**，不是机制保证。
+  const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const hasField = (text, field) => new RegExp(`\\b${escapeRe(field)}\\b`).test(text);
+
   for (const { field, tmpl, tool } of CRITICAL_FIELDS) {
     const t = tmpl ? docs.find((d) => d.rel === tmpl) : null;
     const toolText = tool === 'check-state.mjs' ? stateSrc : toolSrc;
-    const inTmpl = t ? t.lines.join('\n').includes(field) : false;
-    const inTool = toolText.includes(field);
-    const inContract = contractSrc.includes(field);
+    const inTmpl = t ? hasField(t.lines.join('\n'), field) : false;
+    const inTool = hasField(toolText, field);
+    const inContract = hasField(contractSrc, field);
     // 自动提取出来的字段（tmpl === null）没有指定模板，只查契约与校验器两侧
     if (tmpl && !inTmpl) {
       add('FAIL', 'L13', tmpl, 0,
@@ -730,10 +738,10 @@ for (const d of docs) {
   }
 
   // fix_contracts 走另一条链（state.json，不是 output-contract）
-  const fixInTmpl = (docs.find((d) => d.rel === 'templates/wave4-fix.md')?.lines.join('\n') ?? '').includes('fix_contracts');
+  const fixInTmpl = hasField(docs.find((d) => d.rel === 'templates/wave4-fix.md')?.lines.join('\n') ?? '', 'fix_contracts');
   if (!fixInTmpl) add('FAIL', 'L13', 'templates/wave4-fix.md', 0, '关键字段 fix_contracts 模板里没提');
-  if (!stateSrc.includes('fix_contracts')) add('FAIL', 'L13', 'tools/check-state.mjs', 0, 'fix_contracts 校验器不检查');
-  if (!contractSrc.includes('fix_contracts')) add('FAIL', 'L13', 'artifacts/run-state.md', 0, 'fix_contracts 账本没定义');
+  if (!hasField(stateSrc, 'fix_contracts')) add('FAIL', 'L13', 'tools/check-state.mjs', 0, 'fix_contracts 校验器不检查');
+  if (!hasField(contractSrc, 'fix_contracts')) add('FAIL', 'L13', 'artifacts/run-state.md', 0, 'fix_contracts 账本没定义');
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -774,6 +782,27 @@ for (const d of docs) {
         if (/不存在|未实现|还没写|图纸|尚未/.test(context)) continue;
         add('FAIL', 'L14', d.rel, lineIdx + 1,
           `引用了框架自有的不存在的文件 ${ref}——用户在文档指引下会去找一个空路径`);
+      }
+    }
+  }
+
+  // 2026-11-13 补：上面只认「反引号包裹」的引用，于是 frontmatter 里的
+  // `requires: [components/output-contract-roles.md]` 完全逃过了检查——
+  // 而那个文件根本不存在（拆节尝试回退后的残留），两个 wrapper 都指着它。
+  // 这类引用更危险：它是**强制加载清单**，agent 会照它去找文件。
+  const REQUIRES_LINE = /^\s*requires:\s*\[([^\]]*)\]/gm;
+  for (const d of docs) {
+    const text = d.lines.join('\n');
+    for (const m of text.matchAll(REQUIRES_LINE)) {
+      for (const raw of m[1].split(',')) {
+        const ref = raw.trim();
+        if (!ref) continue;
+        if (/[<>{}*]/.test(ref)) continue;
+        const candidates = [join(FW, ref), join(FW_ROOT, ref), join(HERE, ref)];
+        if (candidates.some((p) => existsSync(p))) continue;
+        const lineIdx = d.lines.findIndex((ln) => ln.includes('requires:') && ln.includes(ref));
+        add('FAIL', 'L14', d.rel, lineIdx + 1,
+          `requires 里声明的强制加载文件 ${ref} 不存在——agent 会照这个清单去找，然后扑空`);
       }
     }
   }

@@ -133,6 +133,11 @@ const CHECKS = [
     script: 'check-wrapper-integrity.test.mjs',
     desc: '12 个用例：小节缺失 / 只剩标题 / 基线不足时报告不得自相矛盾',
   },
+  {
+    name: '契约切片完整性（拆节后各角色字段是否还在）',
+    script: 'check-contract-slices.test.mjs',
+    desc: '10 个用例：缺必填字段 / 缺通用节 / 孤儿切片 / 切片缺失 / 生成器幂等',
+  },
 ];
 
 let failed = 0;

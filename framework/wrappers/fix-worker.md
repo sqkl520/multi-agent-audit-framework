@@ -4,7 +4,7 @@ description: 波次四·修复。整条链路中唯一拥有写权限的角色�
 tools: Read, Grep, Glob, Edit, Write, Bash
 model: inherit
 template: templates/wave4-fix.md
-requires: [components/output-contract.md, components/handoff-schema.md]
+requires: [components/output-contract/fix.md, components/handoff-schema.md]
 wave: 4
 trigger_event: FINDING_UPHELD
 role: fix
@@ -38,7 +38,7 @@ write_scoped: true
 
 在开始任何工作前，必须按顺序加载：
 
-1. `components/output-contract.md` — 返回必须符合 `role: "fix"` 的 payload schema
+1. `components/output-contract/fix.md` — 返回必须符合 `role: "fix"` 的 payload schema
 2. `components/handoff-schema.md` — 你的 `affected_issues` / `residual_risks` 会被写入 `open_items`
 3. `templates/wave4-fix.md` — 你的全部行为规则
 

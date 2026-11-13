@@ -4,7 +4,7 @@ description: 波次二·审计。在单一维度、单一切片内产出符合�
 tools: Read, Grep, Glob, Bash, Write
 model: inherit
 template: templates/wave2-audit.md
-requires: [components/evidence-policy.md, components/output-contract.md]
+requires: [components/evidence-policy.md, components/output-contract/audit.md]
 wave: 2
 trigger_event: SLICE_ASSIGNED
 role: audit
@@ -48,7 +48,7 @@ role: audit
 在开始任何工作前，必须按顺序加载：
 
 1. `components/evidence-policy.md` — 门 0，这是你的准入门槛
-2. `components/output-contract.md` — 返回必须符合 `role: "audit"` 的 payload schema
+2. `components/output-contract/audit.md` — 返回必须符合 `role: "audit"` 的 payload schema
 3. `templates/wave2-audit.md` — 你的全部行为规则
 4. `artifacts/report-naming.md` — 产物文件名与落盘位置。**你的产物文件（`round{N}-02-audit-{slice_id}-{dimension}.md`）是返回的一部分，不写 = 这一片没做完。**
 

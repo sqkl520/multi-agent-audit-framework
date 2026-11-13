@@ -4,8 +4,7 @@ description: 波次二A·宽扫。在单一切片内快速扫过 6 个维度，�
 tools: Read, Grep, Glob, Bash, Write
 model: inherit
 template: templates/wave2a-sweep.md
-requires: [components/evidence-policy.md, components/output-contract.md, components/output-contract-roles.md]
-# 注意：output-contract-roles.md 里只读 2.2a 宽扫角色 那一节，不要读其它角色的分支
+requires: [components/evidence-policy.md, components/output-contract/sweep.md]
 wave: 2
 trigger_event: SLICE_ASSIGNED_FOR_SWEEP
 role: sweep
@@ -76,7 +75,7 @@ role: sweep
 在开始任何工作前，必须按顺序加载：
 
 1. `components/evidence-policy.md` — 门 0 的最低要求（你只需满足 `file:line` + 一行原文这一层）
-2. `components/output-contract.md` — 返回必须符合 `role: "sweep"` 的 payload schema
+2. `components/output-contract/sweep.md` — 返回必须符合 `role: "sweep"` 的 payload schema
 3. `templates/wave2a-sweep.md` — 你的全部行为规则
 4. `artifacts/report-naming.md` — 产物文件名与落盘位置。**你的产物文件（`round{N}-02-sweep-{slice_id}.md`）是返回的一部分，不写 = 这一片没做完。**
 

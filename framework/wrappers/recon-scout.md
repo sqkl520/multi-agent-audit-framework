@@ -4,7 +4,7 @@ description: 波次一·侦察。扫描项目并产出可被主Agent机械扇出
 tools: Read, Grep, Glob, Bash, Write
 model: inherit
 template: templates/wave1-recon.md
-requires: [components/evidence-policy.md, components/output-contract.md]
+requires: [components/evidence-policy.md, components/output-contract/recon.md]
 wave: 1
 trigger_event: WAVE_1_START
 role: recon
@@ -42,7 +42,7 @@ role: recon
 在开始任何工作前，必须按顺序加载：
 
 1. `components/evidence-policy.md` — 门 0 与证据格式（本波次虽不产出 finding，但 `entry_points` 与 `unverified` 同样需要 `file:line` 证据）
-2. `components/output-contract.md` — 返回必须符合 `role: "recon"` 的 payload schema
+2. `components/output-contract/recon.md` — 返回必须符合 `role: "recon"` 的 payload schema
 3. `templates/wave1-recon.md` — 你的全部行为规则
 
 **冲突处理**：三者冲突时，优先级为 `evidence-policy.md` > `output-contract.md` > `templates/wave1-recon.md`。

@@ -150,6 +150,31 @@ console.log('case 8: L13 —— 模板漏掉关键字段必须判红');
   expect('报 L13', /\[L13\]/.test(r.out), r.out.slice(-300));
 }
 
+console.log('case 8b: L13 必须用词边界匹配 —— 字段名只作为更长字段的前缀时不得算「已定义」');
+{
+  // 2026-11-13 实测：L13 原来三处都用 .includes()（子串匹配）。
+  // 而 ROLE_REQUIRED 里存在大量前缀关系：score/score_breakdown、
+  // findings/findings_count、verdict/verdicts。
+  // 若把 score 从契约里删干净、只留 score_breakdown，子串匹配会假绿。
+  // 这里构造该情形：把所有独立的 score（含 `score`、`"score":`、`score = ...`）
+  // 都替换掉，只保留 score_breakdown。
+  const r = withMutatedFramework(
+    (fw) => {
+      const p = join(fw, 'components', 'output-contract.md');
+      const s = readFileSync(p, 'utf8');
+      // 用词边界替换：不处理 score_breakdown（它后面跟的是 _，\b 不匹配）
+      const mutated = s.replace(/\bscore\b/g, '__GONE__');
+      writeFileSync(p, mutated);
+      // 前提校验：确认 score 真的删干净了，否则这个用例什么也没验证
+      if (/\bscore\b/.test(mutated)) throw new Error('测试前提不成立：score 未被删干净');
+      if (!/score_breakdown/.test(mutated)) throw new Error('测试前提不成立：score_breakdown 也被误删');
+    },
+    (fw) => runLint(fw),
+  );
+  expect('报 L13 score 未在契约定义', /\[L13\][\s\S]{0,300}score/.test(r.out),
+    r.out.split('\n').filter((l) => l.includes('L13')).join('; ') || r.out.slice(-400));
+}
+
 console.log('case 9: 重复小节编号必须判红');
 {
   const r = withMutatedFramework(
