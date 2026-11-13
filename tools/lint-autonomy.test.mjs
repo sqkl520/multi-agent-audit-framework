@@ -150,6 +150,51 @@ console.log('case 8: L13 —— 模板漏掉关键字段必须判红');
   expect('报 L13', /\[L13\]/.test(r.out), r.out.slice(-300));
 }
 
+console.log('case 8c: L3 必须抓住「attempt 归零」的任意写法（红队实测 6/8 绕过）');
+{
+  // 2026-11-14 实测：原正则 /attempt\s*从\s*0|attempt\s*从头计/ 只认两种写法，
+  // 下面 8 种表达里 6 种绕过。而这条规则防的是**无限重派死锁**，
+  // 靠关键词列表守它等于没守——换个动词就绕过。
+  const VARIANTS = [
+    'attempt 从 0 计',
+    'attempt 记为 0',
+    '把 attempt 抹回 0',
+    'attempt 重置为 0',
+    'attempt 归零',
+    'attempt 清零',
+    'attempt 置 0',
+    'attempt 从头计',
+  ];
+  const missed = [];
+  for (const v of VARIANTS) {
+    const r = withMutatedFramework(
+      (fw) => {
+        const p = join(fw, 'orchestrator', 'protocol.md');
+        writeFileSync(p, readFileSync(p, 'utf8') + `\n\n测试注入：${v}\n`);
+      },
+      (fw) => runLint(fw),
+    );
+    if (!/\[L3\]/.test(r.out)) missed.push(v);
+  }
+  expect('8 种写法全部被抓', missed.length === 0, `绕过: ${missed.join(' / ')}`);
+}
+
+console.log('case 8d: L3 不得误抓「不归零」这类正确表述');
+{
+  // 加强正则后立刻误抓了 10 处，全都是正确的否定表述：
+  //   「attempt + 1（**不归零**，见 protocol.md §4.1）」
+  // 规则本身是对的，不能判红。
+  const r = withMutatedFramework(
+    (fw) => {
+      const p = join(fw, 'orchestrator', 'protocol.md');
+      writeFileSync(p, readFileSync(p, 'utf8') + '\n\n测试注入：派发全新实例，attempt + 1（**不归零**）。\n');
+    },
+    (fw) => runLint(fw),
+  );
+  expect('「不归零」不算违规', !/\[L3\][\s\S]{0,120}不归零/.test(r.out),
+    r.out.split('\n').filter((l) => l.includes('L3')).join('; '));
+}
+
 console.log('case 8b: L13 必须用词边界匹配 —— 字段名只作为更长字段的前缀时不得算「已定义」');
 {
   // 2026-11-13 实测：L13 原来三处都用 .includes()（子串匹配）。

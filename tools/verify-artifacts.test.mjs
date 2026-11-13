@@ -890,5 +890,33 @@ console.log('case 49: files_read 元素是对象 {path,lines,quote} → 不得�
   rmSync(dir, { recursive: true, force: true });
 }
 
+console.log('case 50: files_read 填目录 → G1 必须判 FAIL（目录不是「读过的文件」）');
+{
+  // 2026-11-14 红队实测：existsSync 对目录也返回 true，于是 files_read: ["src"]
+  // 和 ["."] 都能通过 G1。这比「填不存在的文件」更难发现——路径看着是合法的，
+  // 但「读了 src 目录」这句话本身没有意义。
+  const dir = mkdtempSync(join(tmpdir(), 'v50-'));
+  const repo = join(dir, 'repo');
+  mkdirSync(join(repo, 'src'), { recursive: true });
+  writeFileSync(join(repo, 'src', 'a.ts'), 'const t=1;\n');
+  const env = {
+    schema_version: 'output-contract-v1', agent_id: 'a1', role: 'sweep',
+    status: 'SUCCESS', contract_valid: true,
+    artifact_path: join(dir, 'a.md'),
+    payload: {
+      slice_id: 'slice-01', reachability: 'PROD',
+      files_read: ['src'],   // 目录，不是文件
+      leads: [], lead_count: 0,
+      dimension_histogram: { logic: 0, concurrency: 0, security: 0, 'error-handling': 0, 'data-consistency': 0, contract: 0 },
+    },
+    error: null,
+  };
+  writeFileSync(join(dir, 'a.md'), '# x\n\n```json\n' + JSON.stringify(env, null, 2) + '\n```\n');
+  const r = run(repo, dir);
+  expect('G1 判 FAIL', hasFinding(r.json, 'FAIL', 'G1'),
+    JSON.stringify(getFinding(r.json, 'FAIL', 'G1')));
+  rmSync(dir, { recursive: true, force: true });
+}
+
 console.log(`\n=== 结果: ${passCount} 通过 / ${failCount} 失败 ===\n`);
 process.exit(failCount > 0 ? 1 : 0);

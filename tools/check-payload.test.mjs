@@ -1289,6 +1289,51 @@ console.log('case 98: 扫描布尔写成 "true" 字符串（不是真布尔）�
     JSON.stringify(r.r?.errors?.map(x => x.rule)));
 }
 
+console.log('case 99: artifact_path 不是字符串 → 必须报 artifact_path_wrong_type');
+{
+  // 2026-11-14 红队实测：存在性检查此前整个包在 `else if (typeof === 'string')` 里，
+  // 于是对象/数字/数组/布尔全部跳过检查，拿到「✅ 契约合规」。
+  // 而契约 §1 要求 SUCCESS 时 artifact_path 必须是路径字符串。
+  const BAD = [
+    { label: '对象', v: { path: 'x' } },
+    { label: '数字', v: 12345 },
+    { label: '数组', v: ['x'] },
+    { label: '布尔', v: true },
+  ];
+  const missed = [];
+  for (const c of BAD) {
+    const e = {
+      schema_version: 'output-contract-v1', agent_id: 'a1', role: 'fix',
+      status: 'SUCCESS', contract_valid: true, artifact_path: c.v,
+      payload: {
+        files_touched: [{ path: 'a.js', lines_added: 1, lines_removed: 0 }],
+        verification_commands: [{ command: 'x', exit_code: 0 }],
+        affected_issues: ['F1'], residual_risks: [],
+      }, error: null,
+    };
+    const r = run(wrap(JSON.stringify(e, null, 2)));
+    if (!r.r?.errors?.some((x) => x.rule === 'artifact_path_wrong_type')) missed.push(c.label);
+  }
+  expect('四种非字符串全部被抓', missed.length === 0, `绕过: ${missed.join(' / ')}`);
+}
+
+console.log('case 100: artifact_path 是合法字符串路径 → 不得误报 wrong_type');
+{
+  const e = {
+    schema_version: 'output-contract-v1', agent_id: 'a1', role: 'fix',
+    status: 'SUCCESS', contract_valid: true, artifact_path: '<OUTDIR>/x.md',
+    payload: {
+      files_touched: [{ path: 'a.js', lines_added: 1, lines_removed: 0 }],
+      verification_commands: [{ command: 'x', exit_code: 0 }],
+      affected_issues: ['F1'], residual_risks: [],
+    }, error: null,
+  };
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('不报 wrong_type',
+    !r.r?.errors?.some((x) => x.rule === 'artifact_path_wrong_type'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

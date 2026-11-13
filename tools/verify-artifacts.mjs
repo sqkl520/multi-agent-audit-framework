@@ -572,6 +572,17 @@ function checkFilesRead(repo, envelopes, state) {
         if (!abs || !existsSync(abs)) {
           fail('G1', `files_read 声明的文件不存在: ${f}`, { at: path });
           missing++;
+        } else {
+          // 2026-11-14 修（红队实测）：`existsSync` 对**目录**也返回 true，
+          // 于是 `files_read: ["src"]` / ["."] 能通过 G1——而目录不是「读过的文件」。
+          // 这比「填了不存在的文件」更难发现：它看起来是合法的路径，
+          // 但声称「读了 src 目录」这句话本身没有意义。
+          try {
+            if (statSync(abs).isDirectory()) {
+              fail('G1', `files_read 声明的是目录不是文件: ${f}——目录不能作为「读过的文件」`, { at: path });
+              missing++;
+            }
+          } catch { /* statSync 失败按不存在处理，上面已报 */ }
         }
       }
 

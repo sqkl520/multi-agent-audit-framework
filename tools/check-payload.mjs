@@ -167,6 +167,20 @@ if (envelope) {
         field: 'artifact_path', rule: 'missing_artifact_path',
         msg: 'status=SUCCESS 时 artifact_path 必填',
       });
+    } else if (typeof envelope.artifact_path !== 'string') {
+      // 2026-11-14 修（红队实测）：存在性检查此前整个包在 `else if (typeof === 'string')` 里，
+      // 于是**非字符串值完全跳过检查**。实测：
+      //   artifact_path = {"path":"x"} / 12345 / ["x"] / true  → 全部 ✅ 契约合规
+      // 而契约 §1 要求 SUCCESS 时 artifact_path 必须是「仓库外绝对路径或 <OUTDIR> 相对路径」，
+      // 这四种都不是路径，却因为类型不是 string 而躲过了所有校验。
+      // 一个对象类型的 artifact_path 在下游 `existsSync()` 里会静默返回 false，
+      // 或者被强制转成 "[object Object]" —— 无论哪种，「产物存在」这条门控都失效了。
+      errors.push({
+        field: 'artifact_path', rule: 'artifact_path_wrong_type',
+        msg: `artifact_path 必须是字符串，实际是 ${Array.isArray(envelope.artifact_path) ? 'array' : typeof envelope.artifact_path}：`
+          + `${JSON.stringify(envelope.artifact_path).slice(0, 60)}。`
+          + '非字符串会绕过存在性检查，让「格式完美但产物没写出来」通过门控',
+      });
     } else if (typeof envelope.artifact_path === 'string') {
       // 2026-11-10 修正：output-contract.md:92 宣称「artifact_path 指向的文件不存在
       // = CONTRACT_VIOLATION，这道校验是机械的」——但此前本工具只检查非空，
