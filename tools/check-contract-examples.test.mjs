@@ -135,6 +135,29 @@ console.log('case 7: 示例的 artifact_path 用 <OUTDIR> 约定占位，不得�
   expect('不含盘符路径', !/"artifact_path": "[A-Za-z]:/.test(ex));
 }
 
+console.log('case 8: 生成器幂等 —— 重跑到临时目录，与仓库内示例逐字节一致');
+{
+  // 2026-11-14 补。示例是「第 0 层」（第 0 层 = 示例必须是真的）。
+  // 若生成物可以被手改而无人发现，示例就会慢慢偏离契约——而这正是
+  // CHECKOUT-INCIDENT 的同源风险（人工回退一次就丢）。
+  // check-contract-slices.test.mjs 早就有这条断言，examples 这边一直缺。
+  const tmp = mkdtempSync(join(tmpdir(), 'ce-idem-'));
+  try {
+    execFileSync(process.execPath,
+      [join(HERE, 'gen-contract-examples.mjs'), '--out', tmp], { encoding: 'utf8', stdio: 'pipe' });
+    const roles = ['planner', 'recon', 'sweep', 'audit', 'critique', 'fix', 'verify'];
+    const diffs = [];
+    for (const r of roles) {
+      const a = readFileSync(join(ROOT, 'framework', 'components', 'output-contract', 'examples', `${r}.md`), 'utf8');
+      const b = readFileSync(join(tmp, `${r}.md`), 'utf8');
+      if (a !== b) diffs.push(r);
+    }
+    expect('7 份示例全部幂等', diffs.length === 0, `不一致: ${diffs.join(', ')}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

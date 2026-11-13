@@ -28,7 +28,12 @@ import { tmpdir } from 'node:os';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
-const OUT_DIR = join(ROOT, 'framework', 'components', 'output-contract', 'examples');
+// 2026-11-14 补：支持 --out <dir>，让测试能把产物生成到临时目录做幂等比对。
+// 没有这个参数时，测试只能「跑一遍改仓库文件再 git diff」，风险太大。
+const outArgIdx = process.argv.indexOf('--out');
+const OUT_DIR = outArgIdx >= 0 && process.argv[outArgIdx + 1]
+  ? process.argv[outArgIdx + 1]
+  : join(ROOT, 'framework', 'components', 'output-contract', 'examples');
 const VALIDATOR = join(HERE, 'check-payload.mjs');
 
 // ── 每个角色的最小合规 payload ──
