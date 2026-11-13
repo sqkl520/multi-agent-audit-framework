@@ -57,6 +57,19 @@ const out = {
 };
 
 // ── 1. 产物本身：这是唯一和「任务成功」直接相关的指标 ──
+// 目录不是产物。Windows 上目录的 stat.size 通常是 0，若不拦住，
+// 传错一个目录会得出 STALLED——「它没交付」——而这个结论完全是假的。
+// 2026-11-13 真实踩到：四个早就交付的 agent 被判 STALLED，因为把 scratch
+// 目录本身当成了 --artifact。
+if (existsSync(artifact) && statSync(artifact).isDirectory()) {
+  console.error(
+    `--artifact 传的是目录不是文件: ${artifact}\n` +
+    `目录的 size 不能当作「产物大小」，会得出错误的 STALLED。\n` +
+    `请传具体文件路径（例如 ${artifact}\\report.md），或用 --workdir 指定工作目录。`,
+  );
+  process.exit(2);
+}
+
 if (existsSync(artifact)) {
   const st = statSync(artifact);
   out.artifact_exists = true;

@@ -137,6 +137,19 @@ console.log('case 7: 产物在子目录里（round1/xxx.md），工作目录是�
   f.cleanup();
 }
 
+console.log('case 8: --artifact 传的是目录 → 必须拒绝，不能给 STALLED');
+{
+  // 2026-11-13 真实踩到：把 scratch 目录本身当 --artifact 传进去，
+  // 四个早就交付的 agent 全被判 STALLED。错误的「它没交付」比没有结论更危险，
+  // 所以这里必须硬拒绝（退出码 2），而不是返回一个看起来很确定的判定。
+  const f = fixture();
+  writeFileSync(join(f.work, 'x.mjs'), '// scratch\n');
+  const { code, r } = run(f.work, f.work);
+  expect('传目录退出码 2', code === 2, `实际 ${code}`);
+  expect('传目录不给 verdict', r === null || r?.verdict === undefined, JSON.stringify(r?.verdict));
+  f.cleanup();
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);
