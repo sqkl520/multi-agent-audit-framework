@@ -551,8 +551,23 @@ function checkFilesRead(repo, envelopes, state) {
         continue;
       }
       totalLists++;
-      for (const f of value) {
+      for (const raw of value) {
         totalFiles++;
+        // 2026-11-14 修：files_read 的元素有两种合法形态——
+        //   sweep 契约：{ path, lines, quote }   （对象）
+        //   其它角色：  "src/a.js"               （字符串）
+        // 此前直接把元素丢给 resolveRepoPath（内部调 path.isAbsolute），
+        // 遇到对象就抛 TypeError: The "path" argument must be of type string.
+        // 而对象形态正是 sweep 的**标准形态**——等于这个校验器对 sweep 产物直接崩溃。
+        const f = (raw && typeof raw === 'object' && !Array.isArray(raw))
+          ? (raw.path ?? raw.file ?? null)
+          : raw;
+        if (f === null) {
+          fail('G1', `files_read 元素既不是字符串也没有 path 字段: ${JSON.stringify(raw).slice(0, 80)}`,
+            { at: path });
+          missing++;
+          continue;
+        }
         const abs = resolveRepoPath(repo, f);
         if (!abs || !existsSync(abs)) {
           fail('G1', `files_read 声明的文件不存在: ${f}`, { at: path });
@@ -563,7 +578,12 @@ function checkFilesRead(repo, envelopes, state) {
       // 覆盖完整性：优先用账本的切片定义（权威），退回产物自述（兼容旧产物）
       const sid = env.payload?.slice_id;
       const declared = state?.slices?.[sid]?.files;
-      const readSet = new Set(value.map((x) => resolveRepoPath(repo, x)));
+      // files_read 的元素可能是字符串，也可能是 { path, lines, quote }（sweep 契约形态）。
+      // 这里必须先归一化再 resolve——否则对象会直接喂进 path.isAbsolute 并抛错。
+      const entryPath = (x) => (x && typeof x === 'object' && !Array.isArray(x))
+        ? (x.path ?? x.file ?? null) : x;
+      const readSet = new Set(
+        value.map(entryPath).filter((x) => typeof x === 'string').map((x) => resolveRepoPath(repo, x)));
 
       if (Array.isArray(declared) && declared.length > 0) {
         // 权威路径

@@ -81,16 +81,43 @@ if (envelopeBlockIdx < 0 && blocks.length > 0) envelopeBlockIdx = blocks.length 
 
 let envelope = null;
 if (blocks.length > 0) {
-  const cleaned = blocks[envelopeBlockIdx][1]
-    .split('\n').filter((ln) => !/^\s*\/\//.test(ln)).join('\n')
-    .replace(/,(\s*[}\]])/g, '$1');
+  // 2026-11-14 修：尾随逗号的「容错」正则不尊重字符串边界，会**静默改写 quote 的内容**。
+  // 实测：源码里引用 `if (a) { return {x,}; }`，正则把 `,}` 改成 `}`，
+  // 解析出来的 quote 变成 `if (a) { return {x}; }`——而 quote 正是门 0 要求
+  // 「逐字来自本回合读到的原文」的那一项。改写了却没任何警告。
+  //
+  // 正确做法：先按原样解析。原样能解析就**绝不改写**（绝大多数产物都是合法 JSON）。
+  // 只有原样解析失败时才启用容错，且容错生效必须留下 WARN——
+  // 因为一旦容错改动了内容，这份产物就不能再声称「quote 逐字」。
+  const raw = blocks[envelopeBlockIdx][1]
+    .split('\n').filter((ln) => !/^\s*\/\//.test(ln)).join('\n');
+
+  let parseErr = null;
   try {
-    envelope = JSON.parse(cleaned);
+    envelope = JSON.parse(raw);
   } catch (e) {
+    parseErr = e;
+    const tolerant = raw.replace(/,(\s*[}\]])/g, '$1');
+    if (tolerant !== raw) {
+      try {
+        envelope = JSON.parse(tolerant);
+        warnings.push({
+          field: '(root)', rule: 'json_trailing_comma_fixed',
+          msg: '原样 JSON 无法解析，已自动修复尾随逗号后通过。'
+            + '**但该修复会改动字符串内的内容**（例如 quote 里的 `,}` 变成 `}`），'
+            + '因此本产物的 quote 不能视为「逐字原文」——请让 agent 输出合法 JSON',
+        });
+      } catch {
+        envelope = null;
+      }
+    }
+  }
+
+  if (envelope === null) {
     errors.push({
       field: '(root)',
       rule: 'json_parse_failed',
-      msg: `JSON 解析失败: ${e.message}（取的是第 ${envelopeBlockIdx + 1}/${blocks.length} 个 json 块）`,
+      msg: `JSON 解析失败: ${parseErr?.message ?? '未知'}（取的是第 ${envelopeBlockIdx + 1}/${blocks.length} 个 json 块）`,
       fix: '检查是否有多余逗号、单引号、未转义的引号',
     });
   }
