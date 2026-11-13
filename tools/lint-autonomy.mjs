@@ -53,6 +53,21 @@ if (!existsSync(FW)) {
 const files = walk(FW);
 const docs = files.map((f) => ({ path: f, rel: relative(FW, f).replace(/\\/g, '/'), lines: readFileSync(f, 'utf8').split(/\r?\n/) }));
 
+// 2026-11-14 补：根目录两个入口文件此前**一条规则都没被扫**（walk(FW) 只走 framework/）。
+// 实测 `README.md` 里还活着三条已作废的规则：
+//   :223 `CONTRACT_VIOLATION … attempt 从 0 计` —— 死锁源头，其他文档全改成了「+1 不归零」
+//   :366 `8 这个数字来自…72–100% 的实测` —— citation-audit 已判定为语境错误
+//   :178 报告「固定五节」 —— 见下面的报告骨架冲突
+// 而 README.md 是仓库首页、START-HERE.md 是框架的唯一入口。用户第一眼看到的就是它们。
+// 纳入扫描后若红一片，说明豁免正则要调（根文档里大量「引用旧规则并说明已修」的语境）。
+const ROOT_DOCS = ['README.md', 'START-HERE.md'];
+for (const rel of ROOT_DOCS) {
+  const p = join(FW, '..', rel);
+  if (existsSync(p)) {
+    docs.push({ path: p, rel, lines: readFileSync(p, 'utf8').split(/\r?\n/) });
+  }
+}
+
 // ────────────────────────────────────────────────────────────────────
 // 豁免判据：这一行是不是在「引用旧规则 / 说明已修」
 // ────────────────────────────────────────────────────────────────────

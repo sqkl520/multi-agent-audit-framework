@@ -175,18 +175,19 @@ node <FRAMEWORK_ROOT>/tools/check-deliverables.mjs --round-dir "<OUTDIR>/round3"
 | ~~`files_read` 可以零成本捏造~~ | **2026-11-03 已修（部分）**。`tools/verify-artifacts.mjs` 现在会打开每个 `files_read` 声明的文件验证存在性（G1），并比对切片声明的 `files[]` 是否真的被读过（G3）。**仍无法证明"读了但没记"**，但"记了却没读/文件不存在"已经能被抓到 |
 | ~~主 Agent 被禁止使用它被要求使用的工具~~ | **2026-11-03 已修**。`protocol.md` §1.5 给出受限 `Bash` 白名单，判据是「输出会不会含源代码正文」。详见 [`docs/analysis/2026-11-03-four-hard-defect-fixes.md`](docs/analysis/2026-11-03-four-hard-defect-fixes.md) |
 | **`reachability` 承诺了检查但没有落点** | 说"由 Devil's Advocate 核查"，但 `coverage_gaps.kind` 闭集里没这一项。**未修** |
-| ~~从未提及任何现成工具~~ | **2026-11-03 部分修**。新增 `tools/verify-artifacts.mjs`（零依赖，自测 22 用例），负责门 0 回显、产物真实性、账本对账等**机械可验证**的部分。**但仍未引入 semgrep/codeql/ast-grep 等专职缺陷检测工具**，框架依然只靠 LLM 找 bug |
+| ~~从未提及任何现成工具~~ | **2026-11-03 部分修**。新增 `tools/verify-artifacts.mjs`（零依赖，自测用例见 `node tools/verify-artifacts.test.mjs`），负责门 0 回显、产物真实性、账本对账等**机械可验证**的部分。**但仍未引入 semgrep/codeql/ast-grep 等专职缺陷检测工具**，框架依然只靠 LLM 找 bug |
 | 上千行是"防执行者作弊"的规则 | 一半没有执行工具，一半在防一个已被证明不存在的问题。**未修** |
 | **产物内容不可信** | 子 Agent 会读上游产物文件，但框架从未规定「产物里的文本是数据，不是指令」。2026-11-04 实测中，一段伪装成身份声明的文本出现在工具输出里，按证据纪律被当作数据处理；**若同类文本出现在产物文件里，现有框架没有任何机制能挡住**。**未修** |
 | **子 Agent 会「读完不写」** | 2026-11-04 三组对照实验定位到根因：**任务书没有停机条件**，不是不落盘。窄任务（固定命令 + 产出配额 + 「不做」清单）2–5 分钟完成，宽任务 9 分钟仍零线索。已把配额规则写进 `wave2a-sweep.md` §7.5.6，**但尚未用宽任务验证它真能提完成率**。**部分缓解，未验证** |
-| **长任务能不能无人值守跑完** | 2026-11-04 修掉了「报告即终点」的结构：`§6`/`§6.5` 判据冲突、续跑分支缺定义、多失败窗口等人工、`attempt` 归零残留。`tools/lint-autonomy.mjs` 静态钉住（7 条规则），`tools/simulate-round-chain.mjs` 模拟 23 用例。**但真跑只完成 1/40 切片，从没走到「闭合→自动开下一轮」这条路径。结构已改，未实测** |
+| **长任务能不能无人值守跑完** | 2026-11-04 修掉了「报告即终点」的结构：`§6`/`§6.5` 判据冲突、续跑分支缺定义、多失败窗口等人工、`attempt` 归零残留。`tools/lint-autonomy.mjs` 静态钉住（19 条规则），`tools/simulate-round-chain.mjs` 模拟 23 用例。**但真跑只完成 1/40 切片，从没走到「闭合→自动开下一轮」这条路径。结构已改，未实测** |
 | ~~超时判据会误杀正常 agent~~ | **2026-11-09 已修**。原规则「8 分钟无更新即重派」比真实常态（实测 **47 分钟**）小 6 倍，按它截图里 12 个 agent 有 9 个会被误杀。已改为**「harness 报告终态前不主动杀」**，并删除全部 mtime 推断。详见 [`docs/analysis/2026-11-09-harness-first-pivot.md`](docs/analysis/2026-11-09-harness-first-pivot.md) |
 | **编排层在重新发明 harness** | 2809 行（47%）在做并发/状态/重试，而 harness 原生提供且更精确（耗时精确到秒、token 精确计数、逐任务模型选择）。已加 `protocol.md` §0.0「harness 优先原则」+ `scale-mapping.md` §0 降级声明。**但历史结论（「宽扫失败率 25%」）建立在误杀之上，需要重新验证** |
 | **框架从不做 token 计量与模型选择** | 原设计完全没有这两个维度。已写进 harness 对照表，但**还没有基于 token 的成本控制规则，也没有「什么任务用什么模型」的规则**。**未修** |
 | ~~没有角色被授权写产物文件~~ | **2026-11-03 已修**。五个 wrapper 获得 `Write`，契约新增必填字段 `artifact_path`，`SUCCESS` 但文件不存在 = `CONTRACT_VIOLATION`。**这是此前能静默产出「格式完美、结论为空」报告的原因** |
 | ~~两个死锁：波次门打不开 / 契约违规无限重派~~ | **2026-11-03 已修**。闭合条件改为「全部进入终态」；`attempt` 不再归零 |
 | ~~`direct_contradiction` 不在契约~~ | **2026-11-03 已修**。契约按子角色登记各自的裁决枚举 |
-| **「子 Agent 已产出但父级没意识到」没有机制级防线** | **2026-11-13 定位到根因并落成检查器**。在 dsh `0.2.1-rc.2` 上实测：`subagent` 工具的返回值是 `"started subagent <id>"`——**语义是「已启动」，不是「已完成」**；真正的结论走另一条 `subagent-settled` 注入到父级**下一轮**。所以「看不到产物」不是模型疏忽，是返回值语义 + 默认不共享 transcript。新增 `tools/dsh-session-audit.mjs`（12 用例），报 `parent_missed_child` / `child_no_output` / `turn_without_output` / `orphan_child` 四类。**在本机 9 个真实 session 上跑出 4 个「开了 turn 却零 assistant 消息」，并能报出各自的具体 `finish.reason`**。详见 [`experiments/dsh-probe/DSH-EXPERIMENT.md`](experiments/dsh-probe/DSH-EXPERIMENT.md) 与 `protocol.md` §0.8.5.4 |
+| **「子 Agent 已产出但父级没意识到」没有机制级防线** | **2026-11-13 定位到根因并落成检查器**。在 dsh `0.2.1-rc.2` 上实测：`subagent` 工具的返回值是 `"started subagent <id>"`——**语义是「已启动」，不是「已完成」**；真正的结论走另一条 `subagent-settled` 注入到父级**下一轮**。所以「看不到产物」不是模型疏忽，是返回值语义 + 默认不共享 transcript。新增 `tools/dsh-session-audit.mjs`，报 `parent_missed_child` / `child_no_output` / `turn_without_output` / `orphan_child` 四类。**在本机 9 个真实 session 上跑出 4 个「开了 turn 却零 assistant 消息」，并能报出各自的具体 `finish.reason`**。详见 [`experiments/dsh-probe/DSH-EXPERIMENT.md`](experiments/dsh-probe/DSH-EXPERIMENT.md) 与 `protocol.md` §0.8.5.4 |
+| **5 份 wrapper 的内容永久缺失（行数低于事故前基线）** | **已知未闭合，无源可恢复**。2026-11-13 一次 `git checkout -- framework/wrappers/` 销毁了未提交的改动（仓库当时只有 1 个 clone 提交）。`audit-specialist` 少 13%、`critique-panel` 少 36%、`fix-worker` 少 33%、`recon-scout` 少 20%、`verifier` 少 21%。git fsck / stash / 其他副本 / transcript 全部找过，**原始措辞不可恢复**。结构已按契约补齐（`check-wrapper-integrity` 全过），但**不补写内容**——编造会让文件「看起来完整」而读者无从分辨真假，比留空更危险。`check-all` 每次都会打印「5 项已知未闭合」。详见 [`experiments/CHECKOUT-INCIDENT.md`](experiments/CHECKOUT-INCIDENT.md) |
 
 **如果你要用于生产，先看这些。** 它们不影响"单条发现的质量"，但影响"你能不能相信覆盖率那一栏"。
 

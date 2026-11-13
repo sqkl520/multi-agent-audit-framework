@@ -21,32 +21,32 @@ const CHECKS = [
   {
     name: '产物机械校验（门 0 / 产物真实性 / 账本对账）',
     script: 'verify-artifacts.test.mjs',
-    desc: '自测：48 个用例，含编造引用、空产物、数字不符、注释当证据',
+    desc: '自测：含编造引用、空产物、数字不符、注释当证据',
   },
   {
     name: '自动续轮规则模拟',
     script: 'simulate-round-chain.mjs',
-    desc: '23 个用例：多轮推进、max_rounds、STALLED、§6/§6.5 一致性',
+    desc: '用例：多轮推进、max_rounds、STALLED、§6/§6.5 一致性',
   },
   {
     name: '失败分类器',
     script: 'classify-failures.test.mjs',
-    desc: '16 个用例：NO_OUTPUT / SCRIPT_TIMEOUT / EMPTY_RESULT 及各自的重派策略',
+    desc: '用例：NO_OUTPUT / SCRIPT_TIMEOUT / EMPTY_RESULT 及各自的重派策略',
   },
   {
     name: '交付物规范检查',
     script: 'check-deliverables.test.mjs',
-    desc: '13 个用例：两类必交付、报告六节、账本四节、自由命名、子目录',
+    desc: '用例：两类必交付、报告六节、账本四节、自由命名、子目录',
   },
   {
     name: '环境探测器',
     script: 'detect-harness.test.mjs',
-    desc: '11 个用例：版本比较、unknown 不猜值、探测脚本可执行',
+    desc: '用例：版本比较、unknown 不猜值、探测脚本可执行',
   },
   {
     name: '契约准入检查器',
     script: 'check-payload.test.mjs',
-    desc: '77 个用例：JSON 信封、顶层字段、角色必填、计数自洽、空 findings、空 quote（事前门，非事后补救）',
+    desc: '用例：JSON 信封、顶层字段、角色必填、计数自洽、空 findings、空 quote（事前门，非事后补救）',
   },
   {
     name: '门 0 伪造手法逐条对照（红队）',
@@ -56,7 +56,7 @@ const CHECKS = [
   {
     name: 'Agent 间一致性计算器',
     script: 'consistency.mjs',
-    desc: '14 个用例：Jaccard、随机基线、理论上限、达成度（防止把「报告大」当成「有共识」）',
+    desc: '用例：Jaccard、随机基线、理论上限、达成度（防止把「报告大」当成「有共识」）',
   },
   {
     name: '声明范围可伪造性对照（红队）',
@@ -71,17 +71,17 @@ const CHECKS = [
   {
     name: 'state.json 校验器',
     script: 'check-state.test.mjs',
-    desc: '18 个用例：枚举、FAILED 诊断、DONE 产物、attempt、budget、CLOSED 联动',
+    desc: '用例：枚举、FAILED 诊断、DONE 产物、attempt、budget、CLOSED 联动',
   },
   {
     name: 'attempt 计数器',
     script: 'attempt-ledger.test.mjs',
-    desc: '15 个用例：digest 对 agent_id 不敏感、连续同因即停、上限即停',
+    desc: '用例：digest 对 agent_id 不敏感、连续同因即停、上限即停',
   },
   {
     name: '门禁系统',
     script: 'gate.test.mjs',
-    desc: '18 个用例：四道门的放行与拒绝路径（dispatch/accept/close/release）',
+    desc: '用例：四道门的放行与拒绝路径（dispatch/accept/close/release）',
   },
   {
     name: 'Wrapper 完整性（结构 + 关键段落 + tools 权限）',
@@ -102,67 +102,67 @@ const CHECKS = [
   {
     name: '盲区模式检测器',
     script: 'check-blindspots.test.mjs',
-    desc: '9 个用例：B1 返回活引用 / B2 同类守卫差异 / B3 缺 isFinite / B4 调用未导入的名字',
+    desc: '用例：B1 返回活引用 / B2 同类守卫差异 / B3 缺 isFinite / B4 调用未导入的名字',
   },
   {
     name: '承诺兑现检查器',
     script: 'check-promises.test.mjs',
-    desc: '12 个用例：@returns 无 return / @throws 不抛错 / 声称只读却返回可变对象',
+    desc: '用例：@returns 无 return / @throws 不抛错 / 声称只读却返回可变对象',
   },
   {
     name: '子 Agent 结局扫描（转录大小 ≠ 工作痕迹）',
     script: 'scan-agent-outcomes.mjs',
-    desc: '7 个用例：转录 0 字节但工作目录有文件（WORKED_SILENTLY）/ 未知时必须报 UNKNOWN',
+    desc: '用例：转录 0 字节但工作目录有文件（WORKED_SILENTLY）/ 未知时必须报 UNKNOWN',
   },
   {
     name: 'Agent 状态判定（产物 vs 活动痕迹）',
     script: 'agent-status.test.mjs',
-    desc: '13 个用例：产物已落盘判 DONE / 只有活动痕迹判 RUNNING / 久无动静判 STALLED / 传目录必须拒绝',
+    desc: '用例：产物已落盘判 DONE / 只有活动痕迹判 RUNNING / 久无动静判 STALLED / 传目录必须拒绝',
   },
   {
     name: 'Stop hook 相位守卫',
     script: 'stop-hook.test.mjs',
-    desc: '12 个用例：相位未闭合时拒绝结束回合',
+    desc: '用例：相位未闭合时拒绝结束回合',
   },
   {
     name: 'dsh session 闭环检查（子 agent 产出是否被父级消费）',
     script: 'dsh-session-audit.test.mjs',
-    desc: '12 个用例：父级漏收 settle / 子 agent 空产出 / finish.reason 可读 / 孤儿 session',
+    desc: '用例：父级漏收 settle / 子 agent 空产出 / finish.reason 可读 / 孤儿 session',
   },
   {
     name: 'Wrapper 契约字段覆盖（必填字段是否写进产物规格）',
     script: 'check-wrapper-contract.test.mjs',
-    desc: '12 个用例：字段缺失 / 只顺带一提 / §5 模板算不算 / 子标题之后 / 字段表漂移',
+    desc: '用例：字段缺失 / 只顺带一提 / §5 模板算不算 / 子标题之后 / 字段表漂移',
   },
   {
     name: 'Wrapper 完整性检查器自测（表格与合计是否一致）',
     script: 'check-wrapper-integrity.test.mjs',
-    desc: '12 个用例：小节缺失 / 只剩标题 / 基线不足时报告不得自相矛盾',
+    desc: '用例：小节缺失 / 只剩标题 / 基线不足时报告不得自相矛盾',
   },
   {
     name: '契约切片完整性（拆节后各角色字段是否还在）',
     script: 'check-contract-slices.test.mjs',
-    desc: '10 个用例：缺必填字段 / 缺通用节 / 孤儿切片 / 切片缺失 / 生成器幂等',
+    desc: '用例：缺必填字段 / 缺通用节 / 孤儿切片 / 切片缺失 / 生成器幂等',
   },
   {
     name: '契约切片保真度（拆分是否无损）',
     script: 'check-contract-slice-fidelity.test.mjs',
-    desc: '11 个用例：切片丢字段 / 结构变化须拒绝执行 / 父标题 / 自述路径 / 自动生成标注',
+    desc: '用例：切片丢字段 / 结构变化须拒绝执行 / 父标题 / 自述路径 / 自动生成标注',
   },
   {
     name: '契约示例可用性（照抄示例能否通过校验器）',
     script: 'check-contract-examples.test.mjs',
-    desc: '14 个用例：示例被破坏 / 缺文件 / 目录不见 / role 不匹配 / 缺必填字段 / 占位路径不随 cwd 变',
+    desc: '用例：示例被破坏 / 缺文件 / 目录不见 / role 不匹配 / 缺必填字段 / 占位路径不随 cwd 变',
   },
   {
     name: '枚举跨层一致性（契约 / wrapper / 示例 vs 校验器闭集）',
     script: 'check-enum-consistency.test.mjs',
-    desc: '13 个用例：文档多写 NONE / 少写 GENERATED / 示例用非法值 / 布尔枚举不得误报',
+    desc: '用例：文档多写 NONE / 少写 GENERATED / 示例用非法值 / 布尔枚举不得误报',
   },
   {
     name: 'GT 缺陷的模式归属（哪些缺陷结构上查不到）',
     script: 'check-pattern-coverage.test.mjs',
-    desc: '14 个用例：pattern 悬空 / none 无理由 / none 关键词须搜不到 / 引用不存在的模式 / 两个 fixture 都要查',
+    desc: '用例：pattern 悬空 / none 无理由 / none 关键词须搜不到 / 引用不存在的模式 / 两个 fixture 都要查',
   },
 ];
 
