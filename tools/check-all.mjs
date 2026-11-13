@@ -118,6 +118,11 @@ const CHECKS = [
     script: 'stop-hook.test.mjs',
     desc: '12 个用例：相位未闭合时拒绝结束回合',
   },
+  {
+    name: 'dsh session 闭环检查（子 agent 产出是否被父级消费）',
+    script: 'dsh-session-audit.test.mjs',
+    desc: '12 个用例：父级漏收 settle / 子 agent 空产出 / finish.reason 可读 / 孤儿 session',
+  },
 ];
 
 let failed = 0;

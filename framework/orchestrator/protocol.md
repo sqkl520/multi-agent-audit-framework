@@ -508,6 +508,58 @@ Agent 循环的退出条件 = "本轮回复里没有 tool call"
 
 **自测**：`node tools/stop-hook.test.mjs`，8 个用例覆盖「该拦」和「不该拦」两侧。
 
+#### 0.8.5.4 机制层面为什么会漏掉产物（2026-11-13 dsh 实测）
+
+§0.8.5.3 讲的是「主 Agent 看错了地方」。这一节讲**更根本的一层：框架本身就没打算让父级自动看到子级**。
+
+在 dsh `0.2.1-rc.2` 上实测（本地 mock LLM，无真实上游依赖，见 `experiments/dsh-probe/DSH-EXPERIMENT.md`），
+`subagent` 工具的**返回值是「已启动」，不是「已完成」**：
+
+```
+tool result:  "started subagent 82757119-cfd1-45d1-8807-d5f82d3f52e6"
+```
+
+真正的结论走另一条路——子 Agent 结束后，运行时往父 Agent 的**下一轮**注入一条
+`agent/inbox/spliced` 事件，`source.kind = "subagent-settled"`：
+
+```json
+{"type":"agent/inbox/spliced","data":{"inserted":[{
+  "content":[{"text":"Background subagent 827... finished and will do no further work unless you send it more."},
+             {"text":"Its closing message:"},{"text":"CHILD_REPORT"}],
+  "source":{"kind":"subagent-settled","senderSessionId":"827..."}}]}}
+```
+
+两个直接后果：
+
+1. **只看工具返回值 = 只看到「已启动」。** 调用方若在这一步就总结，会得到「任务还在跑」的假象。
+   反过来，若它把 turn 1 的答复当作最终答案，会得到「跑完了但没有内容」的假象。
+   **这两个假象都不来自模型疏忽，来自返回值语义。**
+2. **dsh 自己的子 Agent 提示词就明说了这件事**：
+
+   > Your parent agent id is "session-...". Before you finish, send your result to that agent with
+   > `send_message(...)`. **The parent shares your workspace but does not automatically receive your
+   > transcript, tool output, or reasoning.**
+
+**所以「父级漏掉子级产物」不是偶发 bug，是必须显式补偿的默认行为。**
+
+**检查工具**：`node tools/dsh-session-audit.mjs --sessions <dsh sessions 根> --project <项目目录>`
+
+它读 zstd 压缩的 `session.v4.jsonl.zstd`，报四类问题：
+
+| kind | 含义 |
+|---|---|
+| `parent_missed_child` | 子 agent 有产出，父 session 里没有对应 settle 注入 |
+| `child_no_output` | 子 agent 开了 turn 但零 assistant 文本 |
+| `turn_without_output` | 任何 session 开了 turn 却零 assistant 消息（附最后 `finish.reason` 与重试次数） |
+| `orphan_child` | 子 session 声明的 `parentSession` 在本目录找不到 |
+
+**在真实数据上跑出来的第一件事**：本机 9 个 session 里 **4 个有 `turn/start` 但 0 条 assistant 消息**。
+检查器直接报出了每次失败的 `finish.reason`（`error:TRANSPORT (Stream ended without finish_reason)`、
+`error:SERVER (503 ... 无可用渠道)`），而不是笼统的「失败了」。
+**这正是「静默失败」的反面：失败必须能说出原因码。**
+
+**自测**：`node tools/dsh-session-audit.test.mjs`，12 个用例（合成 session 目录，不依赖真实上游）。
+
 #### 0.8.6 与自动续轮的关系
 
 §0.8 管**相位之内**，`round-detection.md` 管**相位之间（轮与轮）**。两者不冲突：

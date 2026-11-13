@@ -186,6 +186,7 @@ node <FRAMEWORK_ROOT>/tools/check-deliverables.mjs --round-dir "<OUTDIR>/round3"
 | ~~没有角色被授权写产物文件~~ | **2026-11-03 已修**。五个 wrapper 获得 `Write`，契约新增必填字段 `artifact_path`，`SUCCESS` 但文件不存在 = `CONTRACT_VIOLATION`。**这是此前能静默产出「格式完美、结论为空」报告的原因** |
 | ~~两个死锁：波次门打不开 / 契约违规无限重派~~ | **2026-11-03 已修**。闭合条件改为「全部进入终态」；`attempt` 不再归零 |
 | ~~`direct_contradiction` 不在契约~~ | **2026-11-03 已修**。契约按子角色登记各自的裁决枚举 |
+| **「子 Agent 已产出但父级没意识到」没有机制级防线** | **2026-11-13 定位到根因并落成检查器**。在 dsh `0.2.1-rc.2` 上实测：`subagent` 工具的返回值是 `"started subagent <id>"`——**语义是「已启动」，不是「已完成」**；真正的结论走另一条 `subagent-settled` 注入到父级**下一轮**。所以「看不到产物」不是模型疏忽，是返回值语义 + 默认不共享 transcript。新增 `tools/dsh-session-audit.mjs`（12 用例），报 `parent_missed_child` / `child_no_output` / `turn_without_output` / `orphan_child` 四类。**在本机 9 个真实 session 上跑出 4 个「开了 turn 却零 assistant 消息」，并能报出各自的具体 `finish.reason`**。详见 [`experiments/dsh-probe/DSH-EXPERIMENT.md`](experiments/dsh-probe/DSH-EXPERIMENT.md) 与 `protocol.md` §0.8.5.4 |
 
 **如果你要用于生产，先看这些。** 它们不影响"单条发现的质量"，但影响"你能不能相信覆盖率那一栏"。
 

@@ -1,0 +1,4 @@
+[
+  { id: llm-pi-ai, config: { providers: { mock: { displayName: "Mock", api: "openai-completions", baseURL: "http://127.0.0.1:18891/v1", apiKeyEnv: "MOCK_API_KEY", models: [ { id: "mock-model", name: "mock", contextWindow: 128000, maxTokens: 4096 } ] } } } },
+  { id: agent-default-model, config: { provider: "mock", model: "mock-model" } }
+]
