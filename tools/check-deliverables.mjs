@@ -128,24 +128,59 @@ if (reportText) {
     { key: '下一步', name: '6. 下一步' },
   ];
   const headings = [...reportText.matchAll(/^##\s+(.+)$/gm)].map((m) => m[1]);
-  const missing = required.filter((r) => !headings.some((h) => h.includes(r.key)));
+
+  // 2026-11-14 修（批判 agent 实测）：
+  // 此前用 `headings.some(h => h.includes(key))`——只要某个标题里**包含**关键词就算命中。
+  // 实测把七个关键词塞进同一个标题即判「七节齐全」：
+  //   ## 0. 一句话结论 1. 元信息 2. 覆盖说明 3. 发现汇总 4. 失败与未闭合 5. 零写入自证 6. 下一步
+  // 一个标题承载七个节，报告实际上只有一节。
+  //
+  // 修法：每个节必须**独占一个标题**，且一个标题只能满足一个节。
+  // 判据从「包含」改为「一个标题里出现该关键词」+ 「该标题没被别的节占用」。
+  const used = new Set();
+  const missing = [];
+  for (const r of required) {
+    const idx = headings.findIndex((h, i) => !used.has(i) && h.includes(r.key));
+    if (idx < 0) {
+      missing.push(r);
+    } else {
+      used.add(idx);
+    }
+  }
+
+  // 附加：一个标题里塞了多个节关键词 → 明确报出来，而不是默默算通过
+  const stuffers = headings.filter((h) => required.filter((r) => h.includes(r.key)).length > 1);
 
   if (missing.length > 0) {
     fail('D2', `最终报告缺节: ${missing.map((m) => m.name).join(' / ')}`, {
       实际标题: headings.join(' | ') || '(无二级标题)',
     });
+  } else if (stuffers.length > 0) {
+    fail('D2', `一个标题里塞了多个节，节没有独立成标题: 「${stuffers[0].slice(0, 60)}」`, {
+      说明: '每个节必须独占一个二级标题',
+    });
   } else {
     pass('D2', `最终报告七节齐全（${headings.length} 个二级标题）`);
   }
 
-  // 覆盖率必须是「N/N = xx%」的形式，且分母不能是 0
+  // 覆盖率必须是「N/N = xx%」的形式，且分母不能是 0、结果必须自洽且 ≤100%
   const cov = reportText.match(/(\d+)\s*\/\s*(\d+)\s*=\s*([\d.]+)\s*%/);
   if (!cov) {
     warn('D2', '覆盖说明里没找到「N/N = xx%」形式的覆盖率');
   } else if (Number(cov[2]) === 0) {
     fail('D2', `覆盖率分母为 0: ${cov[0]}`);
   } else {
-    pass('D2', `覆盖率有明确数值: ${cov[0]}`);
+    // 2026-11-14 修：此前只查「分母不为 0」。实测 `999 / 3 = 33300%` 被判定通过——
+    // 一个超过 100% 的覆盖率在数学上不可能，它意味着分子分母不是同一套口径。
+    const num = Number(cov[1]), den = Number(cov[2]), pct = Number(cov[3]);
+    const realPct = (num / den) * 100;
+    if (pct > 100) {
+      fail('D2', `覆盖率不可能超过 100%: ${cov[0]}——分子分母不是同一套口径`);
+    } else if (Math.abs(realPct - pct) > 0.5) {
+      fail('D2', `覆盖率算错: ${cov[0]}（${num}/${den} 实际是 ${realPct.toFixed(1)}%）`);
+    } else {
+      pass('D2', `覆盖率有明确数值且自洽: ${cov[0]}`);
+    }
   }
 
   // D2b · 证据覆盖率（2026-11-10 新增）
@@ -157,10 +192,20 @@ if (reportText) {
                 '格式：证据覆盖率 = Q / F = xx%（Q=门 0 通过的 quote 条数，F=切片声明文件总数）');
   } else {
     const rate = Number(evCov[3]);
-    if (Number(evCov[2]) === 0) {
+    const num = Number(evCov[1]), den = Number(evCov[2]);
+    const realRate = (num / den) * 100;
+    if (den === 0) {
       fail('D2b', `证据覆盖率分母为 0: ${evCov[0]}`);
+    } else if (rate > 100) {
+      // 2026-11-14 修：此前 D2b 只查「分母为 0」和「低于 5%」，没有上限。
+      // 实测 `证据覆盖率 = Q / F = 999 / 3 = 33300%` 被 D2b 判定通过，
+      // 而同一份报告的 D2 已经判它 FAIL——**一份报告两处结论互相矛盾**，
+      // 正是本会话早些时候修过的同一类缺陷（表格全绿而合计说有问题）。
+      fail('D2b', `证据覆盖率不可能超过 100%: ${evCov[0]}——Q 不可能大于 F（Q=门0通过的quote数，F=声明文件总数）`);
+    } else if (Math.abs(realRate - rate) > 0.5) {
+      fail('D2b', `证据覆盖率算错: ${evCov[0]}（${num}/${den} 实际是 ${realRate.toFixed(1)}%）`);
     } else if (rate < 5) {
-      warn('D2b', `证据覆盖率仅 ${rate}%（${evCov[1]}/${evCov[2]}）。` +
+      warn('D2b', `证据覆盖率仅 ${rate}%（${num}/${den}）。` +
                  `可能是 Agent 没真读代码，也可能是本轮确实无缺陷——报告必须显式说明是哪一种`);
     } else {
       pass('D2b', `证据覆盖率 ${rate}%`);

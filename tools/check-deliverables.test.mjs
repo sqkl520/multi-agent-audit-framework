@@ -230,6 +230,67 @@ console.log('case 11: 有证据覆盖率且 >5% → D2b PASS');
   f.cleanup();
 }
 
+// ── 2026-11-14 批判 agent 实测：节塞与覆盖率算术 ──
+console.log('case 16: 七个节关键词塞进同一个标题 → 必须判缺节（一个标题不算七节）');
+{
+  // 此前用 headings.some(h => h.includes(key))，只要标题里包含关键词就算命中。
+  // 把七节全塞进一个标题即判「七节齐全」，而报告实际只有一节。
+  const stuffed = `# round9 审计报告
+
+## 0. 一句话结论 1. 元信息 2. 覆盖说明 3. 发现汇总 4. 失败与未闭合 5. 零写入自证 6. 下一步
+
+证据覆盖率 = Q / F = 3 / 8 = 37.5%
+`;
+  const f = fixture('round9', {
+    'round9-final-report.md': stuffed,
+    'round9-ledger.md': FULL_LEDGER,
+  });
+  const r = run(f.dir);
+  expect('D2 判 FAIL', has(r, 'FAIL', 'D2'),
+    JSON.stringify((r.findings ?? []).filter((x) => x.rule === 'D2')));
+  f.cleanup();
+}
+
+console.log('case 17: 覆盖率超过 100% → D2 与 D2b 都必须判 FAIL（且结论不能互相矛盾）');
+{
+  // 实测 `999 / 3 = 33300%` 曾被 D2b 判通过、D2 判失败——同一份报告两处结论矛盾。
+  const bad = `# round9 审计报告
+
+## 0. 一句话结论
+x
+
+## 1. 元信息
+x
+
+## 2. 覆盖说明
+证据覆盖率 = Q / F = 999 / 3 = 33300%
+
+## 3. 发现汇总
+x
+
+## 4. 失败与未闭合
+x
+
+## 5. 零写入自证
+x
+
+## 6. 下一步
+x
+`;
+  const f = fixture('round9', {
+    'round9-final-report.md': bad,
+    'round9-ledger.md': FULL_LEDGER,
+  });
+  const r = run(f.dir);
+  expect('D2 判 FAIL（覆盖率不可能超 100%）',
+    (r.findings ?? []).some((x) => x.rule === 'D2' && x.level === 'FAIL'),
+    JSON.stringify((r.findings ?? []).filter((x) => x.rule === 'D2')));
+  expect('D2b 也判 FAIL（不能一边过一边不过）',
+    (r.findings ?? []).some((x) => x.rule === 'D2b' && x.level === 'FAIL'),
+    JSON.stringify((r.findings ?? []).filter((x) => x.rule === 'D2b')));
+  f.cleanup();
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

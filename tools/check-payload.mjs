@@ -127,12 +127,35 @@ if (blocks.length > 0) {
 // 2 · 顶层信封字段（缺一即违规）
 // ────────────────────────────────────────────────────────────────────
 const REQUIRED_TOP = ['schema_version', 'agent_id', 'role', 'status', 'contract_valid', 'payload'];
-if (envelope) {
+
+// 2026-11-14 修（批判 agent 实测）：
+// 信封能被解析成**假值**（false / 0 / ""）时，`if (envelope)` 整段跳过，
+// 于是打印「✅ 契约合规」exit 0。实测 4 种通过：
+//   false / 0 / "" / payload=null
+// 一个不是对象、或必填字段值为 null 的「信封」，在语义上等于没有信封。
+if (envelope !== null && (typeof envelope !== 'object' || Array.isArray(envelope))) {
+  errors.push({
+    field: '(root)', rule: 'envelope_not_object',
+    msg: `信封必须是 JSON 对象，实际是 ${Array.isArray(envelope) ? 'array' : typeof envelope}: `
+      + `${JSON.stringify(envelope)}。非对象信封会跳过全部字段校验`,
+  });
+}
+
+if (envelope && typeof envelope === 'object' && !Array.isArray(envelope)) {
   for (const k of REQUIRED_TOP) {
     if (!(k in envelope)) {
       errors.push({ field: k, rule: 'missing_top_field', msg: `顶层缺字段: ${k}` });
+    } else if (envelope[k] === null || envelope[k] === undefined) {
+      // 2026-11-14 修：只查 key 存不存在，不查值。实测六个必填字段全写 null → exit 0。
+      // 「字段在但值是 null」和「字段缺失」对下游是同一件事：拿不到可用的值。
+      // 例外：artifact_path 与 error 允许 null（失败时没有产物），但它们不在 REQUIRED_TOP 里。
+      errors.push({
+        field: k, rule: 'null_top_field',
+        msg: `顶层字段 ${k} 的值是 null——「写了 null」和「没写」对下游是同一件事`,
+      });
     }
   }
+
   if (envelope.schema_version && envelope.schema_version !== 'output-contract-v1') {
     errors.push({
       field: 'schema_version',
