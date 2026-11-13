@@ -134,6 +134,41 @@ console.log('case 8: 账本持久化（两次调用共享状态）');
   f.cleanup();
 }
 
+// ── 2026-11-14 红队实测：换产物路径导致 attempts 永远为 1（死锁换了键）──
+console.log('case 16: 每次重派都换产物路径 → 必须仍然累计到上限并被拦');
+{
+  // run-state.md:300 要求重派时「产物请写到 <独立路径>」。
+  // 若产物路径进 payload 而没被排除，每次重派都是新 digest → attempts 恒为 1 →
+  // 防无限重派的护栏完全失效。实测过：6 次重派一次都没被拦。
+  const f = mk();
+  const states = [];
+  for (let i = 1; i <= 4; i++) {
+    const p = f.payload(`p${i}.json`, { task: 'AUDIT-S1', output_path: `S1.attempt${i}.md` });
+    const r = f.run(p, ['--record-failure']);
+    states.push({ attempts: r.r?.attempts_so_far, blocked: r.r?.blocked });
+  }
+  expect('第 1 次 attempts=1', states[0]?.attempts === 1, JSON.stringify(states[0]));
+  expect('第 2 次仍为同一任务（attempts=2 而非重置为 1）',
+    states[1]?.attempts === 2, JSON.stringify(states[1]));
+  expect('第 3 次达到上限并被拦',
+    states[2]?.blocked === true, JSON.stringify(states[2]));
+  expect('第 4 次仍被拦', states[3]?.blocked === true, JSON.stringify(states[3]));
+  f.cleanup();
+}
+
+console.log('case 17: 任务内容真变了（不同 slice）→ 必须是不同任务，不能累计');
+{
+  // 反向保护：排除字段不能排过头。换了切片就应该是新任务，attempts 从头开始。
+  const f = mk();
+  const p1 = f.payload('p1.json', { task: 'AUDIT-S1', output_path: 'a.md' });
+  f.run(p1, ['--record-failure']);
+  const p2 = f.payload('p2.json', { task: 'AUDIT-S2', output_path: 'b.md' });
+  const r = f.run(p2);
+  expect('不同切片是不同任务（attempts=0）',
+    r.r?.attempts_so_far === 0, String(r.r?.attempts_so_far));
+  f.cleanup();
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

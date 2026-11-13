@@ -48,11 +48,34 @@ if (!ledgerPath) {
 //   负载 = payload 全文，排除 trace_id / agent_id / spawned_at
 //   序列化 = 键排序（等价于 jq -S）
 //   换行 = 不依赖 shell 的 here-string（这里用 JSON.stringify，天然确定）
+//
+// 2026-11-14 修（红队实测）：
+//   protocol.md:1198 自己写过「若把每次都会变的字段算进摘要，累计键就会退化成
+//   『永远是新任务』——与本次修订要解决的死锁是同一个形状」。
+//   但只排除了 3 个字段，**漏掉了「产物路径」这一类**。
+//
+//   而 run-state.md:300 明确要求：重派时「你的产物请写到 <独立路径>，不要碰 <原路径>」。
+//   调用方把该路径放进 payload（最自然的做法）后，每次重派 payload 必变 →
+//   每次生成新键 → attempts 永远从 1 开始 → 防无限重派的护栏完全失效。
+//
+//   实测：按规则重派 6 次，attempts 恒为 1/3，**一次都没被拦**。
+//        同一 payload 重复 6 次则在第 3 次正确拦下——说明护栏本身没问题，
+//        是累计键的选取让它形同虚设。
 // ────────────────────────────────────────────────────────────────────
+const VOLATILE_KEYS = new Set([
+  // 协议原本排除的三个
+  'trace_id', 'agent_id', 'spawned_at',
+  // 2026-11-14 补：重派时按 run-state.md:300 必然改变，但语义上仍是「同一个任务」
+  'output_path', 'artifact_path', 'artifact_paths',
+  'output_file', 'output_dir', 'outdir',
+  'instance_id', 'attempt', 'attempts', 'retry_id',
+  'timestamp', 'started_at', 'finished_at', 'created_at',
+]);
+
 function computeDigest(payload) {
   const clean = {};
   for (const k of Object.keys(payload).sort()) {
-    if (['trace_id', 'agent_id', 'spawned_at'].includes(k)) continue;
+    if (VOLATILE_KEYS.has(k)) continue;
     clean[k] = payload[k];
   }
   const canonical = JSON.stringify(clean);
