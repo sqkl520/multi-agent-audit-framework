@@ -110,9 +110,9 @@ const CHECKS = [
     desc: '用例：@returns 无 return / @throws 不抛错 / 声称只读却返回可变对象',
   },
   {
-    name: '子 Agent 结局扫描（转录大小 ≠ 工作痕迹）',
+    name: '子 Agent 结局扫描（转录大小 ≠ 工作痕迹 / 通知会丢）',
     script: 'scan-agent-outcomes.mjs',
-    desc: '用例：转录 0 字节但工作目录有文件（WORKED_SILENTLY）/ 未知时必须报 UNKNOWN',
+    desc: '用例：转录空但有文件（WORKED_SILENTLY）/ 未知必须报 UNKNOWN / 有产出但没收到通知（WORKED_BUT_NOT_NOTIFIED）',
   },
   {
     name: 'Agent 状态判定（产物 vs 活动痕迹）',

@@ -26,15 +26,36 @@ import { existsSync, statSync, readdirSync } from 'node:fs';
 import { resolve, basename, join } from 'node:path';
 
 /**
- * 只根据「两个独立事实」分类，不做因果推断。
+ * 只根据「独立事实」分类，不做因果推断。
  *
  *   transcriptSize  转录文件字节数（0 表示 harness 没写/没写出来）
  *   scratchFiles    已知工作目录里的文件数（null 表示**不知道**，不是 0）
+ *   notified        主 Agent 是否**实际收到**过这个 agent 的完成通知
+ *                   （null 表示没记录，不是「没收到」）
+ *
+ * 2026-11-14 新增 notified 维度。起因是一次 11 个 agent 的并行派发：
+ * **73%（8/11）的完成通知根本没送达**，而所有产物都已落盘。
+ * 更关键的是实测出的一条反直觉事实：
+ *
+ *   .output 文件大小与「通知是否送达」**完全无关**。
+ *   收到通知的 3 个 agent，.output 全是 0 字节；
+ *   没收到通知的 3 个，.output 反而是 0 → 2.4MB（我发消息唤醒后才写进去的转录）。
+ *
+ *   所以「盯着 tasks/*.output 的大小判断 agent 跑完没」这条路**根本没有信号**。
+ *   我因为这条思路连续误判了两次。
+ *
+ * 现在把「通知丢失」显式成一类结局，而不是靠人猜。
  */
-export function classifyAgent({ transcriptSize, scratchFiles }) {
+export function classifyAgent({ transcriptSize, scratchFiles, notified = null }) {
   const known = scratchFiles !== null && scratchFiles !== undefined;
   const hasWork = known && scratchFiles > 0;
   const hasTranscript = transcriptSize > 0;
+
+  // 有工作产出，但主 Agent 没收到通知 —— 这是本次要抓的核心情形。
+  // 它不是「agent 失败了」，是「成果存在但你没被告知」。
+  if (hasWork && notified === false) return 'WORKED_BUT_NOT_NOTIFIED';
+  // 工作侧未知但转录有内容，且没收到通知：同样可能是通知丢失
+  if (!known && hasTranscript && notified === false) return 'TRANSCRIBED_BUT_NOT_NOTIFIED';
 
   if (hasWork) return hasTranscript ? 'WORKED_AND_TRANSCRIBED' : 'WORKED_SILENTLY';
   if (!known) {
@@ -45,6 +66,8 @@ export function classifyAgent({ transcriptSize, scratchFiles }) {
 }
 
 const HINT = {
+  WORKED_BUT_NOT_NOTIFIED: '**有产出但没收到完成通知** → 通知投递失败。产物在，去读它；别以为它还在跑',
+  TRANSCRIBED_BUT_NOT_NOTIFIED: '转录有内容但没收到完成通知 → 通知投递失败。去读转录取结论',
   WORKED_AND_TRANSCRIBED: '转录有内容 + 工作目录有文件 → 正常',
   WORKED_SILENTLY: '**转录 0 字节但工作目录有文件** → 它真干过，别因转录空就判失败',
   TRANSCRIBED_WORK_UNKNOWN: '转录有内容；工作目录未提供 → 无法判断是否留了产物',
@@ -79,6 +102,24 @@ function selfTest() {
     classifyAgent({ transcriptSize: 0, scratchFiles: 0 })
     !== classifyAgent({ transcriptSize: 0, scratchFiles: null }));
 
+  // ── 2026-11-14：通知丢失（一次 11 agent 派发里 73% 的完成通知没送达）──
+  ok('有产出但没收到通知 → WORKED_BUT_NOT_NOTIFIED（核心用例）',
+    classifyAgent({ transcriptSize: 0, scratchFiles: 3, notified: false }) === 'WORKED_BUT_NOT_NOTIFIED');
+
+  ok('有产出且收到通知 → 正常结局，不是「通知丢失」',
+    classifyAgent({ transcriptSize: 0, scratchFiles: 3, notified: true }) === 'WORKED_SILENTLY');
+
+  ok('notified 未提供（null）不能当成「没收到」',
+    classifyAgent({ transcriptSize: 0, scratchFiles: 3, notified: null }) === 'WORKED_SILENTLY');
+
+  ok('转录有内容但没收到通知 → TRANSCRIBED_BUT_NOT_NOTIFIED',
+    classifyAgent({ transcriptSize: 5000, scratchFiles: null, notified: false }) === 'TRANSCRIBED_BUT_NOT_NOTIFIED');
+
+  ok('转录大小与通知送达无关：0 字节也可能已送达',
+    classifyAgent({ transcriptSize: 0, scratchFiles: 2, notified: true })
+    !== classifyAgent({ transcriptSize: 0, scratchFiles: 2, notified: false }),
+    '同样 0 字节转录，送达与否必须判出不同结局');
+
   console.log(`\n=== 结果: ${pass} 通过 / ${fail} 失败 ===\n`);
   return fail === 0;
 }
@@ -92,8 +133,13 @@ if (args.includes('--self-test') || args.length === 0) {
 
 const ti = args.indexOf('--tasks');
 const mi = args.indexOf('--scratch-map');
+const ni = args.indexOf('--notified');
 if (ti < 0) {
-  console.error('用法: node scan-agent-outcomes.mjs --tasks <tasks目录> [--scratch-map <json>]');
+  console.error('用法: node scan-agent-outcomes.mjs --tasks <tasks目录> [--scratch-map <json>] [--notified <已收到通知的id,逗号分隔>]');
+  console.error('');
+  console.error('  --notified  列出**实际收到过完成通知**的 agent id 前缀。');
+  console.error('              不传 = 不知道送达情况（全部按 notified:null 处理，不会误判）。');
+  console.error('              传了 = 不在列表里的视为「没收到通知」，从而识别出 WORKED_BUT_NOT_NOTIFIED。');
   process.exit(2);
 }
 
@@ -115,6 +161,12 @@ if (mi >= 0) {
 }
 
 const rows = [];
+// --notified 不传 → null（不知道）；传了空串 → 空集合（确认一个都没收到）
+let notifiedSet = null;
+if (ni >= 0) {
+  const v = args[ni + 1] ?? '';
+  notifiedSet = v.split(',').map((x) => x.trim()).filter(Boolean);
+}
 for (const f of readdirSync(tasksDir).filter((x) => x.endsWith('.output'))) {
   const id = basename(f, '.output');
   const st = statSync(join(tasksDir, f));
@@ -131,7 +183,12 @@ for (const f of readdirSync(tasksDir).filter((x) => x.endsWith('.output'))) {
     id: id.slice(0, 10),
     transcript: st.size,
     scratchFiles,
-    kind: classifyAgent({ transcriptSize: st.size, scratchFiles }),
+    notified: notifiedSet === null ? null : notifiedSet.some((k) => id.startsWith(k)),
+    kind: classifyAgent({
+      transcriptSize: st.size,
+      scratchFiles,
+      notified: notifiedSet === null ? null : notifiedSet.some((k) => id.startsWith(k)),
+    }),
   });
 }
 
