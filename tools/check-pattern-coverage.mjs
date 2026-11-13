@@ -94,6 +94,32 @@ for (const { label, defects } of loaded) {
           kind: 'none_without_reason', id: `${label}/${d.id}`,
           detail: `${label} ${d.id} 标了 pattern="none" 但没写 none_reason——「不属于任何模式」是个判断，必须给理由`,
         });
+      } else {
+        // 2026-11-14 补：标 "none" 时必须在模板全文里**找不到**相关线索。
+        //
+        // 起因是我自己标错了：把 GT-015/GT-018（原型链）标成 "none"，
+        // 理由是「8 个模式无一项覆盖原型链」——但我只看了模式表的 8 行，
+        // 没看 §4.8.2.1 里模式 4 的子问题 4a「原型链键名」，那里明确覆盖了它们。
+        //
+        // 所以「无覆盖」这个判断必须经得起机械检验：标注里点名的关键词，
+        // 如果在模板全文里出现，就说明至少有人写过相关指引，标注需要复核。
+        const kws = d.none_keywords;
+        if (!Array.isArray(kws) || kws.length === 0) {
+          problems.push({
+            kind: 'none_without_keywords', id: `${label}/${d.id}`,
+            detail: `${label} ${d.id} 标了 "none" 但没给 none_keywords——必须列出「我搜过这些词，模板里确实没有」，`
+              + '否则无法验证「无覆盖」这个判断',
+          });
+        } else {
+          const found = kws.filter((k) => wave2.includes(k));
+          if (found.length > 0) {
+            problems.push({
+              kind: 'none_but_template_mentions_it', id: `${label}/${d.id}`,
+              detail: `${label} ${d.id} 标了"无模式覆盖"，但模板里出现了这些关键词: ${found.join('、')}`
+                + '——说明至少有人写过相关指引，需要复核归属',
+            });
+          }
+        }
       }
       noPattern.push(d);
       continue;

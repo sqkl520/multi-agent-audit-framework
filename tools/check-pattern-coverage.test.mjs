@@ -131,6 +131,36 @@ console.log('case 6: 模板里模式表被删 → 必须拒绝执行，不能瞎
   expect('退出码 2', r.code === 2, `实际 ${r.code}`);
 }
 
+console.log('case 7: 标 "none" 但没给 none_keywords → 必须报错（「无覆盖」要经得起搜）');
+{
+  const r = withCopy((exp) => {
+    const p = join(exp, 'manifest.json');
+    const m = JSON.parse(readFileSync(p, 'utf8'));
+    const none = m.defects.find((d) => d.pattern === 'none');
+    delete none.none_keywords;
+    writeFileSync(p, JSON.stringify(m, null, 2));
+  }, runIn);
+  const hit = (r.data?.problems ?? []).find((p) => p.kind === 'none_without_keywords');
+  expect('报 none_without_keywords', !!hit, JSON.stringify(r.data?.problems?.map(x => x.kind)));
+}
+
+console.log('case 8: none_keywords 里的词在模板中真的存在 → 必须报错');
+{
+  // 这条规则抓的是「我声称查过、其实模板里有相关指引」。
+  // 2026-11-14 实测就靠它抓出 4 条错误标注（原型链被模式 4a 覆盖）。
+  const r = withCopy((exp) => {
+    const p = join(exp, 'manifest.json');
+    const m = JSON.parse(readFileSync(p, 'utf8'));
+    const none = m.defects.find((d) => d.pattern === 'none');
+    // 「原型链」在模板 §4.8.2.1 的 4a 里明确出现
+    none.none_keywords = ['原型链', '某个绝不可能出现的词'];
+    writeFileSync(p, JSON.stringify(m, null, 2));
+  }, runIn);
+  const hit = (r.data?.problems ?? []).find((p) => p.kind === 'none_but_template_mentions_it');
+  expect('报 none_but_template_mentions_it', !!hit, JSON.stringify(r.data?.problems?.map(x => x.kind)));
+  expect('点名命中的关键词', /原型链/.test(hit?.detail ?? ''), hit?.detail);
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

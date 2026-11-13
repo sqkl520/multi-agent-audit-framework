@@ -49,7 +49,12 @@
       "origin": "injected",
       "pattern": "none",
       "pattern_source": "SINGLE-PATTERN.md（作者本人映射）",
-      "none_reason": "同类块嵌套时提前返回——须手工构造嵌套输入才能发现，模式表无对应项"
+      "none_reason": "同类块嵌套时提前返回——须手工构造嵌套输入才能发现，模式表无对应项",
+      "none_keywords": [
+        "嵌套闭合",
+        "提前返回",
+        "匹配闭合"
+      ]
     },
     {
       "id": "F2-09",
@@ -83,7 +88,12 @@
       "origin": "native",
       "pattern": "none",
       "pattern_source": "SINGLE-PATTERN.md（作者本人映射）",
-      "none_reason": "浅拷贝污染——「返回值暴露内部状态」模式 1 本应射程覆盖，但作者明确标了无对应，按作者判断记录"
+      "none_reason": "浅拷贝污染——「返回值暴露内部状态」模式 1 本应射程覆盖，但作者明确标了无对应，按作者判断记录",
+      "none_keywords": [
+        "浅拷贝污染",
+        "切片拷贝后改元素",
+        "元素污染"
+      ]
     },
     {
       "id": "F2-12",
@@ -95,7 +105,12 @@
       "origin": "injected",
       "pattern": "none",
       "pattern_source": "SINGLE-PATTERN.md（作者本人映射）",
-      "none_reason": "单个监听器抛错被吞——错误处理路径，模式表无对应项"
+      "none_reason": "单个监听器抛错被吞——错误处理路径，模式表无对应项",
+      "none_keywords": [
+        "监听器",
+        "监听器抛错",
+        "AggregateError"
+      ]
     },
     {
       "id": "F2-13",
@@ -129,7 +144,12 @@
       "origin": "native",
       "pattern": "none",
       "pattern_source": "SINGLE-PATTERN.md（作者本人映射）",
-      "none_reason": "非字符串只报通用失败——错误分类粒度问题，模式表无对应项"
+      "none_reason": "非字符串只报通用失败——错误分类粒度问题，模式表无对应项",
+      "none_keywords": [
+        "非字符串",
+        "类型错误区分",
+        "通用失败"
+      ]
     },
     {
       "id": "F2-16",
@@ -152,7 +172,12 @@
       "origin": "native",
       "pattern": "none",
       "pattern_source": "本次补注（作者表未覆盖该条）",
-      "none_reason": "选项非法时回落到错误分页，属输入校验缺失；模式 3 只管数值边界，此例是非数值类型"
+      "none_reason": "选项非法时回落到错误分页，属输入校验缺失；模式 3 只管数值边界，此例是非数值类型",
+      "none_keywords": [
+        "非法 options",
+        "非法选项",
+        "选项校验"
+      ]
     },
     {
       "id": "F2-20",
@@ -174,9 +199,9 @@
       "severity": "HIGH",
       "title": "RULES[r.rule] 裸下标查规则表，rule:'toString'/'constructor' 命中原型链成员被当作合法断言静默放行，'valueOf' 直接崩",
       "origin": "native",
-      "pattern": "none",
+      "pattern": 4,
       "pattern_source": "本次补注（作者表未覆盖该条）",
-      "none_reason": "RULES[r.rule] 直接下表，r.rule 为 \"constructor\" 时命中原型链；模式表未覆盖原型链语义"
+      "pattern_note": "RULES[r.rule] 裸下标正是 4a 给出的反例"
     },
     {
       "id": "F2-22",
@@ -186,9 +211,9 @@
       "severity": "MEDIUM",
       "title": "{{#if}} 用 ctx[key] 裸下标判定真值，key 为 constructor/toString 时取到原型链成员恒为真，条件块永远渲染",
       "origin": "native",
-      "pattern": "none",
+      "pattern": 4,
       "pattern_source": "本次补注（作者表未覆盖该条）",
-      "none_reason": "{{#if constructor}} 恒为真（原型链取到函数），同 F2-13 但模式 4 未覆盖该触发键"
+      "pattern_note": "{{#if}} 裸下标判真值，属 4a 射程"
     },
     {
       "id": "F2-17",

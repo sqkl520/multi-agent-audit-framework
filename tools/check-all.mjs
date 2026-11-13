@@ -156,7 +156,7 @@ const CHECKS = [
   {
     name: 'GT 缺陷的模式归属（哪些缺陷结构上查不到）',
     script: 'check-pattern-coverage.test.mjs',
-    desc: '11 个用例：pattern 悬空 / none 无理由 / 引用不存在的模式 / 两个 fixture 都要查',
+    desc: '14 个用例：pattern 悬空 / none 无理由 / none 关键词须搜不到 / 引用不存在的模式 / 两个 fixture 都要查',
   },
 ];
 

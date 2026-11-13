@@ -12,7 +12,12 @@
       "origin": "injected",
       "proof": "node -e 调用返回 []",
       "pattern": "none",
-      "none_reason": "操作顺序问题，但模式 6 只覆盖转义/编码顺序这一子类；此例属控制流误用，须逐行读才能发现"
+      "none_reason": "操作顺序问题，但模式 6 只覆盖转义/编码顺序这一子类；此例属控制流误用，须逐行读才能发现",
+      "none_keywords": [
+        "清空入参后执行",
+        "入参被用完才执行",
+        "执行前先拷贝入参"
+      ]
     },
     {
       "id": "GT-002",
@@ -23,7 +28,12 @@
       "title": "dequeue 用 >= 破坏 FIFO，同优先级变 LIFO",
       "origin": "injected",
       "pattern": "none",
-      "none_reason": "比较运算符方向写反（用 >= 而非 >），8 个模式都不覆盖运算符语义"
+      "none_reason": "比较运算符方向写反（用 >= 而非 >），8 个模式都不覆盖运算符语义",
+      "none_keywords": [
+        "运算符方向",
+        "比较符号写反",
+        "优先级比较用 >= "
+      ]
     },
     {
       "id": "GT-003",
@@ -34,7 +44,12 @@
       "title": "容量检查用 > 允许塞进 capacity+1 个",
       "origin": "injected",
       "pattern": "none",
-      "none_reason": "容量检查用 > 而非 >=，同 GT-002，属运算符方向问题"
+      "none_reason": "容量检查用 > 而非 >=，同 GT-002，属运算符方向问题",
+      "none_keywords": [
+        "运算符方向",
+        "容量上限差一",
+        "capacity+1"
+      ]
     },
     {
       "id": "GT-004",
@@ -45,7 +60,12 @@
       "title": "指数写错：2^attempt 而非 2^(attempt-1)",
       "origin": "injected",
       "pattern": "none",
-      "none_reason": "算式本身写错（2^attempt vs 2^(attempt-1)），须对照注释/文档语义才能判断，不是边界或顺序问题"
+      "none_reason": "算式本身写错（2^attempt vs 2^(attempt-1)），须对照注释/文档语义才能判断，不是边界或顺序问题",
+      "none_keywords": [
+        "退避公式检查",
+        "幂次对不对",
+        "attempt-1"
+      ]
     },
     {
       "id": "GT-005",
@@ -69,7 +89,13 @@
       "title": "VALID_LOG_LEVELS 漏 warn",
       "origin": "injected",
       "pattern": "none",
-      "none_reason": "枚举清单漏项，须与其他来源（日志级别惯例）对照才知道缺什么，模式表未覆盖清单完整性"
+      "none_reason": "枚举清单漏项，须与其他来源（日志级别惯例）对照才知道缺什么，模式表未覆盖清单完整性",
+      "none_keywords": [
+        "漏项",
+        "清单完整",
+        "枚举遗漏",
+        "VALID_LOG_LEVELS"
+      ]
     },
     {
       "id": "GT-007",
@@ -91,7 +117,12 @@
       "origin": "injected",
       "proof": "classify.mjs GT-008：写入 BigInt 抛错后文件不存在",
       "pattern": "none",
-      "none_reason": "写文件非原子（先删后写），模式 6 只覆盖转义顺序；此例须识别「中途抛错会导致什么」的原子性推理"
+      "none_reason": "写文件非原子（先删后写），模式 6 只覆盖转义顺序；此例须识别「中途抛错会导致什么」的原子性推理",
+      "none_keywords": [
+        "原子性检查",
+        "非原子写",
+        "先删后写的风险"
+      ]
     },
     {
       "id": "GT-009",
@@ -102,7 +133,12 @@
       "title": "cursor 自增在 await 后，索引重复",
       "origin": "injected",
       "pattern": "none",
-      "none_reason": "并发时序（await 之后再自增），8 个模式无一项涉及异步交错"
+      "none_reason": "并发时序（await 之后再自增），8 个模式无一项涉及异步交错",
+      "none_keywords": [
+        "await 之后自增",
+        "异步交错",
+        "并发时序检查"
+      ]
     },
     {
       "id": "GT-010",
@@ -162,8 +198,8 @@
       "severity": "HIGH",
       "title": "get 用 in 而非 hasOwnProperty，原型链泄漏",
       "origin": "injected",
-      "pattern": "none",
-      "none_reason": "属性访问方式（in vs hasOwnProperty），8 个模式无一项覆盖原型链语义"
+      "pattern": 4,
+      "pattern_note": "模板 §4.8.2.1 子问题 4a「原型链键名」明确覆盖"
     },
     {
       "id": "GT-016",
@@ -193,8 +229,8 @@
       "severity": "HIGH",
       "title": "set(\"__proto__\") 依赖原型链赋值：keys() 为空、get 却能读到、delete 删不掉",
       "origin": "injected",
-      "pattern": "none",
-      "none_reason": "原型链赋值语义，同 GT-015，模式表未覆盖"
+      "pattern": 4,
+      "pattern_note": "同上，裸下标写入 __proto__ 属 4a 射程"
     },
     {
       "id": "GT-020",
