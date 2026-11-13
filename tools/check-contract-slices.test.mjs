@@ -124,10 +124,14 @@ console.log('case 6: 生成器重跑后产物应与已提交的一致（防手�
 
   const before = {};
   const sliceDir = join(dir, 'framework', 'components', 'output-contract');
-  for (const f of readFileSync(join(ROOT, 'framework', 'components', 'output-contract', 'planner.md'), 'utf8') ? [] : []) void f;
 
   const { readdirSync } = await import('node:fs');
-  for (const f of readdirSync(sliceDir)) before[f] = readFileSync(join(sliceDir, f), 'utf8');
+  for (const f of readdirSync(sliceDir)) {
+    const fp = join(sliceDir, f);
+    // 跳过子目录（examples/ 就在这一层）——readFileSync 读目录会 EISDIR
+    if (!f.endsWith('.md')) continue;
+    before[f] = readFileSync(fp, 'utf8');
+  }
 
   // 重跑生成器
   execFileSync(process.execPath, [join(dir, 'tools', 'gen-contract-slices.mjs')], { stdio: 'pipe' });

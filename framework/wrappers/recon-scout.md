@@ -61,6 +61,9 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role recon
 
 退出码非 0 → **不得返回**，按它给的修法补齐。
 
+**不知道从哪下手就照抄示例**：`components/output-contract/examples/recon.md` 是一份
+**已经通过校验器**的最小完整产物。照抄再改内容，比从零拼更可靠。
+
 > **为什么写这条**：2026-11-09 实测 15 个真实产物，**0 个含 JSON 信封**。
 > 根因是契约和模板只在示例里出现过一次 JSON，从没有一句「必须写」。
 > 代价是下游写了 73 行 `salvageFromMarkdown()` 去猜——**补丁，不是护栏**。

@@ -143,6 +143,11 @@ const CHECKS = [
     script: 'check-contract-slice-fidelity.test.mjs',
     desc: '11 个用例：切片丢字段 / 结构变化须拒绝执行 / 父标题 / 自述路径 / 自动生成标注',
   },
+  {
+    name: '契约示例可用性（照抄示例能否通过校验器）',
+    script: 'check-contract-examples.test.mjs',
+    desc: '14 个用例：示例被破坏 / 缺文件 / 目录不见 / role 不匹配 / 缺必填字段 / 占位路径不随 cwd 变',
+  },
 ];
 
 let failed = 0;
