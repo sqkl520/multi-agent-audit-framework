@@ -82,7 +82,7 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role <你�
 {
   "schema_version": "output-contract-v1",
   "agent_id": "string",
-  "role": "recon | sweep | audit | critique | fix | verify",
+  "role": "planner | recon | sweep | audit | critique | fix | verify",
   "status": "SUCCESS | RETRYABLE_FAILURE | CONTRACT_VIOLATION | PERMANENT_FAILURE",
   "contract_valid": true,
   "artifact_path": "string",
@@ -188,6 +188,20 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role <你�
 | 该做但没做成（环境起不来、权限不足） | `"status": "SKIPPED"` + `note` 说明卡在哪 |
 
 **`SKIPPED` / `NOT_APPLICABLE` 不给 `note` 一律 `CONTRACT_VIOLATION`。** 「静默跳过」和「做过了」在账本上必须可区分——否则这三项必做会和以前的自检清单一样，退化成「模型声称自己检查过了」。
+
+**`findings[]` 每个字段的必填性**（2026-11-14 补登）：
+
+| 字段 | 必填性 | 说明 |
+|---|---|---|
+| `finding_id` | **必填** | 下游锐评 / 修复 / 验收都靠它挂接。写成 `id` 属 `wrong_field_name` |
+| `dimension` | **必填** | 闭集，见上方枚举 |
+| `severity` | **必填** | 闭集 `CRITICAL \| HIGH \| MEDIUM \| LOW`；`CRITICAL` 另有准入门槛（见 `wave2-audit.md` §3.3） |
+| `evidence` | **必填，且必须是对象** `{file, line, quote}` | **写成数组属 `evidence_wrong_shape`**。门 0 的载体，quote 必须逐字来自本回合读到的原文 |
+| `inference` | **必填，且必须是对象** `{claim, basis, alternatives}` | **写成字符串属 `inference_wrong_shape`**。这会让 `CRITICAL` 准入门槛检查**静默失效**（它读 `inf.claim`，字符串上取到 `undefined`） |
+| `status` | **必填** | 闭集 `CONFIRMED \| NO_EVIDENCE_FOUND \| GATE_0_FAILED \| UNREADABLE \| EVIDENCE_GAP`。**省略即 `missing_finding_status`**——「没查」和「查了没发现」必须可区分 |
+| `runtime_evidence` | 条件必填 | 仅当发现涉及运行时可观察行为时必填；`method` / `command` / `observed` 三项见 `wave2-audit.md` §4.5 |
+
+> **为什么必须写成表**：在这张表存在之前，`check-payload.mjs` 已经在执行 `missing_finding_status` 等规则，而契约里**没有任何一句**要求这些字段——**校验器比契约严**。结果是子 Agent 照契约写会被判违规，且修法提示指向一段不存在的规范。这与 `self_checks` 那条「要求写在模板里、格式里没有位置」是同一个病的反方向：**格式里有了、文档里没有位置**。
 
 **`searched_scope` 的适用规则**（2026-11-10 红队实测新增）：**当 `findings` 中有任何 `NO_EVIDENCE_FOUND` 条目时必填**。
 

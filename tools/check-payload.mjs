@@ -190,7 +190,14 @@ const ROLE_REQUIRED = {
 };
 
 if (envelope && envelope.payload && envelope.role) {
-  const req = ROLE_REQUIRED[envelope.role] ?? [];
+  // 2026-11-14 修：`ROLE_REQUIRED[envelope.role]` 是普通对象直查，role 取
+  // "__proto__" / "constructor" / "toString" 等原型链键时会取到**函数**而非
+  // undefined，`?? []` 兜不住，`for...of` 直接抛 TypeError: req is not iterable。
+  // 结果是把「契约违规」误报成「校验器崩了」，错误信息变成 JS 堆栈。
+  // 这正是本项目 GT-015/GT-018 那类缺陷（裸下标查表）在自家工具里的复现。
+  const req = Object.prototype.hasOwnProperty.call(ROLE_REQUIRED, envelope.role)
+    ? ROLE_REQUIRED[envelope.role]
+    : [];
   for (const k of req) {
     if (!(k in envelope.payload)) {
       errors.push({
@@ -363,12 +370,72 @@ if (envelope && envelope.payload && envelope.role) {
       });
     }
     fs4.forEach((f, j) => {
-      if (f?.status !== undefined && !FINDING_STATUS.includes(f.status)) {
+      // 2026-11-14 修：此前是 `f?.status !== undefined && ...`——**不写 status 就跳过检查**。
+      // 但契约 §2.2 把 status 列为 findings 条目的字段，且「空 findings」被明确禁止，
+      // 意味着每条 finding 都必须声明它的状态。缺省即违规，否则「省略最省事」。
+      if (f?.status === undefined || f?.status === null) {
+        errors.push({
+          field: `payload.findings[${j}].status`, rule: 'missing_finding_status',
+          msg: `findings[${j}] 缺 status。契约 §2.2 要求每条发现声明状态`
+            + `（${FINDING_STATUS.join(' | ')}）——否则下游无法区分「已确认」和「证据不足」`,
+        });
+      } else if (!FINDING_STATUS.includes(f.status)) {
         errors.push({
           field: `payload.findings[${j}].status`, rule: 'invalid_finding_status',
           msg: `finding.status 只能取 ${FINDING_STATUS.join(' | ')}，实际是 "${f.status}"`,
         });
       }
+
+      // 2026-11-14 修：finding 的字段名与结构此前完全没校验，导致
+      // **示例里的错误结构能通过校验器，进而变成「错误但被验证过的规范」**。
+      // 实测：我生成的 audit 示例用 `id`（契约是 `finding_id`）、把 `evidence` 写成
+      // 数组（契约是对象）、把 `inference` 写成字符串（契约是 {claim,basis,alternatives}），
+      // 全部通过了校验器，因为这里只查顶层必填键。
+      //
+      // 后果比「示例不标准」严重：第 366 行那段 CRITICAL 检查读 `inf.claim`，
+      // 如果 inference 是字符串，`f.inference ?? {}` 拿到字符串、`.claim` 是 undefined，
+      // **检查静默失效而不是报错**。
+      const FIELD_ALIASES = {
+        finding_id: 'id',
+        evidence: null,
+        inference: null,
+      };
+      if (f && typeof f === 'object') {
+        if (!f.finding_id && f.id) {
+          errors.push({
+            field: `payload.findings[${j}].finding_id`, rule: 'wrong_field_name',
+            msg: `findings[${j}] 用了 "id"，契约 §2.2 的字段名是 "finding_id"`,
+          });
+        } else if (!f.finding_id) {
+          errors.push({
+            field: `payload.findings[${j}].finding_id`, rule: 'missing_finding_id',
+            msg: `findings[${j}] 缺 finding_id——下游锐评/修复/vrify 都靠它挂接`,
+          });
+        }
+
+        if (f.evidence !== undefined) {
+          if (Array.isArray(f.evidence)) {
+            errors.push({
+              field: `payload.findings[${j}].evidence`, rule: 'evidence_wrong_shape',
+              msg: `findings[${j}].evidence 是数组，契约 §2.2 要求是对象 {file, line, quote}`,
+            });
+          } else if (!f.evidence || typeof f.evidence !== 'object') {
+            errors.push({
+              field: `payload.findings[${j}].evidence`, rule: 'evidence_wrong_shape',
+              msg: `findings[${j}].evidence 必须是对象 {file, line, quote}`,
+            });
+          }
+        }
+
+        if (f.inference !== undefined && (typeof f.inference !== 'object' || Array.isArray(f.inference))) {
+          errors.push({
+            field: `payload.findings[${j}].inference`, rule: 'inference_wrong_shape',
+            msg: `findings[${j}].inference 是 ${typeof f.inference}，契约 §2.2 要求对象`
+              + ` {claim, basis, alternatives}。写成字符串会让 CRITICAL 准入检查静默失效`,
+          });
+        }
+      }
+
       // CONFIRMED 必须真有证据（2026-11-10 蓝队实测新增）
       // 实测：CONFIRMED + severity:null + evidence 全 null → 契约合规。
       // 这意味着「已确认」可以完全没有证据——比「洗白」严重一个量级。
@@ -525,6 +592,90 @@ if (envelope && envelope.payload && envelope.role) {
       errors.push({
         field: 'payload.verdicts', rule: 'devils_advocate_has_verdicts',
         msg: `devils_advocate 只评覆盖，不评发现。verdicts 必须为空数组，实际有 ${vs.length} 条`,
+      });
+    }
+
+    // 2026-11-14 修：coverage_gaps.kind 是契约声明的闭集，但此前**零校验**。
+    // 实测 `kind: "TOTALLY_MADE_UP"` → ✅ 契约合规。
+    // 而 kind 决定下一波派谁（SLICE_UNCOVERED → REASSIGN_TO_NEW_AUDIT 等），
+    // 枚举不闭合 = 调度器收到未知指令。
+    const COVERAGE_KIND = ['SLICE_UNCOVERED', 'FILE_UNREAD', 'DIMENSION_OMITTED', 'ENTRY_UNCOVERED'];
+    const gaps = Array.isArray(p.coverage_gaps) ? p.coverage_gaps : [];
+    gaps.forEach((g, i) => {
+      if (g?.kind !== undefined && !COVERAGE_KIND.includes(g.kind)) {
+        errors.push({
+          field: `payload.coverage_gaps[${i}].kind`, rule: 'invalid_coverage_kind',
+          msg: `coverage_gaps[${i}].kind 只能取 ${COVERAGE_KIND.join(' | ')}，实际是 "${g.kind}"`,
+        });
+      }
+      // 契约 §2.3 表格：每条缺口都要有 gap_id / kind / target / evidence.observation /
+      // potential_impact / recommended_action，缺任一即无法被主 Agent 机械消费。
+      for (const k of ['kind', 'target', 'recommended_action']) {
+        if (g && typeof g === 'object' && g[k] === undefined) {
+          errors.push({
+            field: `payload.coverage_gaps[${i}].${k}`, rule: 'incomplete_coverage_gap',
+            msg: `coverage_gaps[${i}] 缺 ${k}——每条缺口必须可被主 Agent 机械消费成下一步动作`,
+          });
+        }
+      }
+    });
+
+    // 2026-11-14：Devil's Advocate 的四个覆盖扫描布尔。
+    // wave3-critique.md:493 原文：「`slice_scan_performed`、`file_scan_performed`、
+    // `dimension_scan_performed`、`entry_scan_performed`，四者均为 `true`」。
+    // 实测：这四者在全仓 tools/ 里**零命中**，DA 完全靠自述「我扫了」。
+    // 而 DA 是锐评波里唯一负责覆盖完整性的角色——它有没有真扫是**二值可判**的，
+    // 不需要设计判据，是本轮性价比最高的一条。
+    if (p.critique_role === 'devils_advocate') {
+      const SCANS = ['slice_scan_performed', 'file_scan_performed', 'dimension_scan_performed', 'entry_scan_performed'];
+      for (const k of SCANS) {
+        if (p[k] !== true) {
+          errors.push({
+            field: `payload.${k}`, rule: 'missing_scan_flag',
+            msg: `devils_advocate 必须以 ${k}: true 声明四类覆盖扫描均执行（wave3-critique.md:493）。`
+              + '四者缺一即无法证明真的扫过，等于把「有没有查」退回自述',
+          });
+        }
+      }
+    }
+
+    // 契约 §2.3 原文（:490 / :503）：
+    //   「仅 critique_role == "skeptic" 时必填。devils_advocate 与 arbiter 不得返回
+    //     该字段（返回即越界，判 CONTRACT_VIOLATION）」
+    //   「skeptic 缺失该字段 = 未完成职责，其全部 verdicts 作废」
+    // 没这条校验时，我生成的 critique 示例（skeptic、无 discipline_audit）
+    // 能通过校验器——于是示例成了「错误但被验证过的规范」。
+    const hasDiscipline = p.discipline_audit !== undefined && p.discipline_audit !== null;
+    if (p.critique_role === 'skeptic') {
+      if (!hasDiscipline) {
+        errors.push({
+          field: 'payload.discipline_audit', rule: 'missing_discipline_audit',
+          msg: 'skeptic 必填 discipline_audit（契约 §2.3）。缺失该字段 = 未完成职责，'
+            + '其全部 verdicts 按契约作废——未申报的裁量只有被主动找出来才能发现',
+        });
+      } else if (typeof p.discipline_audit === 'object' && !Array.isArray(p.discipline_audit)) {
+        // performed 是这条审计的核心开关：声称做了就必须有可核对的结构
+        if (p.discipline_audit.performed === undefined) {
+          errors.push({
+            field: 'payload.discipline_audit.performed', rule: 'discipline_audit_no_performed',
+            msg: 'discipline_audit 缺 performed。这一项决定「有没有真的查」——省略等于没申报',
+          });
+        }
+      }
+    } else if (['devils_advocate', 'arbiter'].includes(p.critique_role) && hasDiscipline) {
+      errors.push({
+        field: 'payload.discipline_audit', rule: 'discipline_audit_out_of_role',
+        msg: `${p.critique_role} 不得返回 discipline_audit（契约 §2.3：返回即越界，判 CONTRACT_VIOLATION）`,
+      });
+    }
+
+    // 2026-11-14：pattern_sweep 同样有角色分支（仅 devils_advocate + 存在
+    // HIGH/CRITICAL 时必填，其他子角色返回即越界），此前也未校验。
+    const hasSweep = p.pattern_sweep !== undefined && p.pattern_sweep !== null;
+    if (hasSweep && p.critique_role !== 'devils_advocate') {
+      errors.push({
+        field: 'payload.pattern_sweep', rule: 'pattern_sweep_out_of_role',
+        msg: `pattern_sweep 仅 devils_advocate 可用，${p.critique_role} 返回即越界（契约 §2.3）`,
       });
     }
     for (let i = 0; i < vs.length; i++) {
@@ -738,6 +889,19 @@ if (envelope && envelope.payload && envelope.role) {
 // 只能盲猜复现路径，等于把验收结论退化成一句「没过」。
 if (envelope && envelope.role === 'verify') {
   const vp = envelope.payload ?? {};
+  // 2026-11-14 修：verdict 枚举此前完全不校验。契约 §2.5 写死闭集 PASS | FAIL。
+  // 实测 `verdict: "fail"` 会让整段 FAIL 检查被跳过（因为 !== "FAIL"），
+  // 而人类读到的是「验收没通过」——主 Agent 不进故障分支，人却以为失败了。
+  // 同文件对 critique 的 verdicts[].verdict 有 invalid_verdict_enum，verify 却没有。
+  if (vp.verdict !== undefined) {
+    if (!['PASS', 'FAIL'].includes(vp.verdict)) {
+      errors.push({
+        field: 'payload.verdict', rule: 'invalid_verify_verdict',
+        msg: `verdict 只能取 PASS | FAIL，实际是 ${JSON.stringify(vp.verdict)}。`
+          + '大小写不符会让 FAIL 的必填检查被静默跳过',
+      });
+    }
+  }
   if (vp.verdict === 'FAIL') {
     if (!vp.failure_category) {
       errors.push({

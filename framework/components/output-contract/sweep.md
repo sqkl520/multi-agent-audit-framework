@@ -82,7 +82,7 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role <你�
 {
   "schema_version": "output-contract-v1",
   "agent_id": "string",
-  "role": "recon | sweep | audit | critique | fix | verify",
+  "role": "planner | recon | sweep | audit | critique | fix | verify",
   "status": "SUCCESS | RETRYABLE_FAILURE | CONTRACT_VIOLATION | PERMANENT_FAILURE",
   "contract_valid": true,
   "artifact_path": "string",

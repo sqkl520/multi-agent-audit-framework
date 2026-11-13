@@ -52,13 +52,13 @@ const marks = {
 
 const missingMarks = Object.entries(marks).filter(([, v]) => v < 0).map(([k]) => k);
 if (missingMarks.length) {
-  console.error(`母文件缺这些节: ${missingMarks.join(', ')}——母文件结构变了，先同步本脚本`);
+  console.error(`[预期失败] 母文件缺这些节: ${missingMarks.join(', ')}——母文件结构变了，先同步本脚本`);
   process.exit(2);
 }
 
 if (marks.s20 > marks.s21 || marks.s21 > marks.s22a || marks.s22a > marks.s22 ||
     marks.s22 > marks.s23 || marks.s23 > marks.s24 || marks.s24 > marks.s25 || marks.s25 > marks.s3) {
-  console.error('母文件的角色节顺序不是 2.0 < 2.1 < 2.2a < 2.2 < 2.3 < 2.4 < 2.5 < 第3节——脚本假设被打破');
+  console.error('[预期失败] 母文件的角色节顺序不是 2.0 < 2.1 < 2.2a < 2.2 < 2.3 < 2.4 < 2.5 < 第3节——脚本假设被打破');
   process.exit(2);
 }
 

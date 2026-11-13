@@ -33,6 +33,12 @@ const VALIDATOR = join(HERE, 'check-payload.mjs');
 const SLICE_DIR = join(ROOT, 'framework', 'components', 'output-contract');
 const EXAMPLE_DIR = join(SLICE_DIR, 'examples');
 const WRAPPERS = join(ROOT, 'framework', 'wrappers');
+// 2026-11-14 补：templates/ 此前不在扫描范围，于是同一个 reachability 枚举
+// 在同一份 wave2a-sweep.md 里出现了两套——第 81 行的 JSON 骨架写 4 个值（缺 ENTRY），
+// 第 132 行的正文表格写 5 个值并专门解释了 ENTRY。
+// agent 照 JSON 骨架写，永远拿不到 ENTRY 这一档，而 ENTRY 正是把
+// 「CLI 脚本 / CI 调用的工具」从 UNREACHABLE 里救出来的取值。
+const TEMPLATES = join(ROOT, 'framework', 'templates');
 
 const jsonOut = process.argv.includes('--json');
 
@@ -43,7 +49,7 @@ const toolSrc = readFileSync(VALIDATOR, 'utf8');
 const enumDefs = [];
 const enumBlock = toolSrc.match(/const ENUM_CHECKS\s*=\s*\[([\s\S]*?)\n\s*\];/);
 if (!enumBlock) {
-  console.error('无法从 check-payload.mjs 解析出 ENUM_CHECKS');
+  console.error('[预期失败] 无法从 check-payload.mjs 解析出 ENUM_CHECKS');
   process.exit(2);
 }
 
@@ -153,6 +159,17 @@ for (const f of readdirSync(WRAPPERS)) {
   }
 }
 
+// ── 检查 templates（2026-11-14 新增；此前不在扫描范围）──
+if (existsSync(TEMPLATES)) {
+  for (const f of readdirSync(TEMPLATES)) {
+    if (!f.endsWith('.md')) continue;
+    const text = readFileSync(join(TEMPLATES, f), 'utf8');
+    for (const { field, values } of enumDefs) {
+      docDeclsFound += checkPipedDeclaration(text, field, values, `模板 ${f}`);
+    }
+  }
+}
+
 // ── 检查示例里用到的值是否合法（这是最容易出错的：示例写了个不存在于闭集的值）──
 let exampleValuesChecked = 0;
 if (existsSync(EXAMPLE_DIR)) {
@@ -205,7 +222,7 @@ for (const { field, values } of enumDefs) {
 
 console.log('');
 if (problems.length === 0) {
-  console.log('结论：契约 / wrapper / 示例三处与校验器闭集一致。');
+  console.log('结论：契约切片 / wrapper / 模板 / 示例四处与校验器闭集一致。');
   process.exit(0);
 }
 console.log(`发现 ${problems.length} 处漂移：`);

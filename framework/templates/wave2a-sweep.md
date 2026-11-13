@@ -78,7 +78,7 @@ source: 续写（2026-11-01）。解决「每个切片 × 每个维度派一个�
   "contract_valid": true,
   "payload": {
     "slice_id": "string",
-    "reachability": "PROD | TEST_ONLY | UNREACHABLE | GENERATED",
+    "reachability": "PROD | ENTRY | TEST_ONLY | UNREACHABLE | GENERATED",
     "generator_ref": "string|null",
     "files_read": ["path/to/file.ext"],
     "files_unreadable": [{"path": "string", "reason": "string"}],

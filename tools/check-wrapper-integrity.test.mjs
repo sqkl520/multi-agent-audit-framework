@@ -98,26 +98,31 @@ console.log('case 3: 小节只剩标题没有正文 → 必须判失败（防「
   });
 }
 
-console.log('case 4: 基线不足时，表格与合计必须一致（回归：曾表格全绿却报 5 项问题）');
+console.log('case 4: 基线不足 → 报「已知未闭合」但不算失败（表格与合计必须一致）');
 {
+  // 2026-11-14：基线不足的级别从 FAIL 改为 WARN。
+  // 理由：这 5 份 wrapper 的行数缺失是 git checkout 事故的已知未闭合项，
+  // CHECKOUT-INCIDENT.md 已判定无源可恢复、不补写。若保持 FAIL，
+  // check-all 会永久红，下一个人会以为新坏了 5 个文件。
+  // 但**不能因此不报**——所以断言改成「必须出现在 issues 里，且合计可解析」，
+  // 而不是「必须让退出码变 1」。
   withCopy((wrap, dir) => {
-    // 人为造一个高基线，让每个文件都"低于基线"
     const baseline = {};
-    for (const f of readFileSync(join(ROOT, 'framework', 'wrappers', 'planner.md'), 'utf8') ? [] : []) void f;
     const files = ['audit-specialist', 'critique-panel', 'fix-worker', 'planner', 'recon-scout', 'sweep-scout', 'verifier'];
     for (const f of files) baseline[f] = 500;
     writeFileSync(join(dir, 'baseline.json'), JSON.stringify(baseline));
   }, (dir) => {
     const r = runIn(dir, ['--baseline', join(dir, 'baseline.json')]);
-    expect('退出码非 0', r.code !== 0, `实际 ${r.code}`);
+    expect('退出码 0（已知未闭合不算失败）', r.code === 0, `实际 ${r.code}`);
 
-    // 统计表格里 ✗ 的数量，与合计声明的数字比对
-    const crosses = (r.out.match(/^✗ /gm) ?? []).length;
+    // 表格与合计必须一致——这是原回归点，语义变了但要求不变
+    const marks = (r.out.match(/^[✗⚠] /gm) ?? []).length;
     const summary = r.out.match(/合计: (\d+) 项问题/);
     const declared = summary ? Number(summary[1]) : null;
-    expect('合计数字可解析', declared !== null, r.out.slice(-120));
-    expect('表格 ✗ 数与合计数一致', crosses === declared, `✗=${crosses} 合计=${declared}`);
-    expect('每个文件都标出问题', crosses === 7, `✗=${crosses}`);
+    expect('合计数字可解析', declared !== null, r.out.slice(-160));
+    expect('合计报告 0 项问题', declared === 0, `实际 ${declared}`);
+    expect('合计报告 7 项已知未闭合', /7 项已知未闭合/.test(r.out), r.out.slice(-160));
+    expect('每个文件都标出', marks === 7, `marks=${marks}`);
   });
 }
 
@@ -130,19 +135,19 @@ console.log('case 5: JSON 输出里 results[].issues 与 findings 必须都有�
     }
     writeFileSync(join(dir, 'baseline.json'), JSON.stringify(baseline));
   }, (dir) => {
-    let data = null;
-    try {
-      execFileSync(process.execPath,
-        [join(dir, 'tools', 'check-wrapper-integrity.mjs'), '--json', '--baseline', join(dir, 'baseline.json')],
-        { encoding: 'utf8', stdio: 'pipe' });
-    } catch (e) {
-      try { data = JSON.parse(e.stdout?.toString() ?? 'null'); } catch { data = null; }
-    }
-    expect('拿到 JSON', data !== null);
+    // 2026-11-14：基线问题现为 WARN，退出码 0，所以这里必须把 JSON 从 stdout 取，
+    // 不能靠 catch。原写法只在进程非 0 退出时才能拿到 stdout。
+    const out = execFileSync(process.execPath,
+      [join(dir, 'tools', 'check-wrapper-integrity.mjs'), '--json', '--baseline', join(dir, 'baseline.json')],
+      { encoding: 'utf8' });
+    const data = JSON.parse(out);
     const withIssues = (data?.results ?? []).filter((r) => (r.issues ?? []).length > 0).length;
-    const findingCount = (data?.findings ?? []).filter((f) => f.level === 'FAIL').length;
+    const warnCount = (data?.findings ?? []).filter((f) => f.level === 'WARN').length;
     expect('results[].issues 也记录了基线问题', withIssues === 7, `实际 ${withIssues}`);
-    expect('findings 与 issues 数量一致', findingCount === withIssues, `findings=${findingCount} issues=${withIssues}`);
+    expect('findings 与 issues 数量一致', warnCount === withIssues, `warn=${warnCount} issues=${withIssues}`);
+    expect('基线问题级别为 WARN 而非 FAIL',
+      (data?.findings ?? []).every((f) => f.level !== 'FAIL' || !/基线/.test(f.msg ?? '')),
+      JSON.stringify((data?.findings ?? []).map((f) => f.level)));
   });
 }
 

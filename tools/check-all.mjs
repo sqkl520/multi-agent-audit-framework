@@ -86,7 +86,13 @@ const CHECKS = [
   {
     name: 'Wrapper 完整性（结构 + 关键段落 + tools 权限）',
     script: 'check-wrapper-integrity.mjs',
-    desc: '7 个文件：必备小节齐全 / 每节非空 / Write 权限 / 交叉引用存在',
+    // 2026-11-14 修：此前只有 script、没有 args，于是总检跑的是「不含基线对比」的版本，
+    // 永远是绿的——而 5 份 wrapper 的行数低于基线这件事，在唯一会自动跑的地方完全不可见。
+    // 这正是 CHECKOUT-INCIDENT 那次的翻版：检查器写对了，只是没接上线。
+    // 基线的 5 条不足是已知未闭合项（见 START-HERE 缺陷表），它在脚本内是 WARN 级，
+    // 所以接上之后总检仍然全绿，但**报告里会列出这 5 条**。
+    args: ['--baseline', 'fixtures/wrapper-baseline.json'],
+    desc: '7 个文件：必备小节齐全 / 每节非空 / Write 权限 / 交叉引用存在 / 行数基线对比',
   },
   {
     name: '框架自主性静态检查',
@@ -174,7 +180,7 @@ for (const c of CHECKS) {
   }
   process.stdout.write(`${c.name}\n  ${c.desc}\n  → `);
   try {
-    const out = execFileSync('node', [p], { encoding: 'utf8', cwd: HERE });
+    const out = execFileSync('node', [p, ...(c.args ?? [])], { encoding: 'utf8', cwd: HERE });
     const last = out.trim().split('\n').filter(Boolean).pop() ?? '';
     console.log(`${last || 'OK'}`);
   } catch (e) {

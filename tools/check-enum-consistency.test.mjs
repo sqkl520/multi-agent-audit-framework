@@ -59,7 +59,7 @@ console.log('case 1: 真实仓库应一致');
   try {
     const out = execFileSync(process.execPath, [TOOL], { encoding: 'utf8' });
     expect('退出码 0', true);
-    expect('报告一致', /三处与校验器闭集一致/.test(out), out.slice(-200));
+    expect('报告一致', /四处与校验器闭集一致/.test(out), out.slice(-200));
   } catch (e) {
     expect('退出码 0', false, `实际 ${e.status}: ${e.stdout?.toString().slice(-300)}`);
   }
@@ -133,6 +133,24 @@ console.log('case 6: ENUM_CHECKS 消失 → 必须拒绝执行，不能瞎报绿
     writeFileSync(p, readFileSync(p, 'utf8').replace(/const ENUM_CHECKS\s*=/, 'const GONE_ENUM_CHECKS ='));
   }, runIn);
   expect('退出码 2', r.code === 2, `实际 ${r.code}`);
+}
+
+console.log('case 7: templates/ 必须在扫描范围内（回归：reachability 曾在模板里有两套枚举）');
+{
+  // 2026-11-14 实测：wave2a-sweep.md:81 的 JSON 骨架写 4 个值（缺 ENTRY），
+  // 同文件 :132 的正文表格写 5 个值。agent 照骨架写永远拿不到 ENTRY 这一档。
+  // 根因是扫描目录列表里没有 templates/。
+  const r = withCopy((fw) => {
+    const p = join(fw, 'templates', 'wave2a-sweep.md');
+    const t = readFileSync(p, 'utf8');
+    // 把 correct 的 5 值改成 4 值（缺 ENTRY），模拟漂移
+    writeFileSync(p, t.replace(
+      '"PROD | ENTRY | TEST_ONLY | UNREACHABLE | GENERATED"',
+      '"PROD | TEST_ONLY | UNREACHABLE | GENERATED"'));
+  }, runIn);
+  const hit = (r.data?.problems ?? []).find((p) => p.kind === 'doc_missing_legal_value');
+  expect('模板里的枚举漂移被抓到', !!hit, JSON.stringify(r.data?.problems));
+  expect('指向模板文件', /模板/.test(hit?.where ?? ''), hit?.where);
 }
 
 console.log(`

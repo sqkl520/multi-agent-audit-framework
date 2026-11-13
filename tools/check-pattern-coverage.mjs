@@ -49,7 +49,7 @@ if (declaredPatterns.size === 0) {
   for (const m of wave2.matchAll(/模式\s*(\d)/g)) declaredPatterns.add(Number(m[1]));
 }
 if (declaredPatterns.size === 0) {
-  console.error('无法从 wave2-audit.md 识别出任何模式——模板结构可能变了');
+  console.error('[预期失败] 无法从 wave2-audit.md 识别出任何模式——模板结构可能变了');
   process.exit(2);
 }
 const PATTERN_LIST = [...declaredPatterns].sort((a, b) => a - b);

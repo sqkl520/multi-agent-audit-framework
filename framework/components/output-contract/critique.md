@@ -82,7 +82,7 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role <你�
 {
   "schema_version": "output-contract-v1",
   "agent_id": "string",
-  "role": "recon | sweep | audit | critique | fix | verify",
+  "role": "planner | recon | sweep | audit | critique | fix | verify",
   "status": "SUCCESS | RETRYABLE_FAILURE | CONTRACT_VIOLATION | PERMANENT_FAILURE",
   "contract_valid": true,
   "artifact_path": "string",
@@ -183,8 +183,19 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role <你�
       }
     ],
     "coverage_gaps": [
-      { "uncovered_module": "string", "reason": "string" }
+      {
+        "gap_id": "string",
+        "kind": "SLICE_UNCOVERED | FILE_UNREAD | DIMENSION_OMITTED | ENTRY_UNCOVERED",
+        "target": "string",
+        "evidence": { "observation": "string", "source": "string" },
+        "potential_impact": "string",
+        "recommended_action": "string"
+      }
     ],
+    "slice_scan_performed": true,
+    "file_scan_performed": true,
+    "dimension_scan_performed": true,
+    "entry_scan_performed": true,
     "pattern_sweep": {
       "performed": true,
       "patterns_checked": []
@@ -211,6 +222,10 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role <你�
 | `arbiter` | **`verdicts[]`**，`verdict` 取 `UPHELD` \| `DOWNGRADED` \| `REVOKED` | **不得**返回 `EVIDENCE_GAP`（见下方 Arbiter 约束），也不得返回 Skeptic 的三值 |
 
 > **为什么 `devils_advocate` 不是「另一套 verdict 枚举」**：它的产出形态根本不同——`coverage_gaps` 是**缺口列表**，不是对某条发现的裁决。此前我在本表里给它编过 `coverage_gap | no_gap` 两个值，那是**凭空发明的枚举**：模板里 `devils_advocate` 从不返回 `verdicts`，凭空加一个枚举会让它「两条路都不合规」（不填 `verdicts` 违反必填，填了又说没有合法值）。**正确的修订是承认它的输出载体不同，而不是给它也造一套裁决词。**
+
+**`devils_advocate` 的四个覆盖扫描布尔**（2026-11-14 补登）：`slice_scan_performed`、`file_scan_performed`、`dimension_scan_performed`、`entry_scan_performed`，**四者必须均为 `true`**。
+
+> 这四个字段此前**只存在于 `wave3-critique.md:493` 的检查清单里**，契约没有承载位置，校验器也不检查。而 DA 是锐评波里唯一负责覆盖完整性的角色——它「有没有真的扫四类」完全靠自述，等于把二值可判的事实退化成信任。现在校验器对 `critique_role == "devils_advocate"` 逐个检查，缺一即 `missing_scan_flag`。
 
 **`direct_contradiction` 的适用规则**（2026-11-03 新增字段）：**仅 `critique_role == "skeptic"` 时可能出现**。当 `finding_id` 属于内存安全 / 并发 / 声明一致性 / 行为兼容性变更 / 未使用参数这五个领域时，`verdict: "refuted"` **必须**携带该字段（一行直接与主张矛盾的代码引用）；非敏感领域可为 `null`。判定规则与理由见 `templates/wave3-critique.md` 第 2.2 节。
 

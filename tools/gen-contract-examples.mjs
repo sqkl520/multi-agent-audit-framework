@@ -87,14 +87,29 @@ const EXAMPLES = {
   audit: {
     findings: [
       {
-        id: 'F1', severity: 'HIGH', dimension: 'error-handling',
-        title: '持久化失败被静默吞掉',
-        evidence: [
-          { file: 'src/store.js', line: 57, quote: 'renameSync(tmp, this.#path);' },
-        ],
-        inference: 'renameSync 在跨设备或权限不足时抛异常，而 set() 没有任何 try/catch，'
-          + '异常直接冒到调用方；但调用方按返回值判断成功与否，永远拿不到失败信号。',
-        call_chain: 'src/api.js:30 saveHandler → src/store.js:55 Store.set → src/store.js:57 renameSync',
+        finding_id: 'F1',
+        severity: 'HIGH',
+        dimension: 'error-handling',
+        // 契约 §2.2：evidence 是**对象**，不是数组
+        evidence: {
+          file: 'src/store.js',
+          line: 57,
+          quote: 'renameSync(tmp, this.#path);',
+        },
+        // 契约 §2.2：inference 是**对象** {claim, basis, alternatives}，不是字符串
+        inference: {
+          claim: '持久化失败被静默吞掉，调用方拿不到失败信号',
+          basis: 'renameSync 在跨设备或权限不足时抛异常，而 set() 没有任何 try/catch，'
+            + '异常直接冒到调用方；但调用方按返回值判断成功与否。',
+          // HIGH/CRITICAL 要求至少两个可检查的替代解释
+          alternatives: [
+            '如果应用层在调用链上游统一捕获了异常并转成返回值，则问题不成立——'
+              + '需检查 src/api.js:30 saveHandler 的 try/catch 覆盖范围',
+            '如果 renameSync 的失败已被 node:fs 的默认行为静默处理，则不会抛异常——'
+              + '需在只读目录实测一次',
+          ],
+        },
+        status: 'CONFIRMED',
       },
     ],
     self_checks: {
@@ -114,6 +129,15 @@ const EXAMPLES = {
   },
   critique: {
     critique_role: 'skeptic',
+    // 契约 §2.3：skeptic 必填。缺失 = 未完成职责，全部 verdicts 作废。
+    discipline_audit: {
+      performed: true,
+      log_entries_checked: 3,
+      dispatch_records_checked: 2,
+      undeclared_discretions: [],
+      mechanical_check_failures: [],
+      l0_violations: [],
+    },
     verdicts: [
       {
         finding_id: 'F1',

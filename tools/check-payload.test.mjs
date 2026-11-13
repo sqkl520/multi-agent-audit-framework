@@ -374,11 +374,22 @@ console.log('case 29: 完整合规的 recon → 通过');
 }
 
 // ── critique：五步测试与运行时证据（2026-11-10 新增）──
+// 2026-11-14：discipline_audit 成为 skeptic 的必填项（契约 §2.3 早有规定，
+// 但校验器此前没实现）。这个 fixture 是全文件所有 critique 用例的公共构造，
+// 所以在这里补一次，而不是在 6 个用例里各补一遍。
 const critEnv = (v) => JSON.stringify({
   schema_version: 'output-contract-v1',
   agent_id: 'c1', role: 'critique', status: 'SUCCESS', contract_valid: true,
   artifact_path: '/x/c.md',
-  payload: { critique_role: 'skeptic', target_finding_ids: ['F1'], verdicts: [v] },
+  payload: {
+    critique_role: 'skeptic',
+    target_finding_ids: ['F1'],
+    discipline_audit: {
+      performed: true, log_entries_checked: 1, dispatch_records_checked: 1,
+      undeclared_discretions: [], mechanical_check_failures: [], l0_violations: [],
+    },
+    verdicts: [v],
+  },
   error: null,
 }, null, 2);
 
@@ -1052,6 +1063,229 @@ console.log('case 86: 真实路径不存在仍必须报错（<OUTDIR> 的放行�
   const r = run(wrap(JSON.stringify(e, null, 2)));
   expect('报 artifact_not_found',
     r.r?.errors?.some(x => x.rule === 'artifact_not_found'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+// ── 2026-11-14：findings 内部结构（此前完全不查，导致错误示例能过校验）──
+console.log('case 87: finding 用 "id" 而非 "finding_id" → 必须报 wrong_field_name');
+{
+  const e = {
+    schema_version: 'output-contract-v1', agent_id: 'a1', role: 'audit',
+    status: 'SUCCESS', contract_valid: true, artifact_path: '<OUTDIR>/a.md',
+    payload: {
+      findings: [{
+        id: 'F1', dimension: 'logic', severity: 'HIGH',
+        evidence: { file: 'a.js', line: 1, quote: 'x' },
+        inference: { claim: 'c', basis: 'b', alternatives: ['a1', 'a2'] },
+        status: 'CONFIRMED',
+      }],
+      self_checks: {
+        identifier_reconcile: { status: 'DONE', note: 'x' },
+        self_check_audit: { status: 'DONE', note: 'y' },
+        runtime_validation: { status: 'DONE', note: 'z' },
+      },
+    }, error: null,
+  };
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('报 wrong_field_name', r.r?.errors?.some(x => x.rule === 'wrong_field_name'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 88: finding 缺 status → 必须报 missing_finding_status（此前省略即跳过）');
+{
+  const e = {
+    schema_version: 'output-contract-v1', agent_id: 'a1', role: 'audit',
+    status: 'SUCCESS', contract_valid: true, artifact_path: '<OUTDIR>/a.md',
+    payload: {
+      findings: [{
+        finding_id: 'F1', dimension: 'logic', severity: 'HIGH',
+        evidence: { file: 'a.js', line: 1, quote: 'x' },
+        inference: { claim: 'c', basis: 'b', alternatives: ['a1', 'a2'] },
+      }],
+      self_checks: {
+        identifier_reconcile: { status: 'DONE', note: 'x' },
+        self_check_audit: { status: 'DONE', note: 'y' },
+        runtime_validation: { status: 'DONE', note: 'z' },
+      },
+    }, error: null,
+  };
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('报 missing_finding_status',
+    r.r?.errors?.some(x => x.rule === 'missing_finding_status'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 89: evidence 写成数组（契约要求对象）→ 必须报 evidence_wrong_shape');
+{
+  const e = {
+    schema_version: 'output-contract-v1', agent_id: 'a1', role: 'audit',
+    status: 'SUCCESS', contract_valid: true, artifact_path: '<OUTDIR>/a.md',
+    payload: {
+      findings: [{
+        finding_id: 'F1', dimension: 'logic', severity: 'HIGH',
+        evidence: [{ file: 'a.js', line: 1, quote: 'x' }],
+        inference: { claim: 'c', basis: 'b', alternatives: ['a1', 'a2'] },
+        status: 'CONFIRMED',
+      }],
+      self_checks: {
+        identifier_reconcile: { status: 'DONE', note: 'x' },
+        self_check_audit: { status: 'DONE', note: 'y' },
+        runtime_validation: { status: 'DONE', note: 'z' },
+      },
+    }, error: null,
+  };
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('报 evidence_wrong_shape',
+    r.r?.errors?.some(x => x.rule === 'evidence_wrong_shape'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 90: inference 写成字符串 → 必须报 inference_wrong_shape（否则 CRITICAL 检查静默失效）');
+{
+  const e = {
+    schema_version: 'output-contract-v1', agent_id: 'a1', role: 'audit',
+    status: 'SUCCESS', contract_valid: true, artifact_path: '<OUTDIR>/a.md',
+    payload: {
+      findings: [{
+        finding_id: 'F1', dimension: 'logic', severity: 'CRITICAL',
+        evidence: { file: 'a.js', line: 1, quote: 'x' },
+        inference: '这是一段字符串而不是对象',
+        status: 'CONFIRMED',
+      }],
+      self_checks: {
+        identifier_reconcile: { status: 'DONE', note: 'x' },
+        self_check_audit: { status: 'DONE', note: 'y' },
+        runtime_validation: { status: 'DONE', note: 'z' },
+      },
+    }, error: null,
+  };
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('报 inference_wrong_shape',
+    r.r?.errors?.some(x => x.rule === 'inference_wrong_shape'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+// ── 2026-11-14：critique 的 discipline_audit 角色分支（契约 §2.3 早有，校验器没实现）──
+console.log('case 91: skeptic 缺 discipline_audit → 必须报错（契约：全部 verdicts 作废）');
+{
+  const e = {
+    schema_version: 'output-contract-v1', agent_id: 'c1', role: 'critique',
+    status: 'SUCCESS', contract_valid: true, artifact_path: '<OUTDIR>/c.md',
+    payload: { critique_role: 'skeptic', verdicts: [] }, error: null,
+  };
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('报 missing_discipline_audit',
+    r.r?.errors?.some(x => x.rule === 'missing_discipline_audit'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 92: devils_advocate 返回 discipline_audit → 必须报越界');
+{
+  const e = {
+    schema_version: 'output-contract-v1', agent_id: 'c1', role: 'critique',
+    status: 'SUCCESS', contract_valid: true, artifact_path: '<OUTDIR>/c.md',
+    payload: {
+      critique_role: 'devils_advocate', verdicts: [],
+      discipline_audit: { performed: true },
+    }, error: null,
+  };
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('报 discipline_audit_out_of_role',
+    r.r?.errors?.some(x => x.rule === 'discipline_audit_out_of_role'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+// ── 2026-11-14：verify.verdict 枚举 + role 原型链崩溃 ──
+console.log('case 93: verdict="fail"（小写）→ 必须报 invalid_verify_verdict（否则 FAIL 检查被跳过）');
+{
+  const e = {
+    schema_version: 'output-contract-v1', agent_id: 'v1', role: 'verify',
+    status: 'SUCCESS', contract_valid: true, artifact_path: '<OUTDIR>/v.md',
+    payload: { finding_id: 'F1', verdict: 'fail' }, error: null,
+  };
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('报 invalid_verify_verdict',
+    r.r?.errors?.some(x => x.rule === 'invalid_verify_verdict'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 94: role 取原型链键（__proto__）→ 必须正常报违规，不许崩溃');
+{
+  const e = {
+    schema_version: 'output-contract-v1', agent_id: 'a1', role: '__proto__',
+    status: 'SUCCESS', contract_valid: true, payload: {}, error: null,
+  };
+  let crashed = false;
+  let r2 = null;
+  try { r2 = run(wrap(JSON.stringify(e, null, 2))); } catch { crashed = true; }
+  expect('不崩溃', !crashed);
+  expect('报 invalid_role', r2?.r?.errors?.some(x => x.rule === 'invalid_role'),
+    JSON.stringify(r2?.r?.errors?.map(x => x.rule)));
+}
+
+// ── 2026-11-14：coverage_gaps 闭集 + DA 四个扫描布尔（此前零校验）──
+console.log('case 95: coverage_gaps.kind 用闭集外的值 → 必须报 invalid_coverage_kind');
+{
+  const e = {
+    schema_version: 'output-contract-v1', agent_id: 'd1', role: 'critique',
+    status: 'SUCCESS', contract_valid: true, artifact_path: '<OUTDIR>/d.md',
+    payload: {
+      critique_role: 'devils_advocate', verdicts: [],
+      slice_scan_performed: true, file_scan_performed: true,
+      dimension_scan_performed: true, entry_scan_performed: true,
+      coverage_gaps: [{ gap_id: 'G1', kind: 'TOTALLY_MADE_UP', target: 'x', recommended_action: 'y' }],
+    }, error: null,
+  };
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('报 invalid_coverage_kind',
+    r.r?.errors?.some(x => x.rule === 'invalid_coverage_kind'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 96: devils_advocate 缺四个扫描布尔 → 每条都要报 missing_scan_flag');
+{
+  const e = {
+    schema_version: 'output-contract-v1', agent_id: 'd1', role: 'critique',
+    status: 'SUCCESS', contract_valid: true, artifact_path: '<OUTDIR>/d.md',
+    payload: { critique_role: 'devils_advocate', verdicts: [], coverage_gaps: [] },
+    error: null,
+  };
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  const hits = (r.r?.errors ?? []).filter(x => x.rule === 'missing_scan_flag');
+  expect('报 4 条 missing_scan_flag', hits.length === 4, `实际 ${hits.length}`);
+}
+
+console.log('case 97: devils_advocate 四个扫描布尔齐全 → 不报 missing_scan_flag');
+{
+  const e = {
+    schema_version: 'output-contract-v1', agent_id: 'd1', role: 'critique',
+    status: 'SUCCESS', contract_valid: true, artifact_path: '<OUTDIR>/d.md',
+    payload: {
+      critique_role: 'devils_advocate', verdicts: [], coverage_gaps: [],
+      slice_scan_performed: true, file_scan_performed: true,
+      dimension_scan_performed: true, entry_scan_performed: true,
+    }, error: null,
+  };
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('不报 missing_scan_flag',
+    !r.r?.errors?.some(x => x.rule === 'missing_scan_flag'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 98: 扫描布尔写成 "true" 字符串（不是真布尔）→ 必须报错（防字符串冒充）');
+{
+  const e = {
+    schema_version: 'output-contract-v1', agent_id: 'd1', role: 'critique',
+    status: 'SUCCESS', contract_valid: true, artifact_path: '<OUTDIR>/d.md',
+    payload: {
+      critique_role: 'devils_advocate', verdicts: [], coverage_gaps: [],
+      slice_scan_performed: 'true', file_scan_performed: true,
+      dimension_scan_performed: true, entry_scan_performed: true,
+    }, error: null,
+  };
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('字符串 "true" 不算通过',
+    r.r?.errors?.some(x => x.rule === 'missing_scan_flag'),
     JSON.stringify(r.r?.errors?.map(x => x.rule)));
 }
 

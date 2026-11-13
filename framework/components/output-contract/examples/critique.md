@@ -18,6 +18,14 @@
   "artifact_path": "<OUTDIR>/round1-02-audit-S1-logic.md",
   "payload": {
     "critique_role": "skeptic",
+    "discipline_audit": {
+      "performed": true,
+      "log_entries_checked": 3,
+      "dispatch_records_checked": 2,
+      "undeclared_discretions": [],
+      "mechanical_check_failures": [],
+      "l0_violations": []
+    },
     "verdicts": [
       {
         "finding_id": "F1",
