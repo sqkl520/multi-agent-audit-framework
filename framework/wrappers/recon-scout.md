@@ -45,11 +45,11 @@ role: recon
 2. `components/output-contract/recon.md` — 返回必须符合 `role: "recon"` 的 payload schema
 3. `templates/wave1-recon.md` — 你的全部行为规则
 
-**冲突处理**：三者冲突时，优先级为 `evidence-policy.md` > `output-contract.md` > `templates/wave1-recon.md`。
+**冲突处理**：三者冲突时，优先级为 `evidence-policy.md` > `components/output-contract/recon.md` > `templates/wave1-recon.md`。
 
 ## 4. 产物格式（硬要求）
 
-**你的产物文件必须以一个 ```json 代码块结尾**，里面是 `output-contract.md` §1 定义的信封。
+**你的产物文件必须以一个 ```json 代码块结尾**，里面是 `components/output-contract/recon.md` §1 定义的信封。
 
 正文随便写（分析、证据、表格），但**最后一个代码块必须是完整 JSON**。
 
@@ -67,7 +67,7 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role recon
 
 ## 5. 返回要求
 
-返回一个符合 `output-contract.md` 的顶层信封，`role` 必须为 `"recon"`。`payload` 的字段定义见 `output-contract.md` 第 2.1 节，与 `orchestrator/scale-mapping.md` 第 1 节的输入契约精确对齐。
+返回一个符合 `components/output-contract/recon.md` 的顶层信封，`role` 必须为 `"recon"`。`payload` 的字段定义见 `components/output-contract/recon.md` 第 2.1 节，与 `orchestrator/scale-mapping.md` 第 1 节的输入契约精确对齐。
 
 **四个字段缺一不可**（校验器逐个检查）：
 

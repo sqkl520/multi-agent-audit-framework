@@ -44,7 +44,7 @@ read_only: true
 
 ## 4. 产物格式（硬要求）
 
-**你的产物文件必须以一个 ```json 代码块结尾**，里面是 `output-contract.md` §1 定义的信封。
+**你的产物文件必须以一个 ```json 代码块结尾**，里面是 `components/output-contract/verify.md` §1 定义的信封。
 
 正文随便写（分析、证据、表格），但**最后一个代码块必须是完整 JSON**。
 
@@ -62,7 +62,7 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role verify
 
 ## 5. 返回要求
 
-顶层信封 `role` 必须为 `"verify"`。`payload` 字段见 `output-contract.md` 第 2.5 节。
+顶层信封 `role` 必须为 `"verify"`。`payload` 字段见 `components/output-contract/verify.md` 第 2.5 节。
 
 **`finding_id` 必须指向你实际验收的那条发现**，与派发参数里给的 id 完全一致。写错一个字符，下游就无法把你这条结论挂回原发现——**验收结果会变成孤儿，等于没验**。
 

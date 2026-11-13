@@ -55,7 +55,7 @@ subroles: [skeptic, devils_advocate, arbiter]
 
 ## 4. 产物格式（硬要求）
 
-**你的产物文件必须以一个 ```json 代码块结尾**，里面是 `output-contract.md` §1 定义的信封。
+**你的产物文件必须以一个 ```json 代码块结尾**，里面是 `components/output-contract/critique.md` §1 定义的信封。
 
 正文随便写（分析、证据、表格），但**最后一个代码块必须是完整 JSON**。
 

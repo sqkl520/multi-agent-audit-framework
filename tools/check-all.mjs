@@ -138,6 +138,11 @@ const CHECKS = [
     script: 'check-contract-slices.test.mjs',
     desc: '10 个用例：缺必填字段 / 缺通用节 / 孤儿切片 / 切片缺失 / 生成器幂等',
   },
+  {
+    name: '契约切片保真度（拆分是否无损）',
+    script: 'check-contract-slice-fidelity.test.mjs',
+    desc: '9 个用例：切片丢字段 / 母文件结构变化必须拒绝执行 / 切片须标注自动生成',
+  },
 ];
 
 let failed = 0;

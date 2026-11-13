@@ -54,7 +54,7 @@ role: audit
 
 ## 4. 产物格式（硬要求）
 
-**你的产物文件必须以一个 ```json 代码块结尾**，里面是 `output-contract.md` §1 定义的信封。
+**你的产物文件必须以一个 ```json 代码块结尾**，里面是 `components/output-contract/audit.md` §1 定义的信封。
 
 正文随便写（分析、证据、表格），但**最后一个代码块必须是完整 JSON**。
 
@@ -72,7 +72,7 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role audit
 
 ## 5. 返回要求
 
-顶层信封 `role` 必须为 `"audit"`。`payload` 字段定义见 `output-contract.md` 第 2.2 节。
+顶层信封 `role` 必须为 `"audit"`。`payload` 字段定义见 `components/output-contract/audit.md` 第 2.2 节。
 
 **两个字段必须写出来，否则产物直接作废**：
 
