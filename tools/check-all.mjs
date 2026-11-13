@@ -141,7 +141,7 @@ const CHECKS = [
   {
     name: '契约切片保真度（拆分是否无损）',
     script: 'check-contract-slice-fidelity.test.mjs',
-    desc: '9 个用例：切片丢字段 / 母文件结构变化必须拒绝执行 / 切片须标注自动生成',
+    desc: '11 个用例：切片丢字段 / 结构变化须拒绝执行 / 父标题 / 自述路径 / 自动生成标注',
   },
 ];
 

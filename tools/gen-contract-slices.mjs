@@ -56,8 +56,22 @@ if (missing.length) {
 const slice = (a, b) => lines.slice(a, b).join('\n');
 
 // 通用部分：文件头 + §0 + §1；尾部：§3 §4 §5 §6 参考
-const headPart = slice(marks.head, marks.s2);
+// 文件头里的 `# components/output-contract.md` 和 frontmatter 的 `file:` 指向母文件，
+// 在切片里必须换成切片自己的路径——否则读者按那个路径去找，读到的是 703 行的完整版，
+// 而不是他手上这份（这属于「自称与实际不符」，比缺内容更容易误导）。
+const headPartRaw = slice(marks.head, marks.s2);
+const headPart = headPartRaw
+  .replace(/^# components\/output-contract\.md$/m, '__SELF_PATH__')
+  .replace(/^file: components\/output-contract\.md$/m, '__SELF_FILE__')
+  .replace(/^> output-contract\.md$/m, '> __SELF_NAME__');
+
 const tailPart = slice(marks.s3, lines.length);
+
+// 第 2 节导语：切片只保留一个角色分支，但**必须带上父节标题和导语**。
+// 否则 #### 2.0 会直接跟在 #### 顶层字段 后面，读的人不知道它属于哪一节，
+// 也看不到「payload 用 oneOf 按 role 分支」这个前提。
+// 导语 = 从「## 第 2 节」标题到第一个 #### 子节之间的内容。
+const section2Intro = slice(marks.s2, marks.s20);
 
 // 角色 → 它自己的那一段（含紧随的下一个标题之前）
 const ROLE_SECTION = {
@@ -82,7 +96,13 @@ const banner = (role) => `<!--
 
 let total = 0;
 for (const [role, [a, b]] of Object.entries(ROLE_SECTION)) {
-  const body = banner(role) + headPart + '\n' + slice(a, b) + '\n' + tailPart;
+  const selfPath = `components/output-contract/${role}.md`;
+  const head = headPart
+    .replace('__SELF_PATH__', `# ${selfPath}`)
+    .replace('__SELF_FILE__', `file: ${selfPath}`)
+    .replace('__SELF_NAME__', `${role}.md（output-contract 的 ${role} 角色切片）`);
+
+  const body = banner(role) + head + '\n' + section2Intro + '\n' + slice(a, b) + '\n' + tailPart;
   const p = join(OUT_DIR, `${role}.md`);
   writeFileSync(p, body);
   const n = body.split(/\r?\n/).length;

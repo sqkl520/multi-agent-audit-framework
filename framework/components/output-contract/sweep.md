@@ -5,18 +5,18 @@
 -->
 
 ---
-file: components/output-contract.md
+file: components/output-contract/sweep.md
 title: 统一返回契约
 group_order: 2
 loaded: 所有子Agent在返回任何结果前加载
 source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 8 轮)
 ---
 
-# components/output-contract.md
+# components/output-contract/sweep.md
 
 ## 文件头部：强制加载与优先级
 
-> output-contract.md
+> sweep.md（output-contract 的 sweep 角色切片）
 > 所有子Agent在返回任何结果前加载。
 > 主Agent只消费符合本契约的结构化输出；不符合的输出一律判定为 CONTRACT_VIOLATION。
 > 本文件与 evidence-policy.md 的字段约定冲突时，以 evidence-policy.md 的证据结构为准；
@@ -129,6 +129,10 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role <你�
 **机械判定规则**：主Agent在接收子Agent返回时，只接受四个终态；若子Agent返回 `PENDING` 或 `RUNNING`，视为 `CONTRACT_VIOLATION`（这是一次性执行单元，不存在"我先挂起一会儿"的语义）。反过来，账本中的 `PENDING` / `RUNNING` 只能由主Agent自己写入，**不得**从子Agent返回中读取。
 
 ---
+
+## 第 2 节：Payload 的角色分支
+
+`payload` 使用 `oneOf` 按 `role` 分支。每个分支有独立的必填字段，但共享“证据结构”的定义（引用 `evidence-policy.md` 的 `Evidence` / `Inference` 字段）。
 
 #### 2.2a 宽扫角色（`role: "sweep"`）——2026-11-01 新增
 

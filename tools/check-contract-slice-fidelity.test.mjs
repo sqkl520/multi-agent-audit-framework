@@ -119,6 +119,27 @@ console.log('case 5: 切片没标「自动生成」→ 必须报出（防读者�
   expect('报 slice_not_marked_generated', !!hit, JSON.stringify(r.data?.problems));
 }
 
+console.log('case 6: 切片缺「第 2 节」父标题 → 必须报出（角色小节成了孤儿）');
+{
+  const r = withCopy((comp) => {
+    const p = join(comp, 'output-contract', 'fix.md');
+    writeFileSync(p, readFileSync(p, 'utf8').replace(/^## 第 2 节.*$/m, ''));
+  }, runIn);
+  const hit = (r.data?.problems ?? []).find((p) => p.kind === 'slice_missing_parent_heading');
+  expect('报 slice_missing_parent_heading', !!hit, JSON.stringify(r.data?.problems));
+}
+
+console.log('case 7: 切片自称是母文件路径 → 必须报出（读者会去读完整版）');
+{
+  const r = withCopy((comp) => {
+    const p = join(comp, 'output-contract', 'audit.md');
+    writeFileSync(p, readFileSync(p, 'utf8')
+      .replace(/^file:\s*components\/output-contract\/audit\.md$/m, 'file: components/output-contract.md'));
+  }, runIn);
+  const hit = (r.data?.problems ?? []).find((p) => p.kind === 'slice_mislabels_itself');
+  expect('报 slice_mislabels_itself', !!hit, JSON.stringify(r.data?.problems));
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

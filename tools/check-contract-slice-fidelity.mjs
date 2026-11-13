@@ -110,6 +110,27 @@ for (const [role, [a, b]] of Object.entries(ROLE_SECTION)) {
       detail: '切片没有标注「自动生成 / 母文件在哪」，读者会以为它是独立权威',
     });
   }
+
+  // 附加检查：父节标题必须在。
+  // 切片只保留一个角色分支，若连「## 第 2 节：Payload 的角色分支」这个父标题也不带，
+  // `#### 2.0` 就会直接跟在 `#### 顶层字段` 后面——读的人不知道它属于哪一节，
+  // 更看不到「payload 用 oneOf 按 role 分支」这个前提。
+  if (!/^##\s*第\s*2\s*节/m.test(slice)) {
+    problems.push({
+      role, kind: 'slice_missing_parent_heading',
+      detail: '切片缺「第 2 节：Payload 的角色分支」父标题，角色小节成了孤儿',
+    });
+  }
+
+  // 附加检查：切片不能自称是母文件的路径。
+  // frontmatter 写 `file: components/output-contract.md` 会让读者照着去找完整版，
+  // 于是读到 703 行而不是手上这份——「自称与实际不符」比缺内容更容易误导。
+  if (/^file:\s*components\/output-contract\.md\s*$/m.test(slice)) {
+    problems.push({
+      role, kind: 'slice_mislabels_itself',
+      detail: `切片 frontmatter 自称是母文件路径，应为 components/output-contract/${role}.md`,
+    });
+  }
 }
 
 if (jsonOut) {
