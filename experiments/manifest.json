@@ -1,6 +1,6 @@
 {
   "version": "3.0.0",
-  "note": "分类由 classify.mjs 实测得出，不再依赖「我以为注入了什么」。被审计物 = injected。defects 是被审计物内实有的缺陷（recall 分母）；apparatus 是只在 base 里存在、不在被审计物内的问题，不参与计分。",
+  "note": "分类由 classify.mjs 实测得出，不再依赖「我以为注入了什么」。被审计物 = injected。defects 是被审计物内实有的缺陷（recall 分母）；apparatus 是只在 base 里存在、不在被审计物内的问题，不参与计分。 每条 defects 现在带 pattern 字段（1..8 或 \"none\"+none_reason），由 tools/check-pattern-coverage.mjs 强制校验——保证「查不到的缺陷」是已知的，而不是盲区。",
   "defects": [
     {
       "id": "GT-001",
@@ -10,7 +10,9 @@
       "severity": "CRITICAL",
       "title": "processTasks 清空入参数组后才执行，一个任务都不跑",
       "origin": "injected",
-      "proof": "node -e 调用返回 []"
+      "proof": "node -e 调用返回 []",
+      "pattern": "none",
+      "none_reason": "操作顺序问题，但模式 6 只覆盖转义/编码顺序这一子类；此例属控制流误用，须逐行读才能发现"
     },
     {
       "id": "GT-002",
@@ -19,7 +21,9 @@
       "dimension": "logic",
       "severity": "HIGH",
       "title": "dequeue 用 >= 破坏 FIFO，同优先级变 LIFO",
-      "origin": "injected"
+      "origin": "injected",
+      "pattern": "none",
+      "none_reason": "比较运算符方向写反（用 >= 而非 >），8 个模式都不覆盖运算符语义"
     },
     {
       "id": "GT-003",
@@ -28,7 +32,9 @@
       "dimension": "error-handling",
       "severity": "MEDIUM",
       "title": "容量检查用 > 允许塞进 capacity+1 个",
-      "origin": "injected"
+      "origin": "injected",
+      "pattern": "none",
+      "none_reason": "容量检查用 > 而非 >=，同 GT-002，属运算符方向问题"
     },
     {
       "id": "GT-004",
@@ -37,7 +43,9 @@
       "dimension": "logic",
       "severity": "HIGH",
       "title": "指数写错：2^attempt 而非 2^(attempt-1)",
-      "origin": "injected"
+      "origin": "injected",
+      "pattern": "none",
+      "none_reason": "算式本身写错（2^attempt vs 2^(attempt-1)），须对照注释/文档语义才能判断，不是边界或顺序问题"
     },
     {
       "id": "GT-005",
@@ -46,7 +54,11 @@
       "dimension": "logic",
       "severity": "HIGH",
       "title": "parsePositiveInt 只校验 integer 不校验 positive，0 和负数放行",
-      "origin": "injected"
+      "origin": "injected",
+      "pattern": [
+        3,
+        7
+      ]
     },
     {
       "id": "GT-006",
@@ -55,7 +67,9 @@
       "dimension": "contract",
       "severity": "MEDIUM",
       "title": "VALID_LOG_LEVELS 漏 warn",
-      "origin": "injected"
+      "origin": "injected",
+      "pattern": "none",
+      "none_reason": "枚举清单漏项，须与其他来源（日志级别惯例）对照才知道缺什么，模式表未覆盖清单完整性"
     },
     {
       "id": "GT-007",
@@ -64,7 +78,8 @@
       "dimension": "error-handling",
       "severity": "HIGH",
       "title": "损坏 JSON 静默返回 {}",
-      "origin": "injected"
+      "origin": "injected",
+      "pattern": 4
     },
     {
       "id": "GT-008",
@@ -74,7 +89,9 @@
       "severity": "HIGH",
       "title": "#persist 先 rmSync 再 writeFileSync，非原子：序列化抛错时原文件已删，数据永久丢失",
       "origin": "injected",
-      "proof": "classify.mjs GT-008：写入 BigInt 抛错后文件不存在"
+      "proof": "classify.mjs GT-008：写入 BigInt 抛错后文件不存在",
+      "pattern": "none",
+      "none_reason": "写文件非原子（先删后写），模式 6 只覆盖转义顺序；此例须识别「中途抛错会导致什么」的原子性推理"
     },
     {
       "id": "GT-009",
@@ -83,7 +100,9 @@
       "dimension": "concurrency",
       "severity": "HIGH",
       "title": "cursor 自增在 await 后，索引重复",
-      "origin": "injected"
+      "origin": "injected",
+      "pattern": "none",
+      "none_reason": "并发时序（await 之后再自增），8 个模式无一项涉及异步交错"
     },
     {
       "id": "GT-010",
@@ -92,7 +111,8 @@
       "dimension": "contract",
       "severity": "LOW",
       "title": "clear() 的 JSDoc 声称 @returns {boolean} 但实际返回 undefined",
-      "origin": "injected"
+      "origin": "injected",
+      "pattern": 5
     },
     {
       "id": "GT-011",
@@ -101,7 +121,8 @@
       "dimension": "data-consistency",
       "severity": "MEDIUM",
       "title": "peek() 返回内部活引用",
-      "origin": "native"
+      "origin": "native",
+      "pattern": 1
     },
     {
       "id": "GT-012",
@@ -110,7 +131,8 @@
       "dimension": "contract",
       "severity": "LOW",
       "title": "remove(id) 缺 id 校验，与 enqueue 不一致",
-      "origin": "native"
+      "origin": "native",
+      "pattern": 2
     },
     {
       "id": "GT-013",
@@ -119,7 +141,8 @@
       "dimension": "error-handling",
       "severity": "MEDIUM",
       "title": "capacity 校验让 NaN/Infinity/小数通过",
-      "origin": "native"
+      "origin": "native",
+      "pattern": 3
     },
     {
       "id": "GT-014",
@@ -128,7 +151,8 @@
       "dimension": "contract",
       "severity": "HIGH",
       "title": "timeoutMs 从未被用作超时，只被当成退避上限——整块能力缺失",
-      "origin": "native"
+      "origin": "native",
+      "pattern": 5
     },
     {
       "id": "GT-015",
@@ -137,7 +161,9 @@
       "dimension": "security",
       "severity": "HIGH",
       "title": "get 用 in 而非 hasOwnProperty，原型链泄漏",
-      "origin": "injected"
+      "origin": "injected",
+      "pattern": "none",
+      "none_reason": "属性访问方式（in vs hasOwnProperty），8 个模式无一项覆盖原型链语义"
     },
     {
       "id": "GT-016",
@@ -146,7 +172,8 @@
       "dimension": "error-handling",
       "severity": "MEDIUM",
       "title": "maxAttempts 只校验整数不校验正数，=0 时抛 undefined",
-      "origin": "injected"
+      "origin": "injected",
+      "pattern": 3
     },
     {
       "id": "GT-017",
@@ -155,7 +182,8 @@
       "dimension": "data-consistency",
       "severity": "MEDIUM",
       "title": "#load 不校验解析结果形状，文件为 null 时构造即崩",
-      "origin": "native"
+      "origin": "native",
+      "pattern": 4
     },
     {
       "id": "GT-018",
@@ -164,7 +192,9 @@
       "dimension": "security",
       "severity": "HIGH",
       "title": "set(\"__proto__\") 依赖原型链赋值：keys() 为空、get 却能读到、delete 删不掉",
-      "origin": "injected"
+      "origin": "injected",
+      "pattern": "none",
+      "none_reason": "原型链赋值语义，同 GT-015，模式表未覆盖"
     },
     {
       "id": "GT-020",
@@ -173,7 +203,8 @@
       "dimension": "error-handling",
       "severity": "MEDIUM",
       "title": "processTasks 不校验 tasks，空数组（合法输入）触发 capacity=0 抛错，且与 runWithConcurrency 的守卫不一致",
-      "origin": "native"
+      "origin": "native",
+      "pattern": 2
     },
     {
       "id": "GT-021",
@@ -182,7 +213,8 @@
       "dimension": "error-handling",
       "severity": "LOW",
       "title": "safeClose 对 async close() 返回 true 并泄漏未处理 rejection——负例文件里唯一的真缺陷",
-      "origin": "native"
+      "origin": "native",
+      "pattern": 1
     }
   ],
   "apparatus": [

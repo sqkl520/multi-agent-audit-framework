@@ -153,6 +153,11 @@ const CHECKS = [
     script: 'check-enum-consistency.test.mjs',
     desc: '13 个用例：文档多写 NONE / 少写 GENERATED / 示例用非法值 / 布尔枚举不得误报',
   },
+  {
+    name: 'GT 缺陷的模式归属（哪些缺陷结构上查不到）',
+    script: 'check-pattern-coverage.test.mjs',
+    desc: '11 个用例：pattern 悬空 / none 无理由 / 引用不存在的模式 / 两个 fixture 都要查',
+  },
 ];
 
 let failed = 0;

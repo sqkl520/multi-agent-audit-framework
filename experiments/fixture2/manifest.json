@@ -10,7 +10,9 @@
       "dimension": "security",
       "severity": "HIGH",
       "title": "escapeHtml 把 & 放在最后替换，&lt; 被二次转义成 &amp;lt;",
-      "origin": "injected"
+      "origin": "injected",
+      "pattern": 6,
+      "pattern_source": "SINGLE-PATTERN.md（作者本人映射）"
     },
     {
       "id": "F2-05",
@@ -19,7 +21,9 @@
       "dimension": "logic",
       "severity": "MEDIUM",
       "title": "number 规则用 typeof 判断，Infinity 通过 —— base 也放行 Infinity，injected 还多放行了 NaN",
-      "origin": "native"
+      "origin": "native",
+      "pattern": 4,
+      "pattern_source": "SINGLE-PATTERN.md（作者本人映射）"
     },
     {
       "id": "F2-06",
@@ -28,7 +32,12 @@
       "dimension": "security",
       "severity": "HIGH",
       "title": "renderInline 直接拼接用户输入，escapeHtml 定义了但从未被调用（XSS）",
-      "origin": "native"
+      "origin": "native",
+      "pattern": [
+        5,
+        6
+      ],
+      "pattern_source": "SINGLE-PATTERN.md（作者本人映射）"
     },
     {
       "id": "F2-07",
@@ -37,7 +46,10 @@
       "dimension": "logic",
       "severity": "HIGH",
       "title": "findMatchingClose 只对「openTag 与 closeTag 同类型」计数，同类块嵌套时内层未跳过，提前返回第一个 closeTag",
-      "origin": "injected"
+      "origin": "injected",
+      "pattern": "none",
+      "pattern_source": "SINGLE-PATTERN.md（作者本人映射）",
+      "none_reason": "同类块嵌套时提前返回——须手工构造嵌套输入才能发现，模式表无对应项"
     },
     {
       "id": "F2-09",
@@ -46,7 +58,9 @@
       "dimension": "logic",
       "severity": "HIGH",
       "title": "page 未排除负数，offset 变成负值，slice 语义翻转",
-      "origin": "injected"
+      "origin": "injected",
+      "pattern": 7,
+      "pattern_source": "SINGLE-PATTERN.md（作者本人映射）"
     },
     {
       "id": "F2-10",
@@ -55,7 +69,9 @@
       "dimension": "security",
       "severity": "MEDIUM",
       "title": "errors 用普通 {}，字段名为 constructor 时取到 Object.prototype.constructor，错误被吞掉",
-      "origin": "native"
+      "origin": "native",
+      "pattern": 4,
+      "pattern_source": "SINGLE-PATTERN.md（作者本人映射）"
     },
     {
       "id": "F2-11",
@@ -64,7 +80,10 @@
       "dimension": "data-consistency",
       "severity": "LOW",
       "title": "paginateArray 的 slice 是浅拷贝，改元素属性会污染源数组",
-      "origin": "native"
+      "origin": "native",
+      "pattern": "none",
+      "pattern_source": "SINGLE-PATTERN.md（作者本人映射）",
+      "none_reason": "浅拷贝污染——「返回值暴露内部状态」模式 1 本应射程覆盖，但作者明确标了无对应，按作者判断记录"
     },
     {
       "id": "F2-12",
@@ -73,7 +92,10 @@
       "dimension": "error-handling",
       "severity": "HIGH",
       "title": "emit 只在多个监听器失败时抛 AggregateError，单个失败时错误被完全吞掉——与注释「错误会在全部执行完后一起抛出」相反",
-      "origin": "injected"
+      "origin": "injected",
+      "pattern": "none",
+      "pattern_source": "SINGLE-PATTERN.md（作者本人映射）",
+      "none_reason": "单个监听器抛错被吞——错误处理路径，模式表无对应项"
     },
     {
       "id": "F2-13",
@@ -82,7 +104,9 @@
       "dimension": "security",
       "severity": "MEDIUM",
       "title": "resolvePath 沿原型链取值，模板 {{constructor}} 能渲染出 [native code] 源码",
-      "origin": "native"
+      "origin": "native",
+      "pattern": 4,
+      "pattern_source": "SINGLE-PATTERN.md（作者本人映射）"
     },
     {
       "id": "F2-14",
@@ -91,7 +115,9 @@
       "dimension": "logic",
       "severity": "MEDIUM",
       "title": "required 规则把 false 当作已填写（只排除 undefined/null/''），0 同理",
-      "origin": "native"
+      "origin": "native",
+      "pattern": 4,
+      "pattern_source": "SINGLE-PATTERN.md（作者本人映射）"
     },
     {
       "id": "F2-15",
@@ -100,7 +126,10 @@
       "dimension": "error-handling",
       "severity": "LOW",
       "title": "minLength/maxLength 对非字符串直接判失败，不区分「类型不对」和「长度不符」",
-      "origin": "native"
+      "origin": "native",
+      "pattern": "none",
+      "pattern_source": "SINGLE-PATTERN.md（作者本人映射）",
+      "none_reason": "非字符串只报通用失败——错误分类粒度问题，模式表无对应项"
     },
     {
       "id": "F2-16",
@@ -109,7 +138,9 @@
       "dimension": "error-handling",
       "severity": "MEDIUM",
       "title": "renderListView 对 options 不校验：'abc'/123 走默认值静默接受，null 才崩",
-      "origin": "native"
+      "origin": "native",
+      "pattern": 4,
+      "pattern_source": "SINGLE-PATTERN.md（作者本人映射）"
     },
     {
       "id": "F2-19",
@@ -118,7 +149,10 @@
       "dimension": "data-consistency",
       "severity": "HIGH",
       "title": "renderListView 收到非法 options 时返回错误的分页信息：3 条数据 pageSize 回退成 10，pagination 报 totalPages=1/hasNext=false，与实际不符且不报错",
-      "origin": "native"
+      "origin": "native",
+      "pattern": "none",
+      "pattern_source": "本次补注（作者表未覆盖该条）",
+      "none_reason": "选项非法时回落到错误分页，属输入校验缺失；模式 3 只管数值边界，此例是非数值类型"
     },
     {
       "id": "F2-20",
@@ -127,7 +161,10 @@
       "dimension": "logic",
       "severity": "MEDIUM",
       "title": "paginate 对 page=0 同样失守：Number.isInteger(0) 为真，offset 变成 -3",
-      "origin": "injected"
+      "origin": "injected",
+      "pattern": 7,
+      "pattern_source": "本次补注（作者表未覆盖该条）",
+      "pattern_note": "page=0 导致 offset 为负，属模式 7（边界值符号）射程"
     },
     {
       "id": "F2-21",
@@ -136,7 +173,10 @@
       "dimension": "security",
       "severity": "HIGH",
       "title": "RULES[r.rule] 裸下标查规则表，rule:'toString'/'constructor' 命中原型链成员被当作合法断言静默放行，'valueOf' 直接崩",
-      "origin": "native"
+      "origin": "native",
+      "pattern": "none",
+      "pattern_source": "本次补注（作者表未覆盖该条）",
+      "none_reason": "RULES[r.rule] 直接下表，r.rule 为 \"constructor\" 时命中原型链；模式表未覆盖原型链语义"
     },
     {
       "id": "F2-22",
@@ -145,7 +185,10 @@
       "dimension": "security",
       "severity": "MEDIUM",
       "title": "{{#if}} 用 ctx[key] 裸下标判定真值，key 为 constructor/toString 时取到原型链成员恒为真，条件块永远渲染",
-      "origin": "native"
+      "origin": "native",
+      "pattern": "none",
+      "pattern_source": "本次补注（作者表未覆盖该条）",
+      "none_reason": "{{#if constructor}} 恒为真（原型链取到函数），同 F2-13 但模式 4 未覆盖该触发键"
     },
     {
       "id": "F2-17",
@@ -154,7 +197,9 @@
       "dimension": "security",
       "severity": "MEDIUM",
       "title": "errors 用普通对象，字段名为 toString/constructor 时取到原型链上的函数，错误被吞掉",
-      "origin": "native"
+      "origin": "native",
+      "pattern": 4,
+      "pattern_source": "SINGLE-PATTERN.md（作者本人映射）"
     },
     {
       "id": "F2-18",
@@ -163,7 +208,9 @@
       "dimension": "logic",
       "severity": "LOW",
       "title": "total=0 时 totalPages 被 Math.max(1,...) 兜成 1，与实际空数据不符",
-      "origin": "native"
+      "origin": "native",
+      "pattern": 7,
+      "pattern_source": "SINGLE-PATTERN.md（作者本人映射）"
     }
   ],
   "apparatus": [
