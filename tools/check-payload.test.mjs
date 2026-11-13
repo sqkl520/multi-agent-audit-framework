@@ -928,6 +928,133 @@ console.log('case 79: verdict=PASS 时不要求 failure_category（不能过度�
     JSON.stringify(r.r?.errors?.map(x => x.rule)));
 }
 
+// ── 2026-11-14：契约写法 vs wrapper 写法的 members 结构（曾互斥，导致照契约写必失败）──
+console.log('case 80: members 逐个列出（契约 §2.0 写法，无 count）→ 每项按 1 计，必须通过');
+{
+  const e = {
+    schema_version: 'output-contract-v1', agent_id: 'a1', role: 'planner',
+    status: 'SUCCESS', contract_valid: true, artifact_path: '<OUTDIR>/p.md',
+    payload: {
+      tier: 'T2', score: 21, score_breakdown: { a: 21 },
+      members: [
+        { agent_id: 'm1', role: 'execute', depends_on: [], note: 'x' },
+        { agent_id: 'm2', role: 'critique', depends_on: ['m1'], note: 'y' },
+      ],
+      member_count: 2,
+    }, error: null,
+  };
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('契约写法通过', r.r?.ok === true, JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 81: members 按职能聚合（wrapper §5 写法，有 count）→ 必须通过');
+{
+  const e = {
+    schema_version: 'output-contract-v1', agent_id: 'a1', role: 'planner',
+    status: 'SUCCESS', contract_valid: true, artifact_path: '<OUTDIR>/p.md',
+    payload: {
+      tier: 'T2', score: 21, score_breakdown: { a: 21 },
+      members: [
+        { role: 'execute', count: 6, scope: '宽扫' },
+        { role: 'critique', count: 3, scope: '锐评' },
+      ],
+      member_count: 9,
+    }, error: null,
+  };
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('wrapper 写法通过', r.r?.ok === true, JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 82: member_count 算错（两种写法都要报）→ 必须报 count_mismatch');
+{
+  const e = {
+    schema_version: 'output-contract-v1', agent_id: 'a1', role: 'planner',
+    status: 'SUCCESS', contract_valid: true, artifact_path: '<OUTDIR>/p.md',
+    payload: {
+      tier: 'T2', score: 21, score_breakdown: { a: 21 },
+      members: [{ agent_id: 'm1', role: 'execute', depends_on: [], note: 'x' }],
+      member_count: 5,
+    }, error: null,
+  };
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('报 count_mismatch',
+    r.r?.errors?.some(x => x.rule === 'count_mismatch'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 83: 成员既无 agent_id 也无 role → 必须报 member_unidentifiable');
+{
+  const e = {
+    schema_version: 'output-contract-v1', agent_id: 'a1', role: 'planner',
+    status: 'SUCCESS', contract_valid: true, artifact_path: '<OUTDIR>/p.md',
+    payload: {
+      tier: 'T2', score: 21, score_breakdown: { a: 21 },
+      members: [{ note: '没有身份信息' }],
+      member_count: 1,
+    }, error: null,
+  };
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('报 member_unidentifiable',
+    r.r?.errors?.some(x => x.rule === 'member_unidentifiable'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+// ── 2026-11-14：信封定位（此前固定取第一个 json 块，惩罚认真写正文的 agent）──
+console.log('case 84: 正文里有示例 json 块、真信封在末尾 → 必须找到真信封、通过');
+{
+  const real = JSON.stringify({
+    schema_version: 'output-contract-v1', agent_id: 'a1', role: 'planner',
+    status: 'SUCCESS', contract_valid: true, artifact_path: '<OUTDIR>/p.md',
+    payload: {
+      tier: 'T2', score: 21, score_breakdown: { a: 21 },
+      members: [{ agent_id: 'm1', role: 'execute', depends_on: [], note: 'x' }],
+      member_count: 1,
+    }, error: null,
+  }, null, 2);
+  const doc = '# 分析\n\n举例一：\n\n```json\n{"示例": 1}\n```\n\n举例二：\n\n```json\n{"示例": 2}\n```\n\n# 信封\n\n```json\n' + real + '\n```\n';
+  const r = run(doc);
+  expect('正文示例不干扰信封定位', r.r?.ok === true,
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+// ── 2026-11-14：<OUTDIR> 占位（契约 §1 明确允许，但校验器此前不认）──
+console.log('case 85: artifact_path 用 <OUTDIR> 占位 → 通过但给 WARN（静态无法验证）');
+{
+  const e = {
+    schema_version: 'output-contract-v1', agent_id: 'a1', role: 'planner',
+    status: 'SUCCESS', contract_valid: true, artifact_path: '<OUTDIR>/round1-00-plan.md',
+    payload: {
+      tier: 'T2', score: 21, score_breakdown: { a: 21 },
+      members: [{ agent_id: 'm1', role: 'execute', depends_on: [], note: 'x' }],
+      member_count: 1,
+    }, error: null,
+  };
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('不报 artifact_not_found',
+    !r.r?.errors?.some(x => x.rule === 'artifact_not_found'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+  expect('给 artifact_outdir_placeholder 警告',
+    r.r?.warnings?.some(x => x.rule === 'artifact_outdir_placeholder'),
+    JSON.stringify(r.r?.warnings?.map(x => x.rule)));
+}
+
+console.log('case 86: 真实路径不存在仍必须报错（<OUTDIR> 的放行不能变成普遍放水）');
+{
+  const e = {
+    schema_version: 'output-contract-v1', agent_id: 'a1', role: 'planner',
+    status: 'SUCCESS', contract_valid: true, artifact_path: 'D:/绝对不存在的路径/x.md',
+    payload: {
+      tier: 'T2', score: 21, score_breakdown: { a: 21 },
+      members: [{ agent_id: 'm1', role: 'execute', depends_on: [], note: 'x' }],
+      member_count: 1,
+    }, error: null,
+  };
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('报 artifact_not_found',
+    r.r?.errors?.some(x => x.rule === 'artifact_not_found'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

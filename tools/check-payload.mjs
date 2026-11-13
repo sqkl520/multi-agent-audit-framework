@@ -58,13 +58,30 @@ if (blocks.length === 0) {
   warnings.push({
     field: '(root)',
     rule: 'multiple_json_blocks',
-    msg: `发现 ${blocks.length} 个 json 块，只会检查第一个`,
+    msg: `发现 ${blocks.length} 个 json 块，会取最后一个是信封的那个`,
   });
 }
 
+// ── 取哪个 json 块当信封 ──
+// 2026-11-14 修：此前固定取 blocks[0]，而契约 §1 和全部 wrapper 都写的是
+// 「你产物的**最后**一个代码块必须是完整 JSON 信封」，且 wrapper §4 明确
+// 鼓励「正文随便写（分析、证据、表格）」。
+// 于是 agent 越认真写正文（正文里带示例 json），越会被判违规：
+// 实测一份产物末尾有完全正确的信封，只因正文有两个示例块，被判 7 项违规、
+// `role: undefined`。**认真写反而失败**，这是最坏的一类缺陷。
+//
+// 现在的做法：从后往前找第一个「看起来是信封」的块（含 schema_version 或 role）；
+// 都不像信封时退回最后一个可解析的块。
+const looksLikeEnvelope = (s) => /"schema_version"\s*:/.test(s) || /"role"\s*:/.test(s);
+let envelopeBlockIdx = -1;
+for (let i = blocks.length - 1; i >= 0; i--) {
+  if (looksLikeEnvelope(blocks[i][1])) { envelopeBlockIdx = i; break; }
+}
+if (envelopeBlockIdx < 0 && blocks.length > 0) envelopeBlockIdx = blocks.length - 1;
+
 let envelope = null;
 if (blocks.length > 0) {
-  const cleaned = blocks[0][1]
+  const cleaned = blocks[envelopeBlockIdx][1]
     .split('\n').filter((ln) => !/^\s*\/\//.test(ln)).join('\n')
     .replace(/,(\s*[}\]])/g, '$1');
   try {
@@ -73,7 +90,7 @@ if (blocks.length > 0) {
     errors.push({
       field: '(root)',
       rule: 'json_parse_failed',
-      msg: `JSON 解析失败: ${e.message}`,
+      msg: `JSON 解析失败: ${e.message}（取的是第 ${envelopeBlockIdx + 1}/${blocks.length} 个 json 块）`,
       fix: '检查是否有多余逗号、单引号、未转义的引号',
     });
   }
@@ -127,14 +144,32 @@ if (envelope) {
       // 2026-11-10 修正：output-contract.md:92 宣称「artifact_path 指向的文件不存在
       // = CONTRACT_VIOLATION，这道校验是机械的」——但此前本工具只检查非空，
       // 从不检查存在性。一个指向 D:/不存在.md 的信封能拿到「✅ 契约合规」。
-      // 现在补上。允许 --no-exists 跳过（用于只校验格式的场景）。
+      //
+      // 2026-11-14 修：契约 §1 明确允许两种写法——
+      //   「仓库外绝对路径 **或** `<OUTDIR>` 相对路径`」
+      // 但本工具此前只实现了第一种，于是用 `<OUTDIR>` 写的产物一律被拒。
+      // 更糟的是我上一轮为了让示例「能过」，把示例的路径改成 `<OUTDIR>` 后用
+      // --no-exists 校验——**等于把校验器的不完整实现，用「跳过检查」掩盖过去**。
+      // 正确的修法是让校验器实现契约允许的语义：`<OUTDIR>` 是「运行时才知道的
+      // 输出目录」，静态校验不可能验证它，因此按约定视为「存在性待运行时确认」，
+      // 并给一条 WARN 提醒主 Agent 在接收时核对真实路径。
       const skipExists = args.includes('--no-exists');
-      if (!skipExists && !existsSync(envelope.artifact_path)) {
+      const p = envelope.artifact_path;
+      const isOutdirPlaceholder = /^<OUTDIR>[/\\]/.test(p);
+
+      if (isOutdirPlaceholder) {
+        warnings.push({
+          field: 'artifact_path', rule: 'artifact_outdir_placeholder',
+          msg: `artifact_path 使用 <OUTDIR> 占位（契约 §1 允许）：${p}。`
+            + '静态校验无法验证它——**主 Agent 在接收时必须核对 <OUTDIR> 展开后的真实文件是否存在**',
+        });
+      } else if (!skipExists && !existsSync(p)) {
         errors.push({
           field: 'artifact_path', rule: 'artifact_not_found',
-          msg: `artifact_path 指向的文件不存在: ${envelope.artifact_path}。` +
+          msg: `artifact_path 指向的文件不存在: ${p}。` +
                `output-contract.md §1 要求 SUCCESS 必须有真实落盘的产物——` +
-               `「格式完美但产物没写出来」不构成完成`,
+               `「格式完美但产物没写出来」不构成完成。`
+               + '（若这是运行时才知道的输出目录，请按契约写成 `<OUTDIR>/文件名`）',
         });
       }
     }
@@ -652,13 +687,39 @@ if (envelope && envelope.payload && envelope.role) {
       });
     }
     if (typeof p.member_count === 'number' && Array.isArray(p.members)) {
-      const msum = p.members.reduce((a, x) => a + (x.count || 0), 0);
+      // 2026-11-14 修：契约 §2.0 的 members[] 结构是
+      //     { agent_id, role, depends_on, note }        ← 逐 agent 列出，没有 count
+      // 而 wrappers/planner.md §5 的结构是
+      //     { role, count, scope, sees, must_not_see }  ← 按职能聚合，有 count
+      // 校验器此前只认后者（reduce 求 count 之和），于是**严格照契约写必被拒**：
+      // 一份完全按 §2.0 写的产物会得到 `member_count=2 但 members 展开数=0`。
+      // 契约里的 schema 通不过自己的校验器 —— 这是最坏的一类缺陷。
+      //
+      // 两种表示法本身都合法：
+      //   逐个列出 → 每个成员代表 1 个 agent（count 缺省为 1）
+      //   按职能聚合 → 显式给 count
+      // 所以校验器两种都认：有 count 用 count，没有就按 1 计。
+      const msum = p.members.reduce(
+        (a, x) => a + (typeof x?.count === 'number' ? x.count : 1), 0);
       if (p.member_count !== msum) {
         errors.push({
           field: 'payload.member_count', rule: 'count_mismatch',
-          msg: `member_count=${p.member_count} 但 members 展开数=${msum}`,
+          msg: `member_count=${p.member_count} 但 members 展开数=${msum}`
+            + '（逐个列出时每项按 1 计，按职能聚合时按 count 计）',
         });
       }
+      // 两种结构都必须能唯一确定「这个成员是谁」。逐个列出要有 agent_id；
+      // 按职能聚合要有 role + scope。两者都没有时，下游无法从 members 复原面板。
+      p.members.forEach((m, i) => {
+        const hasId = typeof m?.agent_id === 'string' && m.agent_id.trim() !== '';
+        const hasFunc = typeof m?.role === 'string' && m.role.trim() !== '';
+        if (!hasId && !hasFunc) {
+          errors.push({
+            field: `payload.members[${i}]`, rule: 'member_unidentifiable',
+            msg: `members[${i}] 既没有 agent_id 也没有 role——下游无法知道这个成员是谁`,
+          });
+        }
+      });
     }
   }
 }
