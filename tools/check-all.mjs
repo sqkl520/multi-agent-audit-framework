@@ -123,6 +123,16 @@ const CHECKS = [
     script: 'dsh-session-audit.test.mjs',
     desc: '12 个用例：父级漏收 settle / 子 agent 空产出 / finish.reason 可读 / 孤儿 session',
   },
+  {
+    name: 'Wrapper 契约字段覆盖（必填字段是否写进产物规格）',
+    script: 'check-wrapper-contract.test.mjs',
+    desc: '12 个用例：字段缺失 / 只顺带一提 / §5 模板算不算 / 子标题之后 / 字段表漂移',
+  },
+  {
+    name: 'Wrapper 完整性检查器自测（表格与合计是否一致）',
+    script: 'check-wrapper-integrity.test.mjs',
+    desc: '12 个用例：小节缺失 / 只剩标题 / 基线不足时报告不得自相矛盾',
+  },
 ];
 
 let failed = 0;

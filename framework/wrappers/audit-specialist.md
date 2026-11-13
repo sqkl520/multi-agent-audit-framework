@@ -74,6 +74,13 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role audit
 
 顶层信封 `role` 必须为 `"audit"`。`payload` 字段定义见 `output-contract.md` 第 2.2 节。
 
+**两个字段必须写出来，否则产物直接作废**：
+
+- **`findings`**：即使一条都没找到，也要写 `"findings": []`，**不能省略这个键**。空数组是一个结论（「本切片无缺陷」），缺键不是。
+- **`self_checks`**：`templates/wave2-audit.md` §6 把「标识符对账」「自带自检抽验」「运行时验证」列为三项必做。**这三项的结果必须落在这个字段里**——做了但没写，等于没做：主 Agent 看不到，下游也无法复核。
+
+> 契约 §2.2 的原文说明了为什么把 `self_checks` 设成必填：「要求写在模板里，格式里没有位置」曾导致同样的问题——子 Agent 做了主 Agent 也看不到，不做也没人知道。
+
 关于"没有发现怎么办""严重性怎么定"这类行为问题，**全部在 `templates/wave2-audit.md` 中定义**，本文件不复述——复述会产生两处需要同步维护的规则，迟早不一致。
 
 主Agent只检查契约合规性与 `searched_scope` 覆盖完整性，**不读取**你的发现正文。

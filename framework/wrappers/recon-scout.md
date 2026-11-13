@@ -69,4 +69,13 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role recon
 
 返回一个符合 `output-contract.md` 的顶层信封，`role` 必须为 `"recon"`。`payload` 的字段定义见 `output-contract.md` 第 2.1 节，与 `orchestrator/scale-mapping.md` 第 1 节的输入契约精确对齐。
 
+**四个字段缺一不可**（校验器逐个检查）：
+
+- **`audit_slices`**：切片数组，每项要能从生产入口指出位置
+- **`slice_count`**：必须等于 `audit_slices` 的长度，算错即 `count_mismatch`
+- **`entry_points`**：生产入口清单。与 `audit_slices` 不同——这是「程序从哪进来」的事实，切片是从它推出来的
+- **`unverified`**：你没能验证的部分。**写空数组也要写**——「我全都验证过了」本身是一个需要明确声明的结论，省略字段不等于声明它
+
+> `entry_points` 和 `unverified` 同样受门 0 约束：凡指名具体位置，就必须给 `file:line` 证据。
+
 主Agent只检查两件事：契约是否合规、`slice_count == len(audit_slices)` 是否成立。它**不读取**你的切片内容。

@@ -107,4 +107,11 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role sweep
 1. **`leads` 允许为空数组。** 你不需要为「没找到可疑点」编造线索，也不需要像审计波那样返回 `NO_EVIDENCE_FOUND`——**你不是在下「已审计」的结论**。覆盖率的记账由 `files_read` 承担。
 2. **`reachability` 必填。** 判断该切片是否从生产入口可达（`PROD` / `TEST_ONLY` / `UNREACHABLE`）。这一项直接决定它会不会被深挖，是把你这一遍的成本变成价值的关键。
 
+**两个必须自己算出来、不能省的数**（校验器会直接拒绝不一致的产物）：
+
+- **`lead_count`**：等于 `leads` 的长度。`leads` 为空就写 `0`，不要省略这个字段。
+- **`dimension_histogram`**：各维度计数之和必须等于 `lead_count`。
+
+> 这两项不在上面「易错点」里，是因为它们不是判断问题，是**记账问题**——没有任何需要你拿主意的地方，只是必须填对。历史上有产物写了 `leads` 却漏掉 `lead_count`，被校验器判 `missing_role_field` 直接作废。
+
 主Agent只检查契约合规性与 `files_read` 覆盖完整性，**不读取**你的线索正文内容，也不评判线索质量——质量由深挖和锐评负责。

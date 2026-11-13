@@ -64,6 +64,16 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role verify
 
 顶层信封 `role` 必须为 `"verify"`。`payload` 字段见 `output-contract.md` 第 2.5 节。
 
+**`finding_id` 必须指向你实际验收的那条发现**，与派发参数里给的 id 完全一致。写错一个字符，下游就无法把你这条结论挂回原发现——**验收结果会变成孤儿，等于没验**。
+
+**`verdict` 是闭集，只能取 `PASS` 或 `FAIL`**——不要自造状态值。特别注意契约里的一条约束：
+
+> 「带保留通过」**不是**第三个枚举值，而是 `verdict: "PASS"` + `escalation_required: true` 两个字段的组合。
+
+历史上有人为了表达「修是修了但还有疑虑」而写了 `PARTIAL` / `PASS_WITH_NOTES` 这类值，全部被判 `CONTRACT_VIOLATION`。**`verdict` 枚举必须保持闭集，否则第 1 节「不允许自定义状态值」这条规则就形同虚设。**
+
+`verdict: "FAIL"` 时 `failure_category` 必填（归因决定回波次四还是标记 `REVOKED`），且必须给出可复现的触发条件。
+
 定向检查怎么构造、`residual_risks` 每个标记怎么处置、`failure_category` 怎么归因——**全部在 `templates/wave5-verify.md` 中定义**，本文件不复述。
 
 **你的结论是本轮报告"哪些缺陷真的被修好了"的唯一来源**——主Agent不会采信修复者的自我声明。

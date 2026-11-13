@@ -75,6 +75,15 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role critiq
 
 顶层信封 `role` 必须为 `"critique"`，`payload.critique_role` 必须是 `skeptic` / `devils_advocate` / `arbiter` 之一。
 
+**`verdicts` 的形态取决于你的子角色，写错形态即违规**（详见契约 §2.3 的枚举分支表）：
+
+- `skeptic` / `arbiter` → 必须返回 `verdicts[]`，每项含 `finding_id` 与 `verdict`
+- `devils_advocate` → **不填 `verdicts`（必须是空数组）**，改填 `coverage_gaps[]`
+
+**枚举值不能混用**：`skeptic` 取 `holds` / `refuted` / `untested`；`arbiter` 取 `UPHELD` / `DOWNGRADED` / `REVOKED`。一个子角色用了另一个的枚举，产物直接作废。
+
+> Devil's Advocate 不填 `verdicts` 不是「少做了一步」，是它的产出载体本来就不同——它评的是覆盖缺口，不是单条发现。
+
 Skeptic 五步测试怎么执行、Devil's Advocate 扫哪几类缺口、Arbiter 的裁决判定树——**全部在 `templates/wave3-critique.md` 中定义**，本文件不复述。
 
 主Agent只消费结构化裁决字段，**不读取**你的论证正文。

@@ -123,8 +123,12 @@ if (baselinePath && existsSync(baselinePath)) {
   for (const r of results) {
     const base = baseline[r.name];
     if (typeof base === 'number' && r.lines < base * 0.9) {
+      const pct = ((1 - r.lines / base) * 100).toFixed(0);
+      // 必须同时写进 r.issues，否则表格按 r.issues 画 ✓、合计按 findings 数问题，
+      // 同一份输出会自相矛盾（2026-11-13 实测：表格全 ✓ 却报「5 项问题」）。
       add('FAIL', `wrappers/${r.name}.md`,
-        `行数 ${r.lines} 比基线 ${base} 少了 ${((1 - r.lines / base) * 100).toFixed(0)}%——疑似内容丢失`);
+        `行数 ${r.lines} 比基线 ${base} 少了 ${pct}%——疑似内容丢失`);
+      r.issues.push(`行数 ${r.lines} < 基线 ${base}（少 ${pct}%）`);
     }
   }
 }
