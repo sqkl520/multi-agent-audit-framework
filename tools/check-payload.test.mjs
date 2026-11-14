@@ -400,14 +400,14 @@ const FULL_FIVE = {
 
 console.log('case 30: skeptic 缺 five_step → 报错');
 {
-  const r = run(wrap(critEnv({ finding_id: 'F1', verdict: 'holds', reason: 'x' })));
+  const r = run(wrap(critEnv({ finding_id: 'F1', verdict: 'holds', reason: "独立复现确认：把文件设为只读后调用 set()，异常确实冒到调用方且无人处理" })));
   expect('报 missing_five_step', r.r?.errors?.some(x => x.rule === 'missing_five_step'));
 }
 
 console.log('case 31: five_step 缺一步 → 报错并指名');
 {
   const r = run(wrap(critEnv({
-    finding_id: 'F1', verdict: 'holds', reason: 'x',
+    finding_id: 'F1', verdict: 'holds', reason: "独立复现确认：把文件设为只读后调用 set()，异常确实冒到调用方且无人处理",
     five_step: { evidence_opened: true, evidence_supports_claim: true, path_reachable: true, already_handled: false },
   })));
   expect('报 incomplete_five_step 且指向 failure_chain_holds',
@@ -416,13 +416,13 @@ console.log('case 31: five_step 缺一步 → 报错并指名');
 
 console.log('case 32: 五步齐全 → 通过');
 {
-  const r = run(wrap(critEnv({ finding_id: 'F1', verdict: 'holds', reason: 'x', five_step: FULL_FIVE, runtime_applicable: false })));
+  const r = run(wrap(critEnv({ finding_id: 'F1', verdict: 'holds', reason: "独立复现确认：把文件设为只读后调用 set()，异常确实冒到调用方且无人处理", five_step: FULL_FIVE, runtime_applicable: false })));
   expect('无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
 }
 
 console.log('case 33: refuted 但没有 direct_contradiction → 警告');
 {
-  const r = run(wrap(critEnv({ finding_id: 'F1', verdict: 'refuted', reason: 'x', five_step: FULL_FIVE, runtime_applicable: false })));
+  const r = run(wrap(critEnv({ finding_id: 'F1', verdict: 'refuted', reason: "独立复现确认：把文件设为只读后调用 set()，异常确实冒到调用方且无人处理", five_step: FULL_FIVE, runtime_applicable: false })));
   expect('报 refuted_without_contradiction 警告',
     r.r?.warnings?.some(x => x.rule === 'refuted_without_contradiction'));
 }
@@ -430,7 +430,7 @@ console.log('case 33: refuted 但没有 direct_contradiction → 警告');
 console.log('case 34: runtime_evidence 缺 control_case → 警告（无对照不可采信）');
 {
   const r = run(wrap(critEnv({
-    finding_id: 'F1', verdict: 'holds', reason: 'x', five_step: FULL_FIVE,
+    finding_id: 'F1', verdict: 'holds', reason: "独立复现确认：把文件设为只读后调用 set()，异常确实冒到调用方且无人处理", five_step: FULL_FIVE,
     runtime_applicable: false,
     runtime_evidence: { method: 'headless_chrome', command: 'chrome ...', observed: 'mutations: []' },
   })));
@@ -440,7 +440,7 @@ console.log('case 34: runtime_evidence 缺 control_case → 警告（无对照�
 console.log('case 35: runtime_evidence 缺 observed → 报错');
 {
   const r = run(wrap(critEnv({
-    finding_id: 'F1', verdict: 'holds', reason: 'x', five_step: FULL_FIVE,
+    finding_id: 'F1', verdict: 'holds', reason: "独立复现确认：把文件设为只读后调用 set()，异常确实冒到调用方且无人处理", five_step: FULL_FIVE,
     runtime_applicable: false,
     runtime_evidence: { method: 'headless_chrome', command: 'chrome ...', control_case: 'peer-snapshot: 303' },
   })));
@@ -450,7 +450,7 @@ console.log('case 35: runtime_evidence 缺 observed → 报错');
 console.log('case 36: runtime_evidence 齐全（含对照）→ 通过');
 {
   const r = run(wrap(critEnv({
-    finding_id: 'F1', verdict: 'holds', reason: 'x', five_step: FULL_FIVE,
+    finding_id: 'F1', verdict: 'holds', reason: "独立复现确认：把文件设为只读后调用 set()，异常确实冒到调用方且无人处理", five_step: FULL_FIVE,
     runtime_applicable: false,
     runtime_evidence: {
       method: 'headless_chrome', command: 'chrome --headless ...',
@@ -464,14 +464,14 @@ console.log('case 36: runtime_evidence 齐全（含对照）→ 通过');
 
 console.log('case 37: skeptic 返回 arbiter 的枚举值 → 报错');
 {
-  const r = run(wrap(critEnv({ finding_id: 'F1', verdict: 'UPHELD', reason: 'x', five_step: FULL_FIVE })));
+  const r = run(wrap(critEnv({ finding_id: 'F1', verdict: 'UPHELD', reason: "独立复现确认：把文件设为只读后调用 set()，异常确实冒到调用方且无人处理", five_step: FULL_FIVE })));
   expect('报 invalid_verdict_enum', r.r?.errors?.some(x => x.rule === 'invalid_verdict_enum'));
 }
 
 console.log('case 38: skeptic 返回 refuted → 枚举合法');
 {
   const r = run(wrap(critEnv({
-    finding_id: 'F1', verdict: 'refuted', reason: 'x', five_step: FULL_FIVE,
+    finding_id: 'F1', verdict: 'refuted', reason: "独立复现确认：把文件设为只读后调用 set()，异常确实冒到调用方且无人处理", five_step: FULL_FIVE,
     direct_contradiction: 'a.js:3 const x = 1;',
   })));
   expect('无 invalid_verdict_enum', !r.r?.errors?.some(x => x.rule === 'invalid_verdict_enum'));
@@ -485,7 +485,7 @@ console.log('case 39: devils_advocate 填了 verdicts → 报错（越界）');
     payload: {
       critique_role: 'devils_advocate',
       target_finding_ids: [],
-      verdicts: [{ finding_id: 'F1', verdict: 'holds', reason: 'x' }],
+      verdicts: [{ finding_id: 'F1', verdict: 'holds', reason: "独立复现确认：把文件设为只读后调用 set()，异常确实冒到调用方且无人处理" }],
       coverage_gaps: [],
     }, error: null,
   }, null, 2);
@@ -523,7 +523,7 @@ console.log('case 42: 同时有 holds 和 refuted 子主张但 reason 不区分 
   const r = run(wrap(critEnv({
     finding_id: 'F1', verdict: 'holds', five_step: FULL_FIVE,
     runtime_applicable: false,
-    reason: '部分成立',
+    reason: '总体判定成立，其中一部分子主张需要单独给出结论才算完整',
     sub_claims: [
       { claim: 'a', verdict: 'holds' },
       { claim: 'b', verdict: 'refuted', direct_contradiction: 'x' },
@@ -536,7 +536,7 @@ console.log('case 43: 子主张 refuted 但既无矛盾也无理由 → 报错')
 {
   const r = run(wrap(critEnv({
     finding_id: 'F1', verdict: 'refuted', five_step: FULL_FIVE,
-    reason: '机制和后果都不对',
+    reason: '机制和后果都不成立，调用链在第 3 步就断了且无人调用该路径',
     sub_claims: [{ claim: 'a', verdict: 'refuted' }],
   })));
   expect('报 sub_refuted_without_basis', r.r?.errors?.some(x => x.rule === 'sub_refuted_without_basis'));
@@ -564,14 +564,14 @@ console.log('case 45: holds 且 reason 无危害否定、无 sub_claims → 通�
 
 console.log('case 46: 缺 runtime_applicable → 报错');
 {
-  const r = run(wrap(critEnv({ finding_id: 'F1', verdict: 'holds', reason: '证据充分', five_step: FULL_FIVE })));
+  const r = run(wrap(critEnv({ finding_id: 'F1', verdict: 'holds', reason: '证据充分，路径可达，调用链完整闭合', five_step: FULL_FIVE })));
   expect('报 missing_runtime_applicable', r.r?.errors?.some(x => x.rule === 'missing_runtime_applicable'));
 }
 
 console.log('case 47: runtime_applicable=true 但没跑 → 报错');
 {
   const r = run(wrap(critEnv({
-    finding_id: 'F1', verdict: 'holds', reason: '证据充分', five_step: FULL_FIVE,
+    finding_id: 'F1', verdict: 'holds', reason: '证据充分，路径可达，调用链完整闭合', five_step: FULL_FIVE,
     runtime_applicable: true,
   })));
   expect('报 runtime_required_but_missing', r.r?.errors?.some(x => x.rule === 'runtime_required_but_missing'));
@@ -580,7 +580,7 @@ console.log('case 47: runtime_applicable=true 但没跑 → 报错');
 console.log('case 48: runtime_applicable=false 且纯静态 → 通过');
 {
   const r = run(wrap(critEnv({
-    finding_id: 'F1', verdict: 'holds', reason: '证据充分', five_step: FULL_FIVE,
+    finding_id: 'F1', verdict: 'holds', reason: '证据充分，路径可达，调用链完整闭合', five_step: FULL_FIVE,
     runtime_applicable: false,
   })));
   expect('无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
@@ -589,7 +589,7 @@ console.log('case 48: runtime_applicable=false 且纯静态 → 通过');
 console.log('case 49: runtime_applicable=true 且有完整 runtime_evidence → 通过');
 {
   const r = run(wrap(critEnv({
-    finding_id: 'F1', verdict: 'holds', reason: '证据充分', five_step: FULL_FIVE,
+    finding_id: 'F1', verdict: 'holds', reason: '证据充分，路径可达，调用链完整闭合', five_step: FULL_FIVE,
     runtime_applicable: true,
     runtime_evidence: {
       method: 'headless_chrome', command: 'chrome --headless ...',
@@ -716,7 +716,7 @@ console.log('case 62: GENERATED + generator_ref → 通过');
 
 console.log('case 63: verdicts 未覆盖全部 target → 报错（蓝队 A12）');
 {
-  const e = JSON.parse(critEnv({ finding_id: 'F1', verdict: 'holds', reason: 'x',
+  const e = JSON.parse(critEnv({ finding_id: 'F1', verdict: 'holds', reason: "独立复现确认：把文件设为只读后调用 set()，异常确实冒到调用方且无人处理",
     five_step: FULL_FIVE, runtime_applicable: false }));
   e.payload.target_finding_ids = ['F1', 'F2', 'F3'];
   const r = run(wrap(JSON.stringify(e, null, 2)));
@@ -725,7 +725,7 @@ console.log('case 63: verdicts 未覆盖全部 target → 报错（蓝队 A12）
 
 console.log('case 64: concurrency 领域 refuted 无矛盾证据 → 报错（不是警告）');
 {
-  const e = JSON.parse(critEnv({ finding_id: 'F1', verdict: 'refuted', reason: 'x',
+  const e = JSON.parse(critEnv({ finding_id: 'F1', verdict: 'refuted', reason: "独立复现确认：把文件设为只读后调用 set()，异常确实冒到调用方且无人处理",
     dimension: 'concurrency', five_step: FULL_FIVE, runtime_applicable: false }));
   const r = run(wrap(JSON.stringify(e, null, 2)));
   expect('报 sensitive_refuted_without_contradiction',
@@ -734,7 +734,7 @@ console.log('case 64: concurrency 领域 refuted 无矛盾证据 → 报错（�
 
 console.log('case 65: 非 concurrency 领域 refuted 无矛盾证据 → 仅警告');
 {
-  const e = JSON.parse(critEnv({ finding_id: 'F1', verdict: 'refuted', reason: 'x',
+  const e = JSON.parse(critEnv({ finding_id: 'F1', verdict: 'refuted', reason: "独立复现确认：把文件设为只读后调用 set()，异常确实冒到调用方且无人处理",
     dimension: 'logic', five_step: FULL_FIVE, runtime_applicable: false }));
   const r = run(wrap(JSON.stringify(e, null, 2)));
   expect('不报 error', !r.r?.errors?.some(x => x.rule === 'sensitive_refuted_without_contradiction'));
@@ -743,7 +743,7 @@ console.log('case 65: 非 concurrency 领域 refuted 无矛盾证据 → 仅警�
 
 console.log('case 66: runtime_evidence 缺 main_path → 报错（只跑语法检查不算）');
 {
-  const e = JSON.parse(critEnv({ finding_id: 'F1', verdict: 'holds', reason: 'x', five_step: FULL_FIVE,
+  const e = JSON.parse(critEnv({ finding_id: 'F1', verdict: 'holds', reason: "独立复现确认：把文件设为只读后调用 set()，异常确实冒到调用方且无人处理", five_step: FULL_FIVE,
     runtime_applicable: true,
     runtime_evidence: { method: 'node_cli', command: 'node --check a.js', observed: 'exit 0', control_case: '对照页通过' } }));
   const r = run(wrap(JSON.stringify(e, null, 2)));
@@ -753,7 +753,7 @@ console.log('case 66: runtime_evidence 缺 main_path → 报错（只跑语法�
 
 console.log('case 67: main_path 期望等于实际 → 警告（无区分力）');
 {
-  const e = JSON.parse(critEnv({ finding_id: 'F1', verdict: 'holds', reason: 'x', five_step: FULL_FIVE,
+  const e = JSON.parse(critEnv({ finding_id: 'F1', verdict: 'holds', reason: "独立复现确认：把文件设为只读后调用 set()，异常确实冒到调用方且无人处理", five_step: FULL_FIVE,
     runtime_applicable: true,
     runtime_evidence: { method: 'node_cli', command: 'node a.js', observed: 'exit 0',
       main_path: { expected: 'exit 0', observed: 'exit 0' }, control_case: '对照通过' } }));

@@ -23,6 +23,7 @@
  */
 
 import { readFileSync, existsSync } from 'node:fs';
+import { resolve, dirname, isAbsolute } from 'node:path';
 
 const args = process.argv.slice(2);
 const jsonOut = args.includes('--json');
@@ -42,6 +43,24 @@ if (!existsSync(file)) {
 const text = readFileSync(file, 'utf8');
 const errors = [];
 const warnings = [];
+
+// 2026-11-14 补（批判 agent 实测）：
+// 各处的 `length < N` 用的是 JS 的 `.length`，即 **UTF-16 code unit 计数**。
+// 于是中文（1 字符）和零宽字符（1 字符、0 视觉宽度）都能「凑够长度」：
+//   `​`.repeat(81) → length 81，实际视觉内容为空
+//   「待填」→ length 2，但信息量等于没写
+// 判据：先剥掉零宽字符与空白，再数**非空白字符**；并对纯占位词单独判死。
+const ZERO_WIDTH = /[\u200B-\u200F\u2028-\u202F\u2060-\u206F\uFEFF]/g;
+function substanceLength(s) {
+  return String(s ?? '').replace(ZERO_WIDTH, '').replace(/\s/g, '').length;
+}
+// 公认的「没写」词。命中即视为空内容，不管多长。
+const PLACEHOLDER_WORDS = /^(待填|待补|待定|待确认|待补充|TODO|TBD|FIXME|N\/?A|无|略|同上|见上|见上文|参见上文|详见|xxx+|\.{3,}|…+)$/i;
+function isVacuous(s) {
+  const t = String(s ?? '').replace(ZERO_WIDTH, '').trim();
+  if (t === '') return true;
+  return PLACEHOLDER_WORDS.test(t.replace(/[\s。，,.;；:：!！?？]/g, ''));
+}
 
 // ────────────────────────────────────────────────────────────────────
 // 1 · 必须有一个可解析的 JSON 信封
@@ -221,13 +240,26 @@ if (envelope && typeof envelope === 'object' && !Array.isArray(envelope)) {
       const p = envelope.artifact_path;
       const isOutdirPlaceholder = /^<OUTDIR>[/\\]/.test(p);
 
+      // 2026-11-14 修（批判 agent 实测）：
+      // 此前直接 existsSync(p)，而 p 是相对路径时按 **cwd** 解析。
+      // 实测同一份 `artifact_path: "real.md"`：
+      //   在产物所在目录跑 → exit 0 ✅
+      //   在 /tmp 跑        → exit 1 ✗
+      // **同一份产物两种结论**。这让「产物是否存在」取决于你在哪跑，而不是产物本身。
+      //
+      // 修：相对路径按**产物文件所在目录**解析，与 cwd 无关。
+      // 这符合直觉——artifact_path 描述的是「相对于这份产物」的位置。
+      const resolvedPath = isAbsolute(p)
+        ? p
+        : resolve(dirname(file), p);
+
       if (isOutdirPlaceholder) {
         warnings.push({
           field: 'artifact_path', rule: 'artifact_outdir_placeholder',
           msg: `artifact_path 使用 <OUTDIR> 占位（契约 §1 允许）：${p}。`
             + '静态校验无法验证它——**主 Agent 在接收时必须核对 <OUTDIR> 展开后的真实文件是否存在**',
         });
-      } else if (!skipExists && !existsSync(p)) {
+      } else if (!skipExists && !existsSync(resolvedPath)) {
         errors.push({
           field: 'artifact_path', rule: 'artifact_not_found',
           msg: `artifact_path 指向的文件不存在: ${p}。` +
@@ -770,6 +802,21 @@ if (envelope && envelope.payload && envelope.role) {
       // （不写就是「部分成立」被压成二元裁决，下游无法判断该不该降级）
       if (p.critique_role === 'skeptic' && v?.verdict === 'holds') {
         const reason = String(v?.reason ?? '');
+
+        // 2026-11-14 补（批判 agent 实测）：reason 此前完全无长度/实质检查。
+        // 实测 `reason: "待填"`（3 字符）→ ✅ 契约合规。
+        // 而 verdict 是整条裁决的唯一说明——它空着，下游无从复核为什么判 holds。
+        // 用 substanceLength 而不是 .length：中文 1 字符 = 1、零宽字符 = 0，
+        // 避免「零宽字符凑够 81 个」这种绕过。
+        if (substanceLength(reason) < 15 || isVacuous(reason)) {
+          errors.push({
+            field: `payload.verdicts[${i}].reason`, rule: 'vacuous_reason',
+            msg: `${fid} 的 reason 没有实质内容（去空白与零宽字符后 ${substanceLength(reason)} 字，`
+              + `${isVacuous(reason) ? '或命中占位词' : '少于 15 字'}）。`
+              + 'verdict 是整条裁决的唯一说明，空着下游无从复核为什么这么判',
+          });
+        }
+
         const deniesHarm = /后果|危害|影响方向|方向相反|方向说反|不至于|被夸大|高估|降级/.test(reason);
         if (deniesHarm && !(Array.isArray(subs) && subs.length > 0)) {
           errors.push({

@@ -439,14 +439,20 @@ console.log('case 19: Markdown 产物里的 quote 是编造的 → 降级抽取�
 }
 
 // case 20: 完全没有内容的空骨架 → 应 SKIP 而非 FAIL
-console.log('case 20: 空骨架（无线索无信封）→ 应 SKIP 而非 FAIL');
+console.log('case 20: 空骨架（无线索无信封）→ 必须判 FAIL，不能静默 SKIP');
 {
+  // 2026-11-14 改：原期望是「无 FAIL，只 SKIP」。
+  // 但「全 SKIP」意味着所有检查都被跳过、于是没有任何检查失败——
+  // 一份产物都没验证到却报绿，和「目录配错了」长得一模一样。
+  // 实测过空目录得到 `0 FAIL / 0 PASS / 6 SKIP` → exit 0。
+  // 现在：没有信封也没有降级线索 = 什么都没验证 = FAIL。
   const root = mkdtempSync(join(tmpdir(), 'va-test-'));
   const repo = join(root, 'repo'); mkdirSync(repo, { recursive: true });
   const arts = join(root, 'artifacts'); mkdirSync(arts, { recursive: true });
   writeFileSync(join(arts, 'skeleton.md'), '# slice-01 宽扫\n\n（进行中）\n');
   const r = run(repo, arts);
-  expect('无 FAIL', !hasFinding(r.json, 'FAIL', 'G0'));
+  expect('G0 判 FAIL（什么都没验证不等于通过）', hasFinding(r.json, 'FAIL', 'G0'),
+    JSON.stringify((r.json?.findings ?? []).filter((f) => f.check === 'G0')));
   expect('无 G7（抽不到东西就不报）', !hasFinding(r.json, 'WARN', 'G7'));
   rmSync(root, { recursive: true, force: true });
 }

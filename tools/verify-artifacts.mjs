@@ -1082,6 +1082,18 @@ function main() {
   checkArtifactPaths(repo, artifactsRoot, envelopes);
   checkLineCounts(repo, envelopes);
   checkSelfConsistency(envelopes);
+  // 2026-11-14 补（批判 agent 实测）：
+  // 空产物目录此前得到 `0 FAIL / 0 WARN / 0 PASS / 6 SKIP` → exit 0。
+  // **一条产物都没扫到，却报「通过」。**
+  // 这是「全 SKIP 即绿」——所有检查都被跳过，于是没有任何检查失败。
+  //
+  // 判据：一份产物都没读到，不是「通过」，是「什么也没验证」。
+  // 例外：Markdown 降级抽取（salvage）能提出线索时，确实验证了东西，不算空跑。
+  if (envelopes.length === 0 && salvaged.length === 0) {
+    fail('G0', `产物目录里一份可用产物都没有（扫描 ${scanned.length} 个文件，0 个 JSON 信封，0 条降级线索）。`
+      + '**这不等于通过——它意味着什么都没验证**。先确认 --artifacts 指向的目录对不对', {});
+  }
+
   checkLedger(repo, artifactsRoot);
 
   // 2026-11-14：超过 8MB 的文件被 readLines 跳过了，必须让「未验证」可见。
