@@ -4,8 +4,13 @@
 ## 现状（已由前序工作完成，不要重做）
 
 - 备份：<TARGET_PARENT>/Server plugin/Hilltop Village/backups/prerepair-20261114-225746/
-- 基线：`./build.sh -o test` → Tests run: 863, Failures: 0
+- 基线：`build.cmd -o test` → Tests run: 863, Failures: 0
 - 已修 2 条：#2 TabListManager 任务累积、#5 AirdropSpawnGoal NPE
+
+## 运行环境（这次运行已修正，务必照做）
+
+- **用 `cmd.exe /c build.cmd -o test`，不要用 `./build.sh`。** `build.sh` 需要 Git Bash，而 Git Bash 在受限进程里会因 MSYS 命名对象被拒而启动失败（`NtCreateDirectoryObject ... 0xC0000022`）。`build.cmd` 是同一套四探针逻辑的原生 Windows 版本，已验证 `BUILD SUCCESS`。
+- 工作目录就是 `<TARGET_REPO>`，你的写入范围已覆盖它，可以直接改文件。
 
 ## 你要修的 5 条
 
@@ -59,9 +64,9 @@
 ## 硬性要求
 
 1. **每改一处，先写能证明它是红的测试**（在未修复代码上跑一次，确认 FAIL），再改代码，再确认转绿。
-2. **每修完一条，跑全量** `./build.sh -o test`，必须保持 0 失败。基线是 863。
+2. **每修完一条，跑全量** `cmd.exe /c build.cmd -o test`，必须保持 0 失败。基线是 863。
 3. **不许改测试来迁就代码**——除非测试本身把 bug 编码成了期望（像之前 `TabListManagerTest` 那样，那种要在产物里说明理由）。
-4. 构建命令是 `./build.sh -o <maven args>`（不是直接 mvn，项目需要 JDK 21）。
+4. 构建命令是 `cmd.exe /c build.cmd -o <maven args>`（不是 `./build.sh`，也不是直接 `mvn`——项目需要 JDK 21，而默认 JAVA_HOME 是 17）。
 
 ## 产物
 
