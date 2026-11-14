@@ -1,0 +1,10 @@
+[
+  { id: llm-pi-ai, config: { providers: { audit: {
+      displayName: "audit",
+      api: "anthropic-messages",
+      baseURL: "https://api.scnet.cn/api/llm/anthropic/v1",
+      apiKeyEnv: "SCNet_API_KEY",
+      models: [ { id: "DeepSeek-V4.1-Flash-1017", name: "DeepSeek-V4.1-Flash-1017", contextWindow: 200000, maxTokens: 8192 } ]
+  } } } },
+  { id: agent-default-model, config: { provider: "audit", model: "DeepSeek-V4.1-Flash-1017" } }
+]
