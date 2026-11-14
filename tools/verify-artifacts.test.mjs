@@ -918,5 +918,46 @@ console.log('case 50: files_read 填目录 → G1 必须判 FAIL（目录不是�
   rmSync(dir, { recursive: true, force: true });
 }
 
+console.log('case 51: 波次产物改名成 -final-report.md → 不得靠改名豁免 G7');
+{
+  // 2026-11-14 批判实测：交付物豁免是按**文件名**判的，改名即可绕过（exit 1 → 0），
+  // 内容一字未改。也就是说「有没有写 JSON 信封」这件事由文件名决定，而不是内容。
+  // 修：除文件名外还要求内容里没有波次产物的机器字段。
+  const dir = mkdtempSync(join(tmpdir(), 'v51-'));
+  const repo = join(dir, 'repo');
+  mkdirSync(join(repo, 'src'), { recursive: true });
+  writeFileSync(join(repo, 'src', 'a.js'), 'const a=1;\n');
+  const art = join(dir, 'arts');
+  mkdirSync(art, { recursive: true });
+
+  // 内容是波次产物（有 slice_id），但文件名伪装成交付物，且没有 JSON 信封
+  writeFileSync(join(art, 'round1-final-report.md'),
+    '# 假冒交付物\n\n正文里写着 slice_id: "S1"，lead_count: 3，但没有 JSON 信封。\n');
+
+  const r = run(repo, art);
+  const g7 = (r.json?.findings ?? []).filter((f) => f.check === 'G7');
+  expect('G7 必须报警（不能静默豁免）',
+    g7.some((f) => f.level === 'WARN' || f.level === 'FAIL'),
+    JSON.stringify(g7));
+  rmSync(dir, { recursive: true, force: true });
+}
+
+console.log('case 52: 真交付物（无机器字段）→ 仍应豁免 G7，不得误伤');
+{
+  const dir = mkdtempSync(join(tmpdir(), 'v52-'));
+  const repo = join(dir, 'repo');
+  mkdirSync(join(repo, 'src'), { recursive: true });
+  writeFileSync(join(repo, 'src', 'a.js'), 'const a=1;\n');
+  const art = join(dir, 'arts');
+  mkdirSync(art, { recursive: true });
+  writeFileSync(join(art, 'round1-ledger.md'),
+    '# 账本\n\n这是给人读的账本，没有机器字段，不该被要求 JSON 信封。\n');
+
+  const r = run(repo, art);
+  const g7fail = (r.json?.findings ?? []).filter((f) => f.check === 'G7' && f.level === 'FAIL');
+  expect('真交付物不判 G7 FAIL', g7fail.length === 0, JSON.stringify(g7fail));
+  rmSync(dir, { recursive: true, force: true });
+}
+
 console.log(`\n=== 结果: ${passCount} 通过 / ${failCount} 失败 ===\n`);
 process.exit(failCount > 0 ? 1 : 0);

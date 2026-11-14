@@ -98,13 +98,23 @@ function resolveRepoPath(repo, p) {
 
 /** 读取文件全部行（缓存）。读不到返回 null */
 const lineCache = new Map();
+// 2026-11-14 修（批判 agent 实测）：此前 >8MB 的文件直接返回 null，
+// **不报任何东西**——等于「文件太大」悄悄变成「无法验证但算通过」。
+// 实测：9.4MB 文件 + 完全编造的 quote → 0 FAIL / 2 WARN / EXIT=0。
+// 这是最坏的一种放行：越大的文件越可能有缺陷，而它恰好被跳过。
+// 修：超过阈值时记一条 SKIP 到 oversized，调用方据此报 WARN，让「未验证」可见。
+const oversized = [];
 function readLines(absPath) {
   if (lineCache.has(absPath)) return lineCache.get(absPath);
   let result = null;
   try {
     const st = statSync(absPath);
-    if (st.isFile() && st.size < 8 * 1024 * 1024) {
-      result = readFileSync(absPath, 'utf8').split(/\r?\n/);
+    if (st.isFile()) {
+      if (st.size < 8 * 1024 * 1024) {
+        result = readFileSync(absPath, 'utf8').split(/\r?\n/);
+      } else {
+        oversized.push({ path: absPath, size: st.size });
+      }
     }
   } catch { result = null; }
   lineCache.set(absPath, result);
@@ -1018,7 +1028,27 @@ function main() {
         if (found === 0) {
           // 2026-11-09：交付物（final-report / ledger）是给人读的 Markdown，
           // 不要求 JSON 信封。只有「波次产物」才必须带信封。
-          const isDeliverable = /-(final-report|ledger)\.md$/.test(rel);
+          //
+          // 2026-11-14 修（批判 agent 实测）：这个豁免是**按文件名**判的，
+          // 实测把一份产物改名成 `xxx-final-report.md` 就能豁免 G7（exit 1 → 0），
+          // 内容一字未改。也就是说「有没有写 JSON 信封」这件事，
+          // 可以由产物文件名决定，而不是由内容决定。
+          //
+          // 收紧：除了文件名，还要求它**真的像交付物**——出现在
+          // 「final-report / ledger」这种命名规范里，且不包含波次产物特有的
+          // 机器字段（slice_id / findings / leads）。两者都满足才豁免。
+          const isDeliverableName = /-(final-report|ledger)\.md$/.test(rel);
+          // 机器字段的检测要同时覆盖 JSON 形态（"slice_id":）和散文形态（slice_id: / `slice_id`）。
+          // 第一版只写了 JSON 形态，于是「正文里写着 slice_id: "S1"」这种漏掉了。
+          const looksLikeDeliverable = !/(["`']?slice_id["`']?\s*:)/.test(text)
+            && !/(["`']?lead_count["`']?\s*:)/.test(text)
+            && !/(["`']?findings["`']?\s*:\s*\[)/.test(text);
+          const isDeliverable = isDeliverableName && looksLikeDeliverable;
+
+          if (isDeliverableName && !looksLikeDeliverable) {
+            warn('G7', `${rel} 的文件名像交付物，但内容里有波次产物的机器字段`
+              + '（slice_id / lead_count / findings）——不能靠改名豁免信封要求', {});
+          }
           if (isDeliverable) {
             // 交付物不检查 JSON 信封，只跳过
           } else if (args.legacySalvage) {
@@ -1053,6 +1083,14 @@ function main() {
   checkLineCounts(repo, envelopes);
   checkSelfConsistency(envelopes);
   checkLedger(repo, artifactsRoot);
+
+  // 2026-11-14：超过 8MB 的文件被 readLines 跳过了，必须让「未验证」可见。
+  // 否则「文件太大」会静默变成「无法验证但算通过」。
+  if (oversized.length > 0) {
+    const names = oversized.slice(0, 3).map((o) => `${o.path}（${(o.size / 1048576).toFixed(1)}MB）`);
+    warn('G0', `${oversized.length} 个文件超过 8MB 未做门 0 校验：${names.join('、')}`
+      + `${oversized.length > 3 ? ' …' : ''}——**这些文件里的 quote 一条都没被验证过**`, {});
+  }
 
   // 输出
   const counts = findings.reduce((a, f) => { a[f.level] = (a[f.level] ?? 0) + 1; return a; }, {});
