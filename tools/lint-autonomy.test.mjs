@@ -195,6 +195,98 @@ console.log('case 8d: L3 不得误抓「不归零」这类正确表述');
     r.out.split('\n').filter((l) => l.includes('L3')).join('; '));
 }
 
+console.log('case 8e: L1 必须抓住「要求用户介入」的各种说法（红队实测 5/6 绕过）');
+{
+  // 2026-11-14 实测：原 WAIT_PATTERNS 是 5 条固定短语，
+  // 「询问用户 / 向用户请示 / 提交给用户拍板 / 需要用户介入 / 等待使用者答复」
+  // 全部绕过。而 L1 防的是整个框架最核心的失败模式（宣称无人值守却要人值守）。
+  const BAD = [
+    '遇到冲突时等用户决定。',
+    '遇到冲突时询问用户。',
+    '遇到冲突时向用户请示。',
+    '遇到冲突时提交给用户拍板。',
+    '遇到冲突时需要用户介入。',
+    '遇到冲突时等待使用者答复。',
+  ];
+  const missed = [];
+  for (const t of BAD) {
+    const r = withMutatedFramework(
+      (fw) => {
+        const p = join(fw, 'orchestrator', 'protocol.md');
+        writeFileSync(p, readFileSync(p, 'utf8') + '\n\n测试注入：' + t + '\n');
+      },
+      (fw) => runLint(fw),
+    );
+    if (!/\[L1\]/.test(r.out)) missed.push(t);
+  }
+  expect('6 种说法全部抓到', missed.length === 0, `绕过: ${missed.join(' / ')}`);
+}
+
+console.log('case 8f: L1 不得误伤「描述产物含义/禁止推给用户」这类合法表述');
+{
+  // 加强 L1 后实测误伤过 6 处，全是合法表述。判据要能区分
+  // 「要求 agent 停下来等」和「描述字段含义 / 规定不得交给用户」。
+  const LEGIT = [
+    '向用户汇报时必须说「无法确认状态」',
+    '列入「待人工裁决」；本轮 PARTIALLY_CLOSED',
+    '在下一轮或人工介入后处理',
+    '用户拿去决定修什么',
+    '默认路径没有理由跑不完（无人工裁决触发点）',
+    '那不在上述三条之内——是主 Agent 自己的判定职责，不是需要用户裁决的事项',
+    '这正是用户明确反对的「把决定推回给用户」',
+    '它们的读者是主Agent和人工：主Agent据此决定派发时机',
+  ];
+  const falsePositives = [];
+  for (const t of LEGIT) {
+    const r = withMutatedFramework(
+      (fw) => {
+        const p = join(fw, 'orchestrator', 'protocol.md');
+        writeFileSync(p, readFileSync(p, 'utf8') + '\n\n测试注入：' + t + '\n');
+      },
+      (fw) => runLint(fw),
+    );
+    if (/\[L1\]/.test(r.out)) falsePositives.push(t);
+  }
+  expect('合法表述全部放行', falsePositives.length === 0,
+    `误伤: ${falsePositives.map((x) => x.slice(0, 24)).join(' / ')}`);
+}
+
+console.log('case 8g: L4 必须抓住「停止条件表被压成一行」（红队实测可绕过）');
+{
+  // 原 L4 只查「全框架里有没有这四个词」，只要有一处出现就算齐备。
+  // 实测把整张停止条件表替换成
+  //   `max_rounds DEFERRED STALLED 自动开启下一轮`
+  // 也能通过——四个词都在，但规则本身已经不存在了。
+  // 修：要求这几个要素出现在同一张表里（>=3 行含要素的表格行）。
+  const r = withMutatedFramework(
+    (fw) => {
+      const p = join(fw, 'artifacts', 'run-state.md');
+      const lines = readFileSync(p, 'utf8').split('\n');
+      let start = -1;
+      for (let i = 0; i < lines.length; i++) {
+        if (/^#{2,4}\s.*停止条件/.test(lines[i])) { start = i; break; }
+      }
+      if (start < 0) throw new Error('测试前提不成立：找不到停止条件小节');
+      let tblStart = -1;
+      for (let j = start + 1; j < lines.length; j++) {
+        if (/^\s*\|/.test(lines[j])) { tblStart = j; break; }
+        if (/^#{1,4}\s/.test(lines[j])) break;
+      }
+      let tblEnd = tblStart;
+      if (tblStart >= 0) { while (tblEnd < lines.length && /^\s*\|/.test(lines[tblEnd])) tblEnd++; }
+      writeFileSync(p, [
+        ...lines.slice(0, tblStart),
+        'max_rounds DEFERRED STALLED 自动开启下一轮',
+        '',
+        ...lines.slice(tblEnd),
+      ].join('\n'));
+    },
+    (fw) => runLint(fw),
+  );
+  expect('报 L4（停止条件未被组织成表）', /\[L4\]/.test(r.out),
+    r.out.split('\n').filter((l) => l.includes('L4')).join('; ') || r.out.slice(-300));
+}
+
 console.log('case 8b: L13 必须用词边界匹配 —— 字段名只作为更长字段的前缀时不得算「已定义」');
 {
   // 2026-11-13 实测：L13 原来三处都用 .includes()（子串匹配）。
