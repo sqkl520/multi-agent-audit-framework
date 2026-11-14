@@ -194,3 +194,78 @@ abort() → reinstate():       enabled=true nodes=0
 | R3-B B-01 重置原子性 | ✅ 复现 |
 
 **5 条里 4 条成立、1 条被推翻。** 被推翻那条反而带出了一条更准确的。
+
+---
+
+# 补充 2：剩余 3 条 HIGH 全部验完
+
+## R2-AI-002 成立：NPE 逃出 IAE 的 catch，每 tick 重试
+
+探针 `probes/NpeProbe.java`
+
+```
+场景 mob-type = null（键存在但值为空）
+tick 1: goalActive=true  累计异常=1  完成空投=0
+tick 2: goalActive=true  累计异常=2  完成空投=0
+...
+tick 5: goalActive=true  累计异常=5  完成空投=0
+
+异常: NullPointerException: Cannot invoke "String.toUpperCase(...)" because "<local0>" is null
+```
+
+**关键对照：**
+
+| 输入 | 结果 |
+|---|---|
+| `"NOT_A_MOB"`（非法字符串） | IAE 被捕获 → 回退 ZOMBIE → **goal 正常结束** |
+| `null`（键存在但值为空） | **NPE 逃逸 → goal 永远 active，每 tick 重试** |
+
+**区别只在于「非法字符串」还是「null」。** 这解释了为什么常规测试发现不了——
+测试通常用非法字符串，而真实故障来自 YAML 里留空的键。
+
+## R2-AI-001 成立，且发现了原报告没提的一点
+
+探针 `probes/ExplodeProbe.java`
+
+```
+配置值   节点伤害(乘)   爆炸半径   爆炸最大伤害
+0.5      2.0          1.0       3.5
+1.0      4.0          2.0       7.0     ← 只有这里两者恰好一致
+2.0      8.0          4.0       14.0
+5.0      20.0         10.0      35.0
+10.0     40.0         20.0      70.0
+```
+
+`GameConfig:292` 字段注释写「自爆对节点**伤害倍率**」，但同一个值在 `:242` 被直接传给
+`createExplosion(loc, (float) explodeMultiplier, ...)` 当作 Bukkit 的 `power`——
+**power 决定半径和实体伤害，不是节点伤害。**
+
+**原报告没提的一点：两条分支的安全承诺不一致。**
+
+```
+:233  if (!isEntityExplosion) {
+:234-235   // 纯视觉自爆 —— 不再附带原版实体爆炸，节点旁的村民/玩家不受波及
+:242  } else { createExplosion(...) }   ← 这条分支恰恰会波及
+```
+
+而 `GameConfig:294` 的默认值是 `entityExplosion = true`，**默认就走会波及的那条**。
+GUI（`MonsterSettingsMenu:203`）允许 0.5~10，管理员按「倍率」理解去调，
+实际同时放大了爆炸半径——这不是他能从滑块名预期到的。
+
+---
+
+# 运行时验证最终汇总
+
+| # | 发现 | 结论 |
+|---|---|---|
+| 1 | R2-mech F2 修复结算 | ✅ 复现，4 种失效形态 |
+| 2 | R2-mech F1 任务累积 | ✅ 复现，无限累积 |
+| 3 | R3-A A-04 子菜单旧引用 | ❌ **前提不成立** |
+| 4 | 新发现：重载丢未保存修改 | ✅ 复现 |
+| 5 | R3-B B-01 重置原子性 | ✅ 复现 |
+| 6 | R2-AI-002 NPE 每 tick 重试 | ✅ 复现 |
+| 7 | R2-AI-001 爆炸语义混用 | ✅ 复现，附安全承诺不一致 |
+
+**8 条 HIGH 全部验完：7 条成立，1 条被推翻。**
+
+只剩 R3-A A-01（负血量导致刷怪任务被杀）需要 Bukkit 运行环境，探针价值有限。
