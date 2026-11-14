@@ -130,3 +130,67 @@ java -Dfile.encoding=UTF-8 TabProbe2
   如果 CraftScheduler 真的有静默取消行为，F1 的结论需要重新评估 —— 但即便如此，
   「内部 catch 导致调度器看不到异常」这一层仍然成立。
 - 只验了 2 条，剩下 6 条 HIGH 未做运行时验证。
+
+---
+
+# 补充：又验了 3 条（2 条成立，1 条被推翻）
+
+## A-04 被推翻，但发现了更准确的缺陷
+
+**原主张：**「重载后子菜单缓存的 `cfg` 仍指向旧对象，修改永久丢失」
+
+**前提不成立。** `GameRulesMenu.buildMenu():32` 每次都重新执行 `configManager.getActiveConfig()`，
+而 `reopen()` 会调 `buildMenu()` —— **子菜单不缓存 cfg**。
+
+**但它指向的症状是真的，机制不同：**
+
+| 位置 | 内容 |
+|---|---|
+| `ConfigManager.java:1340` | `loadFromFile()` 无条件 `activeConfig = new GameConfig()` |
+| `ConfigManager.java:307` | `hasUnsavedChanges()` **存在** |
+| `MainConfigMenu.java:149-153` | 重载**没调用它**，直接 load 后无条件发「已重载」 |
+| `ConfigManager.java:1338` | 注释自己写「不能因为重建而把管理员的未保存修改清掉」——**但那条保护只覆盖「文件不可用」分支** |
+
+探针 `probes/ReloadProbe.java` 实测：
+
+```
+初始:            world=world, waves=10
+管理员改动后:    world=my-custom-world, waves=10
+有未保存改动?    true
+--- 点击重载 ---
+重载后:          world=world, waves=10
+改动还在吗?      false
+界面提示:        「配置已重载」(无条件发送)
+```
+
+**管理员改了配置没保存 → 点重载 → 改动没了，界面还说「已重载」。**
+
+## B-01 成立：重置失败留下 0 节点的可开局场馆
+
+探针 `probes/ResetProbe.java`：
+
+```
+重置前:              enabled=true nodes=12
+第 4 步 disableArena: enabled=false nodes=12
+第 5 步 删节点 12 个:  enabled=false nodes=0    ← 不可逆
+第 8 步 clearDeploymentData: **失败**
+abort() → reinstate():       enabled=true nodes=0
+```
+
+`reinstate()` 只把竞技场放回启用队列，**不碰节点**。
+而第 5 步的 `clearNodesForWorld` 是不可逆物理删除，无备份无补偿。
+
+代码注释（`:276-277`）自己写「第 5/8 步都可能失败并中止——那两处中止负责把它恢复回去」，
+**但「恢复回去」指的是启用状态，不是节点。**
+
+## 累计运行时验证
+
+| 发现 | 结论 |
+|---|---|
+| R2-mech F2 修复结算 | ✅ 复现，4 种失效形态 |
+| R2-mech F1 任务累积 | ✅ 复现，无限累积 |
+| R3-A A-04 子菜单旧引用 | ❌ **前提不成立** |
+| 新发现：重载丢未保存修改 | ✅ 复现 |
+| R3-B B-01 重置原子性 | ✅ 复现 |
+
+**5 条里 4 条成立、1 条被推翻。** 被推翻那条反而带出了一条更准确的。
