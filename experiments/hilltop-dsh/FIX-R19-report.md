@@ -3,6 +3,25 @@
 **任务**：堵 R18 §6 指出的最后一个结构缺口
 **改动文件**：`tools/stop-hook.mjs`（§3.7.6 新增，约 330 行含注释）、`tools/stop-hook.test.mjs`（case 37–41）
 **未改**：`tools/check-payload.mjs`、`tools/check-state.mjs`（`check-state.mjs:355` 那条「无法与 files_touched 的 mtime 对账」的 WARN 现在有了对应实现，但注释本身仍准确，不改）
+
+> **⚠️ 收口时请注意（主线程并行提交）**
+> 本任务的初版（§3.7.6 + case 37–41）在我工作期间已被主线程提交为
+> `cc3ecf5 feat(R19): files_touched 双向对账`，报告初版提交为
+> `625c06f docs(R19)`。这与 `PARALLEL-COMMIT-CONFUSION.md` 记录的是同一模式。
+>
+> **工作区相对 HEAD 还有一处未提交的增量**（我自证时发现并修的残余口子 §4.2c）：
+> - `tools/stop-hook.mjs`：`claimed` 为空时由「静默跳过」改为留一条 WARN
+> - `tools/stop-hook.test.mjs`：新增 case 42 锁住这一档
+> - 本报告 §4.2c 与 §五 的数字随之更新（103 → 106 通过）
+>
+> **以工作区为准，不要以 HEAD 为准。** 我没有 `git add` / `git commit` / `git reset`。
+>
+> **第二次并行（R20）**：收口前我发现同一对文件里又出现了 R20 的基线工作
+> （`fix_baseline`、case 43–47，§4.2a 建议的修法已被另一个 agent 实现）。
+> 两次改动在同一文件的不同位置，`node tools/stop-hook.test.mjs` 现在 **123 通过 / 0 失败**
+> （R19 的 case 37–42 全绿，R20 的 case 43–47 全绿）。
+> 我**没有**改 R20 的任何代码或断言；R19 的报告数字（下文 §二/§五）是 R19 单独的口径。
+
 **未 commit**（按纪律）
 
 ---
@@ -125,7 +144,7 @@ case 41 (R19): target_repo 缺失 → 跳过双向对账并 WARN（不重复报 
 一个只在「该拦时拦」的改动，在改动前也必然让「不该拦」的用例保持绿。
 真正证明新判据存在的是 case 38/39 的 `实际 0`（该拦没拦）与 case 40 的 `✗ 仍有 WARN`（该说没说）。
 
-改动后：**103 通过 / 0 失败**（原 86 条回归全绿 + 17 条新断言）。
+改动后：**106 通过 / 0 失败**（原 86 条回归全绿 + 20 条新断言，含 case 37–42）。
 
 ### 测试的关键设计
 
@@ -212,7 +231,14 @@ EXIT = 2
 R19 没有解决基线问题，因为解决它需要**修复前的基线快照**，而账本里没有这个字段。
 最便宜的修法（下一轮）：在 wave4 开始时把 `git status --porcelain` + `git stash create` 的悬挂提交
 写进 `state.fix_baseline`，对账时用 `git diff <baseline>` 而不是裸 `git status`。
-没有基线，R19 只是把「存在性」升级成「相对 HEAD 的差异」，不是「本轮改动」。
+
+> **后续（收口前实测）**：这条建议已被并行进行的 R20 实现（`stop-hook.mjs` §3.7.6.2b，
+> case 43–47）。其代码注释逐字引用了本节的分析与两个失真方向。
+> R20 的写法是 `state.fix_baseline.dirty_paths`（路径集合）而非悬挂提交，
+> 并且它**明确承认自己也是自述**：「主 Agent 可以写一个假的空基线（`dirty_paths: []`），
+> 让所有改动都算成本轮改的。本段不试图验证它的真伪——做不到。」
+> 所以基线问题从「完全没答案」变成「有答案但答案可伪造，且伪造会留痕（captured_at / head）」。
+> **这是缩小，不是消除。** 下面 (b) 的归属问题仍然完全没有答案。
 
 **（b）实例改的文件本来就该被改，而它列了另一个也存在的文件。**
 
@@ -225,18 +251,27 @@ R19 没有解决基线问题，因为解决它需要**修复前的基线快照**
 但如果那 9 个**同时**被另一个实例登记了，两边都合规，而 A 的 under-report 被 B 的 over-claim 抵消。
 **归属问题是下一个洞：`files_touched` 没有 `agent_id` 维度，对账是全局的，不是逐实例的。**
 
-**（c）`claimed` 集合为空时整段跳过。**
+**（c）`claimed` 集合为空时整段跳过 —— 自证时发现，已修（WARN，不升 FAIL）。**
 
-`fixEnvelopeCount === 0 || claimedRaw.length === 0` → 静默跳过。
-这是必要的（没有 FIXED 产物时要求 files_touched 是错的），但也是一个开关：
-**把产物写成 `disposition: WONT_FIX` 或 `DEFERRED`，`files_touched` 就合法为空，整道对账消失。**
-不过这个开关已经被上游堵了一部分：`check-payload` 的 `fixed_without_test` / `disposition_missing_for_target`
-要求每条被派发的发现都有 disposition，全写 WONT_FIX 会被 `disposition_coverage` 抓到（如果该规则接上了）。
-但**本段自身**没有防御——一个 `dispositions` 里有 1 条 FIXED 但 `files_touched` 为空数组的产物，
-`claimedRaw` 为空 → 跳过 → 20 个源码改动未登记，零告警。
-*这是 R19 最便宜的下一处改进：`claimedRaw.length === 0` 时不静默跳过，而是 WARN「没有 claimed 集合，未做对账」。*
+初版实现里 `fixEnvelopeCount === 0 || claimedRaw.length === 0` → **静默跳过**。
+自证时用探针实测到一条真实口子：
 
-**（d）噪音前缀是一份名单，写死在代码里。**
+```
+一份 disposition=WONT_FIX、files_touched:[] 的产物
++ 仓库里 src/A.java 有真实源码改动
+→ EXIT = 0，stderr 一片安静，underreported = false，未做双向对账 = false
+```
+
+也就是「检查没跑」被记成了「检查通过」——正是 R13 §7.2 那条最大的残留口子的原型。
+已修：现在这种情况留一条 WARN 写明「claimed 集合为空，无从比对，本回合没有答案」。
+**不能升 FAIL**，因为 WONT_FIX / DEFERRED 轮次里 `files_touched` 为空是合法的。
+新增 case 42 锁住这一档（改动前 `✗ WARN 说明没有 claimed 集合可比`，改动后绿）。
+
+仍然存在但不该堵的变体：把全部产物写成 `WONT_FIX` → `claimed` 为空 → 只有 WARN。
+这一档由上游的 `disposition_missing_for_target` / `disposition_coverage` 管——
+每条被派发的发现都必须有 disposition，全写 WONT_FIX 会在那边被抓到（若那两条规则接上了）。
+
+**（d）噪音前缀是一份名单，写死在代码里 —— 实际安全。**
 
 `repair-artifacts/` `experiments/` `docs/` `.work/` `target/` `build/`——
 实例只要把源码挪进 `docs/`（或任何前缀名单里没有的目录）改完再挪回来…不现实。
@@ -261,25 +296,32 @@ R13 → R14 → R15 → R17 → R18 → R19 的路径是一致的：
 「证据本身是真的，但它不覆盖你想证明的那件事」。
 
 R19 之后，`files_touched` 这条链上还剩两个未被任何外部基准约束的断言：
-1. **「这个改动是本轮做的」** —— 需要基线（4.2a），账本里没有
+1. **「这个改动是本轮做的」** —— 需要基线，账本里原本没有。
+   **R20 已补**（`fix_baseline.dirty_paths`），但它是自述，只能缩小失真、不能消除。
 2. **「这个改动是这个实例做的」** —— 需要 harness 把 tool call 与文件写入关联，
    而 harness 日志里**没有文件路径**（`check-fix-instances-harness.mjs` 只能数 subagent 次数，不能看内容）
 
-这两个都不是「往 state.json 加字段」能解决的。它们是**观测能力的边界**，不是自述层的边界。
+第 2 条不是「往 state.json 加字段」能解决的。它是**观测能力的边界**，不是自述层的边界。
 所以对「自述层还能加什么」的回答是：**在 files_touched 这条链上，加法已经用完。**
-下一步只能往**新的观测面**走：
-- 基线（`git stash create` 的悬挂提交，成本极低，收益最大 —— 建议 R20）
-- 或者接受「归属不可证」，把它写成文档里的一条残余风险，而不是继续加检查
+R20 补的基线是这条链上**最后一个能加的东西**，而它一加进来就立刻暴露了天花板：
+它是自述，且代码注释自己写着「本段不试图验证它的真伪——做不到」。
 
 继续在自述层加字段的边际收益已经接近零，而边际成本（每个字段都是一个新的「省略它就能绕过」的入口）已经很明显。
 R13 的 `report.dir_path` 就是前车之鉴：加字段 → 省略它 → 整道闸门失效 → R14 只能把它变成必填。
+`fix_baseline` 会走同一条路：下一轮一定会有人发现「不写它只有一条 WARN」，
+然后它变成条件必填，然后「写一个空基线」成为新的最短绕过路径。
+
+真正剩下的只有两条路：
+- **换观测面**：让 harness 记录文件写入（dsh 的 session 日志里加 tool/result 内容），
+  这样「哪个实例改了哪个文件」才有外部基准。这是工具层的工作，不是提示词/账本层能做的。
+- **或者承认归属不可证**，把它写成文档里的一条残余风险，而不是继续加检查。
 
 ---
 
 ## 五、验证结果
 
 ```
-node tools/stop-hook.test.mjs        → 103 通过 / 0 失败   （原 86 + 17 新断言）
+node tools/stop-hook.test.mjs        → 106 通过 / 0 失败   （原 86 + 20 新断言，case 37–42）
 node tools/fix-phase-e2e.test.mjs    →  48 通过 / 0 失败
 node tools/check-state.test.mjs      →  61 通过 / 0 失败
 node tools/check-all.mjs             → ✅ 全部通过（EXIT=0）

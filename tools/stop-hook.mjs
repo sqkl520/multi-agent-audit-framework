@@ -990,11 +990,29 @@ if (state.phase === 'wave4' || state.phase === 'wave5') {
           if (fixEnvelopeCount === 0 || claimedRaw.length === 0) {
             // 没有 fix 产物 = 没有 claimed 集合。此时「双向对账」只剩一个方向，
             // 而 under-reported 的判据（actual - claimed）会把仓库里的**全部**改动
-            // 报成未登记——那是误伤，不是信号。所以直接跳过。
+            // 报成未登记——那是误伤，不是信号。所以跳过判据。
+            //
+            // 但**不能静默跳过**。R19 自证时实测到这条残余口子：
+            // 一份 disposition=WONT_FIX、files_touched:[] 的产物 → claimed 为空 →
+            // 仓库里一个真实源码改动零告警地溜过去，stderr 一片安静。
+            // 「检查没跑」与「检查通过」在日志上必须可区分（R13 §7.2 的教训）。
+            //
+            // 不能升 FAIL：WONT_FIX 轮次里 files_touched 为空是**合法**的
+            // （不修的发现不改文件，要求它列改动文件是错的）。所以这里只 WARN。
             //
             // 注意这条与「没有产物」的判据（3.7.2 的 files.length === 0）不同：
-            // 产物可能有，只是它们不是 fix 角色（例如 wave5 的 verify 产物）。
-            // 那种情况下 files_touched 本来就不该存在，比对没有意义。
+            // 产物可能有，只是它们不是 fix 角色，或它们的 files_touched 全是空数组。
+            warnings2.push(
+              `WARN · 未做双向对账（files_touched ↔ git status）：`
+              + `${fixEnvelopeCount === 0
+                ? '产物目录里没有 role="fix" 的信封'
+                : `有 ${fixEnvelopeCount} 份 fix 产物，但它们的 payload.files_touched 全是空的`
+                  + `（例如 disposition=WONT_FIX / DEFERRED）`}，`
+              + `claimed 集合为空，无从比对。\n`
+              + `这意味着「仓库里有没有源码被改却没登记」这一项**本回合没有答案**——`
+              + `不是通过，是没查。若本轮确实有修复（disposition=FIXED），请把它改的源代码`
+              + `列进该产物的 payload.files_touched[]，这条对账就会自动生效。`
+            );
           } else {
             const rawRepo = state.target_repo;
             const repoMissing = !(typeof rawRepo === 'string' && rawRepo.trim() !== '');
@@ -1126,6 +1144,169 @@ if (state.phase === 'wave4' || state.phase === 'wave5') {
                 }
                 const actualSet = new Set(actualAll);
 
+                // 3.7.6.2b 修复基线：把「这一轮改了什么」从「相对 HEAD 的差异」里剥出来
+                // （2026-11-16 / R20 新增）
+                //
+                // R19 §(a) 原文（直接采信）：
+                //   **基线问题：`git status` 在修复前就是脏的。**
+                //   `git status` 报的是「相对于 HEAD 的差异」，**不是「这一轮改了什么」**。
+                //   真实场景里被审仓库常常一开始就是脏的。
+                //
+                // 后果是**双向都失真**，而且两个方向的失真方向相反：
+                //   overclaimed 侧：实例根本没改 src/B.java，但它在修复**之前**就已经是 M
+                //     → actual 里有它 → 声称它不算 overclaim → **假阴性**。
+                //     这就是 R18 §6 问的「是不是**这一轮**改的」——旧判据没有回答。
+                //   underreported 侧：实例改的是 src/A.java，但仓库里另有一堆本轮之前就存在的
+                //     改动 → 全部算成 under-reported → **假阳性**，然后这条规则会被当成
+                //     噪音关掉（R10 的教训：假阳性是规则被卸载的最短路径）。
+                //
+                // 最便宜的修法（也是这里实现的）：在 wave4 开始时把 `git status --porcelain`
+                // 写进 state.fix_baseline，对账时用「现在的改动 − 基线里的改动」。
+                //
+                // ── 它是什么、不是什么 ──
+                // `fix_baseline` **本身也是自述**：主 Agent 可以写一个假的空基线
+                // （dirty_paths: []），让所有改动都算成「本轮改的」。本段不试图验证它的真伪
+                // （做不到——没有外部基准能与「修复前那一刻」比对）。
+                // 能做的只有留痕：把 captured_at 与 head 一起记下，并在告警与失败信息里显示，
+                // 于是一个假基线至少留下「它声称自己在什么时刻、基于什么 HEAD 抓的」这个痕迹。
+                // **它是把假阴性/假阳性缩小，不是消除。**
+                //
+                // ── 降级纪律 ──
+                // 缺失 fix_baseline       → 照旧用相对 HEAD 的差异，但**必须** WARN 说明降级。
+                //                            理由：不能让所有存量账本一夜不合规；但降级必须可见，
+                //                            不能静默（R13 §7.2：「检查没跑」与「检查通过」必须可区分）。
+                // 格式非法（不是对象/不是数组）→ 同样降级 + WARN。**不能当成空基线静默吞掉**——
+                //                            那比没有基线更糟：主 Agent 以为自己在提供基线，
+                //                            而对账实际按相对 HEAD 跑，且毫无提示。
+                const SRC_EXT_UP = /\.(java|js|mjs|cjs|ts|tsx|jsx|py|go|rs|kt|kts|c|cc|cpp|h|hpp|cs|rb|php|swift|scala|sh)$/i;
+
+                // 现在的脏路径，两种形态都收：目录条目（`?? newdir/`）与展开后的文件。
+                // 少了目录那一形态，「基线里整目录未跟踪、现在整个目录被删掉」会漏判。
+                const nowDirtyRaw = new Set();
+                for (const en of rawEntries) {
+                  nowDirtyRaw.add(en.path);
+                  nowDirtyRaw.add(en.path.replace(/\/+$/, ''));
+                }
+
+                const blRaw = state.fix_baseline;
+                let baselinePaths = null;          // Set<string> | null
+                let baselineDegraded = null;       // null | 'missing' | 非法原因字符串
+                let baselineIncomplete = null;     // 用了，但 captured_at/head 不全
+                let baselineProvenance = '';
+
+                if (blRaw === undefined || blRaw === null) {
+                  baselineDegraded = 'missing';
+                } else if (typeof blRaw !== 'object' || Array.isArray(blRaw)) {
+                  baselineDegraded = `fix_baseline 不是对象（实际是 ${Array.isArray(blRaw) ? '数组' : typeof blRaw}）`;
+                } else if (!Array.isArray(blRaw.dirty_paths)) {
+                  const actual = blRaw.dirty_paths === undefined ? '缺失' : JSON.stringify(blRaw.dirty_paths);
+                  baselineDegraded = `fix_baseline.dirty_paths 不是数组（实际是 ${actual}）`;
+                } else {
+                  const bad = blRaw.dirty_paths.filter((p) => typeof p !== 'string' || p.trim() === '');
+                  if (bad.length > 0) {
+                    // 混进非字符串 → 整份基线不可信，降级而不是「尽力而为地过滤掉」。
+                    // 过滤掉会得到一个比作者本意更小的基线，而更小的基线 = 更多假阴性。
+                    baselineDegraded = `fix_baseline.dirty_paths 里有 ${bad.length} 个非字符串/空条目`;
+                  } else {
+                    baselinePaths = new Set(
+                      blRaw.dirty_paths.map((p) => p.trim().replace(/\\/g, '/').replace(/^\.\//, ''))
+                    );
+                  }
+                }
+
+                if (baselinePaths !== null) {
+                  const ca = typeof blRaw.captured_at === 'string' && blRaw.captured_at.trim() !== ''
+                    ? blRaw.captured_at.trim() : null;
+                  const head = typeof blRaw.head === 'string' && blRaw.head.trim() !== ''
+                    ? blRaw.head.trim() : null;
+                  if (!ca || !head) {
+                    const miss = [!ca && 'captured_at', !head && 'head'].filter(Boolean).join(' / ');
+                    baselineIncomplete = miss;
+                  }
+                  // 溯源串：出现在失败信息里，让「这份基线声称了什么」跟着结论一起留痕。
+                  baselineProvenance = `fix_baseline：captured_at=${ca ?? '未记录'}，`
+                    + `head=${head ?? '未记录'}，dirty_paths=${baselinePaths.size} 个`;
+
+                  // 基线里的目录条目（`repair-artifacts/`）要按前缀覆盖其下所有文件，
+                  // 否则「修复前就存在的未跟踪目录」里的每个文件都会被算成本轮新增。
+                  const baselineDirs = [...baselinePaths].filter((p) => p.endsWith('/'));
+                  const isBaselineDirty = (p) => {
+                    if (baselinePaths.has(p)) return true;
+                    return baselineDirs.some((d) => p.startsWith(d));
+                  };
+
+                  // 「这一轮新增的脏」= 现在的脏 − 基线里的脏。
+                  // 注意：**只做减法，不做噪音过滤**。过滤是给 under-reporting 用的
+                  // （「剩下的是应该被覆盖的东西」），overclaim 必须用未过滤集合，
+                  // 3.7.6.4 那段解释过原因。
+                  for (const p of [...actualSet]) {
+                    if (isBaselineDirty(p)) actualSet.delete(p);
+                  }
+
+                  // 反方向也要覆盖：基线里脏、现在干净了（被还原 / stash / checkout）。
+                  // 它**不是违规**——rollback_command 干的就是这件事，合法的还原是修复流程的一部分。
+                  // 但「修复前脏、现在不脏」也可能是一次误操作的唯一痕迹
+                  //（experiments/CHECKOUT-INCIDENT.md 记过一次真的把本轮改动 checkout 掉的事故）。
+                  // 所以只 WARN，不 FAIL；且只在本段**真的在跑对账**时提示。
+                  //
+                  // 判「现在干净了」不能只看精确匹配：基线记的是文件，而现在 git status
+                  // 可能只给出它的祖先未跟踪目录（`?? src/new/`）。所以任一祖先目录仍然脏
+                  // 都算「它还脏」，否则会造成一批假 restored。
+                  const stillDirty = (p) => {
+                    if (nowDirtyRaw.has(p)) return true;
+                    const parts = p.split('/');
+                    for (let i = 1; i < parts.length; i++) {
+                      if (nowDirtyRaw.has(parts.slice(0, i).join('/') + '/')) return true;
+                    }
+                    return false;
+                  };
+                  const restoredAll = [...baselinePaths]
+                    .filter((p) => !stillDirty(p))
+                    .map((p) => p.replace(/\/+$/, ''))
+                    .filter((p) => p !== '');
+                  const restoredSrc = restoredAll.filter((p) => SRC_EXT_UP.test(p)).sort();
+                  if (restoredSrc.length > 0) {
+                    warnings2.push(
+                      `WARN · 这些文件在修复前是脏的，现在变干净了（${restoredSrc.length} 个）：\n`
+                      + restoredSrc.slice(0, 12).map((p) => `  - ${p}`).join('\n')
+                      + (restoredSrc.length > 12 ? `\n  … 另有 ${restoredSrc.length - 12} 个` : '')
+                      + `\n\n可能是被还原了（rollback），也可能是 stash / checkout —— 请确认这不是误操作。`
+                      + `\n这不是违规：rollback_command 本来就是干这个的，所以只告警、不阻断。`
+                      + `但它也可能是「本轮改动被误 checkout 掉」的唯一痕迹`
+                      + `（experiments/CHECKOUT-INCIDENT.md 记录过一次真实事故）。\n`
+                      + `溯源（${baselineProvenance}）。`
+                    );
+                  }
+                }
+
+                // 降级必须可见：无基线 / 基线非法都 WARN，并且点明两个方向的失真方向。
+                if (baselineDegraded !== null) {
+                  warnings2.push(
+                    `WARN · 双向对账**降级**：${baselineDegraded === 'missing'
+                      ? '账本里没有修复基线 fix_baseline'
+                      : `修复基线 fix_baseline 格式非法——${baselineDegraded}`}，`
+                    + `本次按「相对 HEAD 的差异」（裸 \`git status\`）对账。\n`
+                    + `为什么这是个问题：\`git status\` 报的是**相对于 HEAD 的差异**，`
+                    + `**不是「这一轮改了什么」**。被审仓库在修复前常常一开始就是脏的，于是两个方向都失真：\n`
+                    + `  · overclaimed 一侧（假阴性）：文件在修复前就已是 M，实例本轮根本没碰它，`
+                    + `却因为它在 actual 里而不算 overclaim。\n`
+                    + `  · underreported 一侧（假阳性）：仓库里本轮之前就存在的改动全被算成「改了没登记」，`
+                    + `然后这条规则会被当成噪音关掉。\n`
+                    + `补法：主 Agent 在进入 wave4 **之前**（派发第一个修复实例之前）执行一次 `
+                    + `\`git status --porcelain\`，把路径写进 state.fix_baseline.dirty_paths，`
+                    + `并把时刻与 HEAD 一并记进 captured_at / head（见 artifacts/run-state.md 第 2.7 节）。\n`
+                    + `注意：fix_baseline 是把假阴性/假阳性**缩小**，不是消除——它本身也是自述。`
+                  );
+                } else if (baselineIncomplete !== null) {
+                  warnings2.push(
+                    `WARN · fix_baseline 缺少 ${baselineIncomplete}：基线可用，`
+                    + `但「它声称自己在什么时刻、基于什么 HEAD 抓的」这一项没有记录，`
+                    + `事后无法核对这份基线是不是修复前那一刻抓的。\n`
+                    + `fix_baseline 本身是自述，本段无法验证它的真伪；能做的只是让假基线留下痕迹。`
+                    + `请在下一次进入 wave4 前把 captured_at 与 head 一并写入。`
+                  );
+                }
+
                 // 3.7.6.3 归一化 claimed 到「仓库根相对的 posix 路径」
                 //
                 // 信封里的写法至少有三种：`src/main/java/X.java`（仓库相对，最常见）、
@@ -1173,12 +1354,19 @@ if (state.phase === 'wave4' || state.phase === 'wave5') {
                     + `（${overclaimed.length} 个，被审仓库 ${repoDir}）：\n`
                     + overclaimed.slice(0, 12).map((p) => `  - ${p}`).join('\n')
                     + (overclaimed.length > 12 ? `\n  … 另有 ${overclaimed.length - 12} 个` : '')
+                    + `\n\n判据口径：${baselinePaths !== null
+                      ? `**本轮改动 = 现在的 \`git status\` − 修复基线**（${baselineProvenance}）`
+                      : `**相对 HEAD 的差异**（本回合没有可用的 fix_baseline，已降级——见上方 WARN）`}。`
                     + `\n\n规则：files_touched_overclaimed。`
                     + `R18 的 files_touched_not_found 只回答「这些文件存在吗」；`
                     + `**存在不等于被改过**（R18 §6 原文：path existence does not mean `
                     + `the file was changed by this instance）。一个实例把一直存在、`
-                    + `从未被碰过的文件写进 files_touched，R18 全绿，而它什么都没改。\n`
-                    + `补法：要么真的去改（然后重跑），要么从 files_touched 里删掉这些条目。`
+                    + `从未被碰过的文件写进 files_touched，R18 全绿，而它什么都没改。`
+                    + (baselinePaths !== null
+                      ? `\nR20 补充：有基线之后，这一条还覆盖了「文件在修复**之前**就脏、`
+                        + `本轮根本没碰」——旧判据（相对 HEAD）会把那种情况当成「改过」，是假阴性。`
+                      : '')
+                    + `\n补法：要么真的去改（然后重跑），要么从 files_touched 里删掉这些条目。`
                     + `不要用「它在仓库里存在」当改动凭证——凭证是改动本身。`
                   );
                 }
@@ -1197,7 +1385,9 @@ if (state.phase === 'wave4' || state.phase === 'wave5') {
                 // 用扩展名白名单而不是路径黑名单：黑名单要求枚举所有产物目录名，
                 // 必然漏；白名单漏一个的代价是「那个语言没被保护」，
                 // 而不是「整道门失效」。
-                const SRC_EXT = /\.(java|js|mjs|cjs|ts|tsx|jsx|py|go|rs|kt|kts|c|cc|cpp|h|hpp|cs|rb|php|swift|scala|sh)$/i;
+                // R20：定义已提到 3.7.6.2b（restored 判据要先用到它），这里只做别名，
+                // 避免两处正则各自演化。
+                const SRC_EXT = SRC_EXT_UP;
                 const NON_SRC_EXT = /\.(md|log|json|yml|yaml|txt|xml|properties)$/i;
                 const legacyNames = new Set(legacy);
 
@@ -1230,7 +1420,10 @@ if (state.phase === 'wave4' || state.phase === 'wave5') {
                       + unclaimedSrc.slice(0, 12).map((p) => `  - ${p}`).join('\n')
                       + (unclaimedSrc.length > 12 ? `\n  … 另有 ${unclaimedSrc.length - 12} 个` : '')
                       + `\n\n规则：files_touched_underreported。`
-                      + `这就是 R18 §6 点名的 under-reporting：一个实例改了 10 个文件，`
+                      + `判据口径：${baselinePaths !== null
+                        ? `**本轮改动 = 现在的 \`git status\` − 修复基线**（${baselineProvenance}）`
+                        : `**相对 HEAD 的差异**（本回合没有可用的 fix_baseline，已降级——见上方 WARN）`}。`
+                      + `\n这就是 R18 §6 点名的 under-reporting：一个实例改了 10 个文件，`
                       + `只列 1 个存在的，R18 的存在性检查完全绿。`
                       + `存在性只证明「凭证不是假的」，不证明「凭证是完整的」。\n`
                       + `已排除的合法噪音（${unclaimedNoisy.length} 个）：产物目录、legacy_artifacts、`

@@ -149,6 +149,12 @@ source: 续写（2026-11-01）。解决 round31「跑不完、断了接不上、
     "done-1.md — 可选字段。列被豁免的无信封历史产物（只写文件名）。见第 2.6 节"
   ],
 
+  "fix_baseline": {
+    "captured_at": "ISO8601 — wave4 开始（派发第一个修复实例之前）抓基线的时刻。留痕用，不用于判定。缺失则 WARN",
+    "dirty_paths": ["src/legacy/A.java", "repair-artifacts/"],
+    "head": "commit sha — 抓基线时的 HEAD。留痕与诊断用。缺失则 WARN"
+  },
+
   "fix_contracts": [
     {
       "finding_id": "string",
@@ -391,6 +397,118 @@ R13 把「目录推断不出来」整档降级成了 WARN，结果 `FIX-R13-repo
 与 §2.5.4 同一条纪律：该检查只在 `phase ∈ {wave4, wave5}` **且** `path_mode == 'FIX'` 时启用。
 `AUDIT_ONLY` 路径的相位序列里没有 `wave4/wave5`，因此逐字不变
 （回归用例 `stop-hook.test.mjs` case 26 / case 27 锁定）。
+
+---
+
+## 第 2.7 节：修复基线 `fix_baseline`（2026-11-16 / R20 新增）
+
+### 2.7.1 字段定义
+
+```json
+"fix_baseline": {
+  "captured_at": "2026-11-16T09:12:00Z",
+  "dirty_paths": ["src/legacy/A.java", "repair-artifacts/", "app.log"],
+  "head": "11ae7223f0c9..."
+}
+```
+
+| 字段 | 类型 | 含义 |
+|---|---|---|
+| `captured_at` | `string` (ISO8601) | 抓基线的那一刻。**用于留痕，不用于判定**。缺失时 WARN |
+| `dirty_paths` | `string[]` | 进入 wave4 **之前** `git status --porcelain` 解析出的全部路径（仓库根相对、正斜杠）。未跟踪目录写成 `dir/`（带尾斜杠），会被当作前缀覆盖其下所有文件 |
+| `head` | `string` (commit sha) | 抓基线时的 HEAD。**用于留痕与诊断**，缺失时 WARN |
+
+### 2.7.2 为什么需要它
+
+**`git status` 报的是「相对于 HEAD 的差异」，不是「这一轮改了什么」。被审仓库常常一开始就是脏的。**
+
+R19 §(a) 的自证数据：被审的 Hilltop 仓库在修复开始时就已经有 25 行改动，
+其中相当一部分不是本轮修复产生的。把裸 `git status` 当成 `actual` 会让**双向都失真**，
+而且两个方向的失真方向相反：
+
+| 方向 | 失真 | 后果 |
+|---|---|---|
+| `overclaimed` | **假阴性**：文件在修复**之前**就已是 `M`，实例本轮根本没碰它，却因为它在 `actual` 里而不算 overclaim | R18 §6 问的「是不是**这一轮**改的」——旧判据没有回答 |
+| `underreported` | **假阳性**：仓库里本轮之前就存在的改动全被算成「改了没登记」 | 假阳性是规则被卸载的最短路径（R10 的教训），这条规则会被当成噪音关掉 |
+
+`fix_baseline` 把 `actual` 从「相对 HEAD 的差异」改成「**现在的脏 − 基线里的脏**」，
+即「这一轮新增的脏」，从而同时收窄两个方向的失真。
+
+### 2.7.3 谁来写、什么时候写
+
+**主 Agent 在进入 `wave4` 之前、派发第一个修复实例之前抓一次。** 命令：
+
+```bash
+cd <target_repo> && git rev-parse HEAD && git status --porcelain
+```
+
+把 `git status` 的路径逐行填进 `dirty_paths`（保留 `git status` 的输出形态：` M src/x.java`
+取 `src/x.java`；`?? newdir/` 保留尾斜杠）。**只抓一次**，不要在每个修复实例前后各抓一次——
+那是另一套机制（逐实例归属，见 §2.7.6），本字段不声称能替代它。
+
+**它是条件必填吗？不是。** 缺失时双向对账**降级**为「相对 HEAD 的差异」并 WARN 说明，
+理由与 §2.6.2 的「不新增顶层必填字段」同源：不能让所有存量账本一夜之间变不合规。
+但**降级必须可见**：`stop-hook.mjs` 会写一条显式 WARN，逐条说明两个方向的失真方式与补法。
+「检查没跑」与「检查通过」在日志上必须可区分（R13 §7.2）。
+
+**格式非法**（`fix_baseline` 不是对象、`dirty_paths` 不是数组、数组里有非字符串）→
+同样降级 + WARN，**不崩溃**。绝不能把格式错当成「空基线」静默吞掉：那比没有基线更糟——
+主 Agent 以为自己在提供基线，而对账实际按相对 HEAD 跑，且毫无提示。
+
+### 2.7.4 `stop-hook.mjs` §3.7.6 里它怎么用
+
+```
+nowDirty      = git status --porcelain 的全部路径
+baselineDirty = state.fix_baseline?.dirty_paths ?? null
+
+if (baselineDirty === null) {
+  actual = nowDirty                                    // 降级
+  WARN  '没有基线，对账基于相对 HEAD 的差异——修复前就脏的文件会被误判'
+} else {
+  actual   = nowDirty - baselineDirty                  // 这一轮新增的脏
+  restored = baselineDirty - nowDirty                  // 基线里脏、现在干净了
+  if (restored 里有源码文件)
+    WARN  '这些文件在修复前是脏的，现在变干净了——可能是被还原，也可能是 stash/checkout'
+}
+```
+
+然后 `overclaimed`（`claimed - actual`）与 `underreported`（`actual - claimed`，过滤后）
+都用新的 `actual`。**减法只用于取 `actual`，不做噪音过滤**——过滤是给 under-reporting 判据用的
+（「剩下的是应该被覆盖的东西」），overclaim 必须用未过滤集合，否则「声称改了 docs/x.md 而且确实改了」
+会被误报。
+
+**`restored` 为什么只 WARN 不 FAIL**：`rollback_command` 干的就是还原，合法的还原是修复流程的一部分。
+但「修复前脏、现在不脏」也可能是「本轮改动被误 checkout 掉」的唯一痕迹
+（`experiments/CHECKOUT-INCIDENT.md` 记过一次真实事故），所以要提示、要留痕，但不阻断。
+
+### 2.7.5 它解决了什么、没解决什么（诚实标注）
+
+> **`fix_baseline` 是把假阴性/假阳性缩小，不是消除。它本身也是自述。**
+
+| 它解决的 | 它没解决的 |
+|---|---|
+| 「修复前就脏」被算成本轮改动 → underreported 假阳性大幅收窄（自证：14 个 → 4 个） | **实例级的归属**：`files_touched` 没有 `agent_id` 维度，对账是全局的。基线只知道「修复前哪些脏」，不知道「这一轮是**哪个实例**改的」 |
+| 「修复前就脏、本轮没动」被算成本轮改动 → overclaimed 假阴性被堵住（用例 C） | **基线本身的真伪**：主 Agent 可以写 `dirty_paths: []`，让所有改动都算成本轮改的。做不到验证——没有外部基准能与「修复前那一刻」比对 |
+| 基线里脏、现在干净（被还原 / stash / checkout）从「静默」变成 WARN | **同一文件既在基线里又被本轮改了**：减法会把这种情况判成「不是本轮改的」，即新的假阴性。要堵它需要基线记内容哈希，不是路径列表 |
+| 格式非法的基线不会被静默当成空基线 | **跨轮基线**：`fix_baseline` 只管这一轮；`wave5` 的验收相位目前**不**重新抓基线 |
+
+**`captured_at` / `head` 的作用就是让假基线留痕。** 本框架不试图验证基线真伪，
+但一个假基线至少要写下「它声称自己在什么时刻、基于什么 HEAD 抓的」，
+事后任何人拿 `git reflog` 一对就知道那个时刻的 HEAD 对不对、那个时刻的脏文件大概是什么。
+这两项会同时出现在降级 WARN 与对账 FAIL 的「判据口径」一行里。
+
+### 2.7.6 下一个层次是什么（给下一轮的路标）
+
+自述层到这里已经接近极限。再往下走必须换基准，而不是再加字段：
+
+1. **逐实例基线**：每次派发修复实例前抓一次，`files_touched` 按 `agent_id` 分账。
+   代价是 N 次 `git status`，收益是 overclaimed / underreported 从「全局」变成「归属到实例」。
+2. **内容哈希基线**：`fix_baseline` 记每个脏文件的 blob hash 而不只是路径。
+   这样「同一文件既脏又被改」可以被区分（`git hash-object` 对比），
+   堵掉 §2.7.5 表里最后一行那个新的假阴性。
+3. **hook 侧抓基线**：让 `stop-hook.mjs` 在 `phase` 从 `wave3` 迁到 `wave4` 的那一次调用里
+   自己抓基线并写盘。这是唯一能把「主 Agent 忘了抓 / 故意抓假的」从自述层挪出去的做法，
+   代价是 hook 需要写 state 文件（它目前是只读的）。
 
 ---
 

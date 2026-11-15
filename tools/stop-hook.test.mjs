@@ -1009,6 +1009,176 @@ console.log('case 41 (R19): target_repo 缺失 → 跳过双向对账并 WARN（
   }
 }
 
+console.log('case 42 (R19): 有 fix 产物但 claimed 集合为空 + 仓库里有源码改动 → WARN 说明对账没做');
+{
+  // R19 自证时发现的残余口子（FIX-R19-report.md §4.2c）：
+  // 一份 disposition=WONT_FIX 的产物、files_touched 为空数组时，claimed 集合为空，
+  // 本段按「没有 claimed 集合可比」直接跳过 —— 于是一个真实源码改动零告警地溜过去。
+  // 不能把它升 FAIL（WONT_FIX 轮次里 files_touched 为空是合法的），
+  // 但「对账没跑」必须与「对账通过」在日志上可区分。
+  const repo = makeGitRepo(R19_REPO_FILES());
+  const d = mkdtempSync(join(tmpdir(), 'art19b-'));
+  try {
+    writeFileSync(join(d, 'done-1.md'), fixArtifactBody(VALID_FIX_ENV({
+      payload: {
+        finding_id: 'F1', disposition: 'WONT_FIX',
+        disposition_reason: '这是一个足够长的理由说明为什么不修这个问题，超过二十个字符。',
+        files_touched: [],
+      },
+    })));
+    putFile(repo, 'src/C.java', 'class C { int y; }\n');   // 真实源码改动
+    const r = runHookFull(closedWave4(d, { target_repo: repo }));
+    expect('退出码 0（WONT_FIX 轮次不阻断）', r.code === 0, `实际 ${r.code}：${r.err.slice(0, 600)}`);
+    expect('WARN 说明没有 claimed 集合可比',
+      /没有 claimed|未做双向对账|claimed 集合为空/.test(r.err), r.err.slice(0, 800));
+    expect('不升成 underreported FAIL', !/files_touched_underreported/.test(r.err), r.err.slice(0, 800));
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(d, { recursive: true, force: true });
+  }
+}
+
+// ── R20 · §3.7.6 的修复基线（fix_baseline）─────────────────────────────
+//
+// R19 §(a) 原文（直接采信）：
+//   **基线问题：`git status` 在修复前就是脏的。** `git status` 报的是「相对于 HEAD
+//   的差异」，**不是「这一轮改了什么」**。真实场景里被审仓库常常一开始就是脏的。
+//   后果是**双向都失真**：
+//     overclaimed 侧：实例没改 src/B.java，但它在修复前就已是 M → actual 里有它
+//                      → 声称它不算 overclaim → **假阴性**。
+//     underreported 侧：实例改的是 src/A.java，但仓库里另有一堆本轮之前的改动
+//                      → 全部算成 under-reported → **假阳性**。
+//
+// 所以下面的 A/B 对照是核心：**同样的仓库状态，有基线 vs 没基线，结论必须不同**。
+// 没有 B，A 可能只是「碰巧绿」；没有 A，B 只是重复 case 39。
+
+const shaOf = (repo) => gitIn(repo, ['rev-parse', 'HEAD']).trim();
+
+// 把「修复前就脏」的状态写进账本。captured_at 固定值：测试不依赖当前时钟。
+const baselineOf = (repo, dirtyPaths) => ({
+  captured_at: '2026-11-16T00:00:00Z',
+  head: shaOf(repo),
+  dirty_paths: dirtyPaths,
+});
+
+console.log('case 43 (R20-A): 有基线，基线里已脏的文件不触发 underreported → exit 0');
+{
+  // 场景：仓库里 src/pre-existing.java 在修复**之前**就已经是 M（不是本轮改的）。
+  //       本轮只改了 src/A.java，产物也只登记了它。
+  // 没有基线时：pre-existing 会落进 actual - claimed → 假阳性 FAIL。
+  // 有基线时：它被 baseline 减掉 → 剩下 A.java == claimed → exit 0。
+  const repo = makeGitRepo({ ...R19_REPO_FILES(), 'src/pre-existing.java': 'class P {}\n' });
+  const d = r19Artifact([{ path: 'src/A.java', change_summary: '改了 A' }]);
+  try {
+    putFile(repo, 'src/pre-existing.java', 'class P { int legacy; }\n');  // 修复前就脏
+    const bl = baselineOf(repo, ['src/pre-existing.java']);
+    putFile(repo, 'src/A.java', 'class A { int x; }\n');                   // 本轮修复
+    const r = runHookFull(closedWave4(d, { target_repo: repo, fix_baseline: bl }));
+    expect('退出码 0', r.code === 0, `实际 ${r.code}：${r.err.slice(0, 800)}`);
+    expect('不报 files_touched_underreported', !/files_touched_underreported/.test(r.err),
+      r.err.slice(0, 800));
+    expect('不报 files_touched_overclaimed', !/files_touched_overclaimed/.test(r.err),
+      r.err.slice(0, 800));
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(d, { recursive: true, force: true });
+  }
+}
+
+console.log('case 44 (R20-B): 同样的仓库状态但没有 fix_baseline → underreported FAIL（对照）');
+{
+  // 与 case 43 **逐字相同的仓库状态**，唯一差别是账本里没有 fix_baseline。
+  // 期望：pre-existing.java 被算成「改了没登记」→ FAIL。
+  // 这条与 43 的差别就是基线的全部价值；如果 44 也绿，说明基线没起作用。
+  const repo = makeGitRepo({ ...R19_REPO_FILES(), 'src/pre-existing.java': 'class P {}\n' });
+  const d = r19Artifact([{ path: 'src/A.java', change_summary: '改了 A' }]);
+  try {
+    putFile(repo, 'src/pre-existing.java', 'class P { int legacy; }\n');
+    putFile(repo, 'src/A.java', 'class A { int x; }\n');
+    const r = runHookFull(closedWave4(d, { target_repo: repo }));   // 没有 baseline
+    expect('退出码 2', r.code === 2, `实际 ${r.code}：${r.err.slice(0, 800)}`);
+    expect('报 files_touched_underreported', /files_touched_underreported/.test(r.err),
+      r.err.slice(0, 800));
+    expect('指名 src/pre-existing.java（这就是假阳性）', /src\/pre-existing\.java/.test(r.err),
+      r.err.slice(0, 800));
+    expect('WARN 说明没有基线、对账基于相对 HEAD 的差异',
+      /基线/.test(r.err) && /HEAD|相对/.test(r.err), r.err.slice(0, 1200));
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(d, { recursive: true, force: true });
+  }
+}
+
+console.log('case 45 (R20-C): 有基线，产物声称「修复前就脏、本轮没动」的文件 → overclaimed FAIL');
+{
+  // R19 说的**假阴性**：pre-existing.java 在 actual(HEAD 口径) 里，所以旧判据认为
+  // 「声称它 OK」。它其实不是这一轮改的——这正是 R18 §6 的
+  // 「path existence does not mean the file was changed by this instance」
+  // 在「改动」层面的同一句话。有基线后 actual 里没有它 → overclaimed。
+  const repo = makeGitRepo({ ...R19_REPO_FILES(), 'src/pre-existing.java': 'class P {}\n' });
+  const d = r19Artifact([{ path: 'src/pre-existing.java', change_summary: '声称本轮改了' }]);
+  try {
+    putFile(repo, 'src/pre-existing.java', 'class P { int legacy; }\n');  // 修复前就脏
+    const bl = baselineOf(repo, ['src/pre-existing.java']);
+    const r = runHookFull(closedWave4(d, { target_repo: repo, fix_baseline: bl }));
+    expect('退出码 2', r.code === 2, `实际 ${r.code}：${r.err.slice(0, 800)}`);
+    expect('报 files_touched_overclaimed', /files_touched_overclaimed/.test(r.err),
+      r.err.slice(0, 800));
+    expect('指名 src/pre-existing.java', /src\/pre-existing\.java/.test(r.err), r.err.slice(0, 800));
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(d, { recursive: true, force: true });
+  }
+}
+
+console.log('case 46 (R20-D): 基线里脏、现在干净（被还原）→ WARN 提到 restored');
+{
+  // 「修复前脏、现在不脏」只有两种解释：被还原了，或者被 stash/checkout 掉了。
+  // 两种都值得看一眼（R19 前有一轮真的把本轮改动 checkout 掉过，见 CHECKOUT-INCIDENT.md）。
+  // 但它**不是违规**：合法的还原是修复流程的一部分（rollback_command 就是干这个的），
+  // 所以只能 WARN，不能 FAIL。
+  const repo = makeGitRepo({ ...R19_REPO_FILES(), 'src/old.java': 'class Old {}\n' });
+  const d = r19Artifact([{ path: 'src/A.java', change_summary: '改了 A' }]);
+  try {
+    putFile(repo, 'src/old.java', 'class Old { int dirty; }\n');   // 修复前脏
+    const bl = baselineOf(repo, ['src/old.java']);
+    gitIn(repo, ['checkout', '--', 'src/old.java']);               // 现在干净了
+    putFile(repo, 'src/A.java', 'class A { int x; }\n');
+    const r = runHookFull(closedWave4(d, { target_repo: repo, fix_baseline: bl }));
+    expect('退出码 0（还原不是违规，不阻断）', r.code === 0, `实际 ${r.code}：${r.err.slice(0, 800)}`);
+    expect('WARN 提到 restored / 被还原', /restored|被还原|还原/.test(r.err), r.err.slice(0, 1200));
+    expect('WARN 指名 src/old.java', /src\/old\.java/.test(r.err), r.err.slice(0, 1200));
+    expect('提示可能是 stash/checkout/误操作',
+      /stash|checkout|误操作/.test(r.err), r.err.slice(0, 1200));
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(d, { recursive: true, force: true });
+  }
+}
+
+console.log('case 47 (R20-E): fix_baseline 格式非法（dirty_paths 不是数组）→ WARN 并降级，不崩溃');
+{
+  // 格式错的基线不能被当成「空基线」静默吞掉——那比没有基线更糟：
+  // 主 Agent 以为自己在提供基线，而对账实际按「相对 HEAD」跑，且毫无提示。
+  const repo = makeGitRepo(R19_REPO_FILES());
+  const d = r19Artifact([{ path: 'src/A.java', change_summary: '改了 A' }]);
+  try {
+    putFile(repo, 'src/A.java', 'class A { int x; }\n');
+    const r = runHookFull(closedWave4(d, {
+      target_repo: repo,
+      fix_baseline: { captured_at: '2026-11-16T00:00:00Z', dirty_paths: 'src/x.java' },
+    }));
+    expect('不崩溃（退出码 0，且不是 1/其他）', r.code === 0, `实际 ${r.code}：${r.err.slice(0, 800)}`);
+    expect('WARN 指出 fix_baseline 格式非法',
+      /fix_baseline/.test(r.err) && /格式|非法|数组/.test(r.err), r.err.slice(0, 1200));
+    expect('WARN 说明已降级',
+      /降级|按「?相对 HEAD」?|没有基线/.test(r.err), r.err.slice(0, 1200));
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(d, { recursive: true, force: true });
+  }
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);
