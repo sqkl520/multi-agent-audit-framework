@@ -516,6 +516,12 @@ console.log('    红测日志放到 experiments/ 下。四道门必须全部放�
     mkdirSync(join(ws.root, 'tools'), { recursive: true });
     writeFileSync(join(ws.root, 'tools', 'red-green.test.mjs'),
       '// 合成 fixture：修复前红、修复后绿\n');
+    // 2026-11-16（R18）：files_touched[] 的 path 现在也要 existsSync
+    // （`files_touched_not_found`）。信封里写的是 `src/a.java`，所以它必须真的存在——
+    // 否则这 8 份产物在「修好之后应该全绿」的场景里被判违规。
+    // 处理原则与 R17 §3.1 一致：让 fixture 变成真正合法的产物，而不是放宽新规则。
+    mkdirSync(join(ws.root, 'src'), { recursive: true });
+    writeFileSync(join(ws.root, 'src', 'a.java'), 'class A {}\n');
     for (const [i, c] of literalContracts.entries()) {
       const rel = `experiments/round1/red-${c.finding_id.replace(/::/g, '-')}.log`;
       const redLogPath = rel;

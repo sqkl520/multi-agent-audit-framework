@@ -183,6 +183,29 @@ const TRIED_MSG = (tried) => tried.length > 0
   ? `试过：${tried.map((t) => `\`${t}\``).join(' / ')}`
   : '未提供任何可解析的根';
 
+// 2026-11-16（R18）：files_touched 的存在性。
+//
+// 背景（R17《FIX-R17-report.md》§4.3 自证）：
+//   [valid] src/main/java/com/hilltopvillage/mechanics/NodeListener.java → EXIT=0
+//   [fake]  src/main/java/com/hilltopvillage/NOT_EXIST.java               → EXIT=0
+// 假路径没有被拦。原因是 `grep -c files_touched tools/check-payload.mjs` = 2：
+// 一处是注释，一处是 ROLE_REQUIRED.fix 的键名列表。后者只保证
+// 「payload.files_touched 这个键存在」——不检查值、不检查数组元素、
+// 不检查 path 是否存在。规则名存在、字段名存在，判据不存在。
+//
+// 而 files_touched 是「这个实例改了哪些文件」的**唯一凭证**。凭证指向一个
+// 不存在的文件，说明那个改动要么没发生、要么被回滚了、要么写错了。
+// 2026-11-15 那次实验里，修复后的源码曾经完全不在框架仓库内，
+// 而没有任何工具发现这件事——这正是本条要堵的形态。
+//
+// 只对 disposition=FIXED 生效：WONT_FIX 不改文件、DEFERRED 本轮没改，
+// 要求它们列出改动文件是错的。空数组对 FIXED 是自相矛盾（说改了却一个没改），
+// 所以单独一条规则，别混进「路径不存在」里。
+//
+// 解析根与降级纪律完全复用 §0.1 的 locateEvidence：任一存在即通过；
+// 没有可解析的根时降级为 evidence_existence_unchecked 的 WARN，不 FAIL。
+const ANGLE_PLACEHOLDER = /[<>]/;
+
 // 多发现形态下 payload.dispositions[] 里每条都可能带同一批不可判定路径，
 // 降级警告按「路径集合」去重，避免同一句提示刷 N 遍。
 const UNDECIDED_WARNED = new Set();
@@ -292,6 +315,82 @@ function validateDispositionEntry(entry, prefix) {
             msg: `test_path 指向的文件不存在（${TRIED_MSG(loc.tried)}）。`
               + 'FIXED 声称「有证明修复前是红的测试」，但测试文件本身找不到——'
               + '「声称有测试」和「测试真的存在」是两件事',
+          });
+        }
+      }
+    }
+
+    // ── files_touched 的存在性（R18 新增，见文件顶部 §0.1a）──
+    // 只对 FIXED 生效：WONT_FIX 不改文件、DEFERRED 本轮没改，
+    // 要求它们列出改动文件是错的（case 136/137/138 是这三条防误伤的护栏）。
+    const ft = entry?.files_touched;
+    if (ft !== undefined && ft !== null && !Array.isArray(ft)) {
+      // 非数组会**整段跳过**下面所有检查——正是「换个类型就能绕开规则」。
+      // 本仓库已经出过同一类缺陷（artifact_path 非字符串躲过存在性检查）。
+      out.push({
+        field: `${prefix}.files_touched`, rule: 'files_touched_wrong_shape',
+        msg: `files_touched 必须是数组 [{\`path\`, \`change_summary\`}]，实际是 `
+          + `${Array.isArray(ft) ? 'array' : typeof ft}：${JSON.stringify(ft).slice(0, 60)}。`
+          + '非数组会让「路径是否存在」这一整项检查静默跳过',
+      });
+    } else if (Array.isArray(ft)) {
+      if (ft.length === 0) {
+        out.push({
+          field: `${prefix}.files_touched`, rule: 'files_touched_empty',
+          msg: 'disposition=FIXED 但 files_touched 是空数组。'
+            + '「代码已改」和「一个文件都没改」不可能同时成立——'
+            + 'wave4-fix.md 的契约要求修复必须列出改动文件，空数组是把这句话取消掉的最省力写法',
+        });
+      } else {
+        const missing = [];
+        ft.forEach((item, i) => {
+          const raw = item?.path;
+          if (typeof raw !== 'string' || raw.trim() === '') {
+            // 省略 path 不能等于通过：没有路径的 files_touched 条目无法被任何东西复核。
+            out.push({
+              field: `${prefix}.files_touched[${i}].path`, rule: 'files_touched_path_missing',
+              msg: `files_touched[${i}] 没有可用的 path（实际 ${JSON.stringify(item?.path)}）。`
+                + '**省略不能等于通过**——没有路径的条目无法与文件系统对账，'
+                + '它只是把「我改了」写成一句无法复核的话',
+            });
+            return;
+          }
+          const p = raw.trim();
+          if (ANGLE_PLACEHOLDER.test(p)) {
+            // 与 artifact_path 的 artifact_outdir_placeholder 同一处理：
+            // <OUTDIR> 是运行时才知道的目录，静态校验不可能验证它——
+            // 不能判死，但必须让主 Agent 在接收时核对。
+            warnings.push({
+              field: `${prefix}.files_touched[${i}].path`, rule: 'files_touched_path_placeholder',
+              msg: `files_touched[${i}].path 含占位符（${p}）：静态校验无法展开它，本次跳过存在性检查。`
+                + '**主 Agent 在接收时必须核对展开后的真实文件是否存在**',
+            });
+            return;
+          }
+          const loc = locateEvidence(p);
+          if (!loc.decided) {
+            // 没有可解析的根 → 不可判定，走 §0.1 的降级纪律（WARN，不 FAIL）。
+            undecided.push({
+              field: `${prefix}.files_touched[${i}].path`,
+              path: p, rule: 'files_touched_not_found',
+            });
+          } else if (!loc.found) {
+            missing.push({ i, p, tried: loc.tried });
+          }
+        });
+
+        if (missing.length > 0) {
+          // 一条聚合消息，一条 FAIL：N 个假路径是同一个事实（凭证是假的），
+          // 拆成 N 条只会把这一条规则淹没在噪音里。field 指第一个缺失项，
+          // 消息里逐条点名，读的人仍然知道去改哪一行。
+          out.push({
+            field: `${prefix}.files_touched[${missing[0].i}].path`,
+            rule: 'files_touched_not_found',
+            msg: `files_touched 里有 ${missing.length} 个路径指向不存在的文件：`
+              + missing.map((m) => `files_touched[${m.i}] \`${m.p}\`（${TRIED_MSG(m.tried)}）`).join('；')
+              + '。`files_touched` 是「这个实例改了哪些文件」的唯一凭证——路径不存在意味着'
+              + '那个改动要么没发生，要么被回滚了，要么写错了。2026-11-15 那次实验里，'
+              + '修复后的源码曾经完全不在框架仓库内，而**没有任何工具发现这件事**。',
           });
         }
       }

@@ -1612,7 +1612,13 @@ console.log('case 117: FIXED + red_log_path/test_path 都指向真实存在的�
       red_log_path: 'red/F1.log',
       test_path: 'test/persist.test.js',
     })),
-    files: { 'red/F1.log': 'FAIL 1 test\n', 'test/persist.test.js': '// red before fix\n' },
+    files: {
+      'red/F1.log': 'FAIL 1 test\n',
+      'test/persist.test.js': '// red before fix\n',
+      // R18：fixEnv 的默认 files_touched 指向 src/store.js，现在会被 existsSync。
+      // 让 fixture 变成**真的合法**的产物，而不是放宽新规则（与 R17 §3.1 同一处理原则）。
+      'src/store.js': '// patched\n',
+    },
     args: ['--artifact-dir', '.'],
   });
   expect('无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
@@ -1659,7 +1665,7 @@ console.log('case 120: FIXED + test_path 指向存在的文件 → 通过');
 {
   const r = runIn({
     content: wrap(fixEnv({ test_path: 'test/persist.test.js', red_log_path: 'red/F1.log' })),
-    files: { 'test/persist.test.js': '// exists\n', 'red/F1.log': 'FAIL\n' },
+    files: { 'test/persist.test.js': '// exists\n', 'red/F1.log': 'FAIL\n', 'src/store.js': '// patched\n' },
     args: ['--artifact-dir', '.'],
   });
   expect('无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
@@ -1683,7 +1689,7 @@ console.log('case 122: FIXED + test_path 是「需新建」→ 跳过存在性�
   // 所以占位值不能被当成本不存在的路径判死。
   const r = runIn({
     content: wrap(fixEnv({ test_path: '需新建', red_log_path: 'red/F1.log' })),
-    files: { 'red/F1.log': 'FAIL\n' },
+    files: { 'red/F1.log': 'FAIL\n', 'src/store.js': '// patched\n' },
     args: ['--artifact-dir', '.'],
   });
   expect('不报 test_path_not_found', !hasRule(r, 'test_path_not_found'),
@@ -1744,6 +1750,7 @@ console.log('case 124: --repo 解析相对路径（日志只在仓库根下存�
     files: {
       'repo/experiments/round1/red-F1.log': 'FAIL\n',
       'repo/test/p1.test.js': '// exists\n',
+      'repo/src/store.js': '// patched\n',
     },
     args: ['--artifact-dir', '.', '--repo', 'repo'],
   });
@@ -1850,6 +1857,226 @@ console.log('case 128: 非 FIXED 的 disposition 不因 test_path 不存在而 F
   expect('不报 test_path_not_found', !hasRule(r, 'test_path_not_found'),
     JSON.stringify(r.r?.errors?.map((x) => x.rule)));
   expect('无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
+}
+
+// ── 2026-11-16（R18）：files_touched 的存在性校验 ─────────────────────
+// R17《FIX-R17-report.md》§4.3 的自证：
+//   [valid] src/main/java/com/hilltopvillage/mechanics/NodeListener.java → EXIT=0
+//   [fake]  src/main/java/com/hilltopvillage/NOT_EXIST.java               → EXIT=0
+// 假路径没有被拦。根因：`grep -c files_touched tools/check-payload.mjs` = 2，
+// 一处是注释、一处是 ROLE_REQUIRED.fix 的键名列表——含义只有「这个键必须存在」，
+// 从不检查值、不检查数组元素、不检查 path 是否存在。
+//
+// 而同形事故真实发生过：2026-11-15 那次实验里，修复后的源码曾经完全不在框架
+// 仓库内，而**没有任何工具发现这件事**。files_touched 是「这个实例改了哪些文件」
+// 的唯一凭证，凭证指向不存在的文件 = 它是假的。
+const ftEnv = (filesTouched, over = {}) => wrap(fixEnv({
+  test_path: 'test/persist.test.js',
+  red_log_path: 'red/F1.log',
+  files_touched: filesTouched,
+  ...over,
+}));
+// 让「证据」这一侧不干扰：红测日志与测试文件都真实存在。
+const FT_BASE_FILES = { 'red/F1.log': 'FAIL 1 test\n', 'test/persist.test.js': '// red before fix\n' };
+
+console.log('case 129: FIXED + files_touched 全部指向真实存在的文件 → 通过（不误杀）');
+{
+  const r = runIn({
+    content: ftEnv([
+      { path: 'src/store.js', change_summary: '捕获 renameSync 异常并上抛' },
+      { path: 'src/util.js', change_summary: '抽出重试判定' },
+    ]),
+    files: { ...FT_BASE_FILES, 'src/store.js': '// patched\n', 'src/util.js': '// patched\n' },
+    args: ['--artifact-dir', '.'],
+  });
+  expect('无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
+  expect('不报 files_touched_not_found', !hasRule(r, 'files_touched_not_found'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+}
+
+console.log('case 130: FIXED + 其中一个 path 指向不存在的文件 → FAIL 并点名该路径');
+{
+  // 这是 R17 §4.3 的「[fake] NOT_EXIST.java → EXIT=0」原样复现。
+  const r = runIn({
+    content: ftEnv([
+      { path: 'src/store.js', change_summary: '真实存在的那个' },
+      { path: 'src/NOT_EXIST.js', change_summary: '声称改了，但文件不存在' },
+    ]),
+    files: { ...FT_BASE_FILES, 'src/store.js': '// patched\n' },
+    args: ['--artifact-dir', '.'],
+  });
+  expect('退出码 1', r.code === 1, `got ${r.code}`);
+  expect('报 files_touched_not_found', hasRule(r, 'files_touched_not_found'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+  const msg = r.r?.errors?.find((x) => x.rule === 'files_touched_not_found')?.msg ?? '';
+  expect('消息点名那个不存在的路径', /NOT_EXIST\.js/.test(msg), msg);
+  expect('消息不把存在的那个路径误列为缺失', !/src\/store\.js/.test(msg), msg);
+  expect('消息引用真实动机「2026-11-15 那次实验」', /2026-11-15/.test(msg), msg);
+  expect('消息点明「声称改了但文件不存在」', /声称|凭证/.test(msg), msg);
+  expect('消息列出试过的解析根', /试过/.test(msg), msg);
+  // 单个 FAIL 消息要能把 N 个缺失路径一次说完，而不是刷 N 条
+  expect('只报一条聚合错误（不是每个路径一条）',
+    r.r?.errors?.filter((x) => x.rule === 'files_touched_not_found').length === 1,
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+  expect('field 指向具体的数组下标', /files_touched\[1\]/.test(
+    r.r?.errors?.find((x) => x.rule === 'files_touched_not_found')?.field ?? ''),
+  JSON.stringify(r.r?.errors?.map((x) => x.field)));
+}
+
+console.log('case 131: FIXED + files_touched 是空数组 → FAIL files_touched_empty');
+{
+  // disposition=FIXED 说「代码已改」，却一个文件都没改——这是自相矛盾。
+  // wave4-fix.md 的契约要求 fix 必须列出改动文件。
+  const r = runIn({
+    content: ftEnv([]),
+    files: FT_BASE_FILES,
+    args: ['--artifact-dir', '.'],
+  });
+  expect('退出码 1', r.code === 1, `got ${r.code}`);
+  expect('报 files_touched_empty', hasRule(r, 'files_touched_empty'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+}
+
+console.log('case 132: FIXED + files_touched 用占位符 <OUTDIR>/x.md → 跳过并 WARN');
+{
+  // 与 artifact_path 的 artifact_outdir_placeholder 同一处理：
+  // 静态校验无法展开 <OUTDIR>，所以不能判死，但必须让主 Agent 看见。
+  const r = runIn({
+    content: ftEnv([{ path: '<OUTDIR>/x.md', change_summary: '生成的文件' }]),
+    files: FT_BASE_FILES,
+    args: ['--artifact-dir', '.'],
+  });
+  expect('不报 files_touched_not_found', !hasRule(r, 'files_touched_not_found'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+  expect('报 files_touched_path_placeholder 警告', hasWarn(r, 'files_touched_path_placeholder'),
+    JSON.stringify(r.r?.warnings?.map((x) => x.rule)));
+  expect('整体无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
+}
+
+console.log('case 133: FIXED + 绝对路径且文件存在 → 通过（绝对路径不走任何根）');
+{
+  const absDir = mkdtempSync(join(tmpdir(), 'cp-ft-abs-'));
+  const absFile = join(absDir, 'Patched.java');
+  writeFileSync(absFile, 'class Patched {}\n');
+  try {
+    const r = runIn({
+      content: ftEnv([{ path: absFile, change_summary: '绝对路径的改动' }]),
+      files: FT_BASE_FILES,
+      args: ['--artifact-dir', '.'],
+    });
+    expect('无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
+  } finally {
+    rmSync(absDir, { recursive: true, force: true });
+  }
+}
+
+console.log('case 134: 绝对路径但文件不存在 → FAIL（绝对路径不需要根，可直接判定）');
+{
+  const ghost = join(tmpdir(), 'cp-ft-ghost', 'NoSuchFile.java');
+  const r = runIn({
+    content: ftEnv([{ path: ghost, change_summary: '指向不存在的绝对路径' }]),
+    files: FT_BASE_FILES,
+    args: ['--artifact-dir', '.'],
+  });
+  expect('报 files_touched_not_found', hasRule(r, 'files_touched_not_found'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+}
+
+console.log('case 135: 不给 --repo 也不给 --artifact-dir + 路径不存在 → WARN 而非 FAIL（降级纪律）');
+{
+  // 与 R11 的 case 123 同一纪律：需要外部目录的判据在缺参时不能把流程卡死。
+  // 复用 R11 已有的规则名 evidence_existence_unchecked，不新造。
+  const r = runIn({
+    content: ftEnv([{ path: 'src/nowhere.js', change_summary: '无法解析的路径' }]),
+    files: FT_BASE_FILES,   // 红测日志与测试文件落在 cwd，仍可判定为存在
+  });
+  expect('退出码 0', r.code === 0, `got ${r.code}`);
+  expect('不报 files_touched_not_found', !hasRule(r, 'files_touched_not_found'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+  expect('报 evidence_existence_unchecked 降级警告',
+    r.r?.warnings?.some((x) => x.rule === 'evidence_existence_unchecked'
+      && /files_touched/.test(x.msg)),
+    JSON.stringify(r.r?.warnings?.map((x) => x.rule)));
+}
+
+console.log('case 136: WONT_FIX + files_touched 为空数组 → 通过（不误伤）');
+{
+  // WONT_FIX 本来就不改文件，要求它列出改动文件是错的。
+  const r = runIn({
+    content: ftEnv([], {
+      disposition: 'WONT_FIX',
+      disposition_reason: '该分支是协议规定的 fail-closed 设计：拒写优于写坏，重试由上层调度器负责，不应在此处吞异常',
+      test_path: undefined,
+      red_log_path: undefined,
+    }),
+    files: FT_BASE_FILES,
+    args: ['--artifact-dir', '.'],
+  });
+  expect('不报 files_touched_empty', !hasRule(r, 'files_touched_empty'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+  expect('无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
+}
+
+console.log('case 137: DEFERRED + files_touched 为空数组 → 通过（不误伤）');
+{
+  const r = runIn({
+    content: ftEnv([], {
+      disposition: 'DEFERRED',
+      disposition_reason: '该修复需要先改造存储层的重试协议，本轮不具备前置条件',
+      next_round: 'round2 存储层重试协议落地后',
+      test_path: undefined,
+      red_log_path: undefined,
+    }),
+    files: FT_BASE_FILES,
+    args: ['--artifact-dir', '.'],
+  });
+  expect('不报 files_touched_empty', !hasRule(r, 'files_touched_empty'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+  expect('无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
+}
+
+console.log('case 138: 非 FIXED 的 disposition 不校验 files_touched 的路径存在性（不能过度执法）');
+{
+  const r = runIn({
+    content: ftEnv([{ path: 'src/never-touched.js', change_summary: '历史记录' }], {
+      disposition: 'WONT_FIX',
+      disposition_reason: '该分支是协议规定的 fail-closed 设计：拒写优于写坏，重试由上层调度器负责，不应在此处吞异常',
+      test_path: undefined,
+      red_log_path: undefined,
+    }),
+    files: FT_BASE_FILES,
+    args: ['--artifact-dir', '.'],
+  });
+  expect('不报 files_touched_not_found', !hasRule(r, 'files_touched_not_found'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+}
+
+console.log('case 139: --repo 优先于 --artifact-dir，但任一命中即通过（解析根顺序）');
+{
+  // 产物在 A 目录、被审仓库在 B 目录：files_touched 的 path 是相对**被审仓库**写的。
+  // 只按 artifact-dir 拼会误判为不存在，必须也能按 --repo 命中。
+  const r = runIn({
+    content: ftEnv([{ path: 'src/main/java/com/hilltopvillage/Mechanics.java', change_summary: '改了监听器' }]),
+    files: {
+      ...FT_BASE_FILES,
+      'repo/src/main/java/com/hilltopvillage/Mechanics.java': 'class Mechanics {}\n',
+    },
+    args: ['--artifact-dir', '.', '--repo', 'repo'],
+  });
+  expect('无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
+  expect('不报 evidence_existence_unchecked', !hasWarn(r, 'evidence_existence_unchecked'),
+    JSON.stringify(r.r?.warnings?.map((x) => x.rule)));
+}
+
+console.log('case 140: files_touched 的条目没有 path → FAIL（省略不能等于通过）');
+{
+  const r = runIn({
+    content: ftEnv([{ change_summary: '只写了摘要，没写路径' }]),
+    files: FT_BASE_FILES,
+    args: ['--artifact-dir', '.'],
+  });
+  expect('报 files_touched_path_missing', hasRule(r, 'files_touched_path_missing'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
 }
 
 console.log(`

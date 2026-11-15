@@ -183,6 +183,20 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role <你�
 > 另有一例：一条发现含 3 个子主张，任务书只覆盖 1 个，另外 2 个静默消失
 > （其中 1 个后来靠巧合才被捞回来）。**漏处置一条等于让它静默蒸发。**
 
+**`files_touched` 的每个 `path` 必须能被 `--repo` 解析到真实文件**
+（校验器规则 `files_touched_not_found`）：
+
+> `files_touched` 是「这个实例改了哪些文件」的**唯一凭证**。路径不存在意味着那个改动
+> 要么没发生、要么被回滚了、要么写错了。2026-11-15 那次实验里，修复后的源码曾经
+> 完全不在框架仓库内，而**没有任何工具发现这件事**——当时的 `grep files_touched`
+> 只命中一处注释和一处键名列表，判据从头到尾不存在。
+>
+> 解析顺序 `--artifact-dir` → `--repo` → cwd，**任一存在即通过**（绝对路径不走任何根）。
+> 两者都没给时降级为 `evidence_existence_unchecked` 的 WARN，不阻断——
+> 与 `red_log_path` / `test_path` 同一纪律。`disposition: FIXED` 时空数组报
+> `files_touched_empty`（说改了却一个没改是自相矛盾）；含 `<` `>` 的占位路径
+> 跳过并 WARN。**它只证明文件在，不证明文件是被这个实例改的。**
+
 **`red_log_path` 必须落在 `target/` 之外**（2026-11-15 真实教训）：
 
 > 诊断阶段的红测日志当时就放在 `target/` 下，被 `mvn clean` 整个删掉，

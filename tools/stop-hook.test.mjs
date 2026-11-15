@@ -24,12 +24,17 @@ const HOOK = join(HERE, 'stop-hook.mjs');
 // 里面的两个文件对应测试信封里的 test_path / red_log_path：
 //   red/red.log   修复前为红的日志
 //   test/t.mjs    测试文件
+//   src/main.js   files_touched[] 里声明的改动文件（R18 起会被 check-payload 校验存在性）
+//   src/A.java    同上，writeValidFixArtifact 的默认值
 const FIXTURE_REPO = (() => {
   const d = mkdtempSync(join(tmpdir(), 'repo-'));
   mkdirSync(join(d, 'red'), { recursive: true });
   mkdirSync(join(d, 'test'), { recursive: true });
+  mkdirSync(join(d, 'src'), { recursive: true });
   writeFileSync(join(d, 'red', 'red.log'), 'FAIL: 修复前测试为红\n');
   writeFileSync(join(d, 'test', 't.mjs'), '// 测试\n');
+  writeFileSync(join(d, 'src', 'main.js'), '// 合成 fixture：被「改过」的源文件\n');
+  writeFileSync(join(d, 'src', 'A.java'), 'class A {}\n');
   return d;
 })();
 
