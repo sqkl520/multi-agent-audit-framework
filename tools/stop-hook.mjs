@@ -248,52 +248,58 @@ if (state.phase === 'wave4') {
 //
 // 降级纪律：只有探测到 dsh 格式的 session 日志时才启用。其他 harness 一律跳过——
 // 一个只支持 dsh 的判据不该在别处把流程卡死（见 check-fix-instances-harness.mjs 文件头）。
+//
+// 这个 project 目录推断也被下面的 §3.6b（R21 的 files_touched ↔ write/edit 对账）复用，
+// 所以提到两段共用的位置；两段必须用**同一个** project 目录，否则两段会看不同的日志。
+const DSH_SESSIONS_ROOT = process.env.DSH_SESSIONS_ROOT ||
+  join(homedir(), '.dsh', 'sessions');
+
+// dsh 的目录名编码（实测，见 sessions root 下的真实目录名）：
+//   - 空格 → `~0020`
+//   - 路径分隔符（`\` `/`）与冒号 → `-`
+//   - **字母、数字、下划线 `_`、连字符 `-` 原样保留**
+//   - 整体包一层 `--`
+// 例如
+//   D:\Projects\AI prompt\many-agents_multi-prompt-files_token-heavy\multi-agent-audit-framework
+//   → --D-Projects-AI~0020prompt-many-agents_multi-prompt-files_token-heavy-multi-agent-audit-framework--
+//
+// 注意：下划线必须保留。早期版本把 `_` 也替换成 `-`，导致
+// `..._multi-prompt-files_token-heavy...` 编码成 `...-multi-prompt-files-token-heavy...`，
+// 与真实目录名永不匹配，集成静默失效。
+const dshEncode = (absPath) => '--' + absPath
+  .replace(/ /g, '~0020')
+  .replace(/[\\/:]+/g, '-')
+  .replace(/[^A-Za-z0-9_~-]+/g, '-') + '--';
+
+// 从 state.json 所在目录推断 dsh 的 project 目录名。
+//
+// 为什么必须推断而不是让用户传参：`check-fix-instances-harness.mjs` 在 sessions root 下
+// 有多个 project 时报 project_dir_ambiguous（exit 2）——它的立场是「不猜」。但如果集成层
+// 也照抄这个立场，这条对账就永远跑不起来（真实环境的 sessions root 下有 19 个 project），
+// 等于没接。所以推断的责任在调用方，也就是这里。
+const guessDshProjectDir = (stateDirAbs, sessionsRoot) => {
+  let entries;
+  try { entries = readdirSync(sessionsRoot, { withFileTypes: true }); }
+  catch { return null; }
+  const dirs = entries.filter((e) => e.isDirectory() && e.name.startsWith('--')).map((e) => e.name);
+  if (dirs.length === 1) return dirs[0];
+  // state.json 按约定在 <repo>/docs/reports/round{N}/ 下，向上找三级得到仓库根
+  const candidates = [
+    stateDirAbs,
+    dirname(stateDirAbs),
+    dirname(dirname(stateDirAbs)),
+    dirname(dirname(dirname(stateDirAbs))),
+  ].map(dshEncode);
+  for (const c of candidates) {
+    if (dirs.includes(c)) return c;
+  }
+  return null;
+};
+
 if (state.phase === 'wave4' || state.phase === 'wave5') {
-  const sessionsRoot = process.env.DSH_SESSIONS_ROOT ||
-    join(homedir(), '.dsh', 'sessions');
+  const sessionsRoot = DSH_SESSIONS_ROOT;
   if (existsSync(sessionsRoot)) {
-    // 从 state.json 所在目录推断 dsh 的 project 目录名。
-    //
-    // 为什么必须推断而不是让用户传参：`check-fix-instances-harness.mjs` 在 sessions root 下
-    // 有多个 project 时报 project_dir_ambiguous（exit 2）——它的立场是「不猜」。但如果集成层
-    // 也照抄这个立场，这条对账就永远跑不起来（真实环境的 sessions root 下有 19 个 project），
-    // 等于没接。所以推断的责任在调用方，也就是这里。
-    //
-    // dsh 的目录名编码（实测，见 sessions root 下的真实目录名）：
-    //   - 空格 → `~0020`
-    //   - 路径分隔符（`\` `/`）与冒号 → `-`
-    //   - **字母、数字、下划线 `_`、连字符 `-` 原样保留**
-    //   - 整体包一层 `--`
-    // 例如
-    //   D:\Projects\AI prompt\many-agents_multi-prompt-files_token-heavy\multi-agent-audit-framework
-    //   → --D-Projects-AI~0020prompt-many-agents_multi-prompt-files_token-heavy-multi-agent-audit-framework--
-    //
-    // 注意：下划线必须保留。早期版本把 `_` 也替换成 `-`，导致
-    // `..._multi-prompt-files_token-heavy...` 编码成 `...-multi-prompt-files-token-heavy...`，
-    // 与真实目录名永不匹配，集成静默失效。
-    const dshEncode = (absPath) => '--' + absPath
-      .replace(/ /g, '~0020')
-      .replace(/[\\/:]+/g, '-')
-      .replace(/[^A-Za-z0-9_~-]+/g, '-') + '--';
-    const guessProjectDir = (stateDirAbs) => {
-      let entries;
-      try { entries = readdirSync(sessionsRoot, { withFileTypes: true }); }
-      catch { return null; }
-      const dirs = entries.filter((e) => e.isDirectory() && e.name.startsWith('--')).map((e) => e.name);
-      if (dirs.length === 1) return dirs[0];
-      // state.json 按约定在 <repo>/docs/reports/round{N}/ 下，向上找三级得到仓库根
-      const candidates = [
-        stateDirAbs,
-        dirname(stateDirAbs),
-        dirname(dirname(stateDirAbs)),
-        dirname(dirname(dirname(stateDirAbs))),
-      ].map(dshEncode);
-      for (const c of candidates) {
-        if (dirs.includes(c)) return c;
-      }
-      return null;
-    };
-    const projectDir = guessProjectDir(dirname(resolve(statePath)));
+    const projectDir = guessDshProjectDir(dirname(resolve(statePath)), sessionsRoot);
     const extraArgs = projectDir ? ['--project-dir', projectDir] : [];
     let parsed = null;
     try {
@@ -323,6 +329,82 @@ if (state.phase === 'wave4' || state.phase === 'wave5') {
             `本 hook 只认 harness 的 session 日志，不认账本自述——` +
             `上面 3.5 那三条判据的数字全部来自 state.json，能被一致地写出来。`
           );
+        }
+      }
+    }
+  }
+}
+
+// 3.6b · wave4/wave5：files_touched ↔ harness 的 write/edit 记录对账（R21 新增）
+//
+// 为什么这是**新层次**而不是 3.6 的延长线（R20 §三点原文）：
+//   「下一个层次必须换观测面（harness 记录 tool call 与文件写入），而不是继续往
+//     state.json 加字段——每个新字段都是一个新省略点。」
+//
+// 3.6 用 harness 日志回答了「派发了几次」，但它看的是 `subagent` 工具调用。
+// 这段看的是另一类事件：**`write` / `edit` 的 file_path**。
+// 它回答的是 R19/R20 那条链上一直没答对的问题——「files_touched 里声称的文件，
+// 真的被改过吗」。R19 拿 `git status` 当基准（相对 HEAD 的**状态**），
+// 于是「修复前就是脏的」既能造出假阴性也能造假阳性，R20 只能靠一个同样自述的
+// `fix_baseline` 把误差缩小一点。write/edit 记录是**动作**，与仓库脏不脏无关。
+//
+// 同时也回答了 R19 §(b) 的归属问题：`files_touched` 没有 agent_id 维度，
+// 全局对账时「A 少登记的被 B 登记过」会互相抵消。dsh 的子 session 有 parentSession，
+// 所以当 fix_agent_id 就是子 session id 时，可以逐实例对账。
+//
+// ── 为什么这条必须真的挡住闭合 ──
+// R12/R13 反复批评过「接上了但没接在门上」：检查跑通了、输出也有，就是不改 exit code。
+// 那等于给了一道看得见摸不着的闸门，比没有更糟——它让人以为有人在管。
+// 所以这里 FAIL → `problems.push` → exit 2，与 §3 的其他判据同等地位。
+//
+// ── 降级纪律 ──
+// sessions root 不存在 / 探测不到 dsh 日志 / 推断不出 project 目录 → **跳过**，
+// 不 push 任何东西（该工具自己会在被调用时给出 WARN，这里不重复开火）。
+// 与 §3.6 同一条纪律：只支持 dsh 的判据不该在别处把流程卡死。
+if (state.phase === 'wave4' || state.phase === 'wave5') {
+  const sessionsRoot = DSH_SESSIONS_ROOT;
+  if (existsSync(sessionsRoot)) {
+    const projectDir = guessDshProjectDir(dirname(resolve(statePath)), sessionsRoot);
+    if (projectDir) {
+      let parsed = null;
+      try {
+        const out = execFileSync(process.execPath, [
+          join(HERE, 'check-files-touched-harness.mjs'),
+          '--state', statePath,
+          '--sessions', sessionsRoot,
+          '--project-dir', projectDir,
+          '--json',
+        ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 });
+        parsed = JSON.parse(out);
+      } catch (e) {
+        try { parsed = JSON.parse(String(e.stdout ?? '')); } catch { /* 不是 JSON */ }
+        // exit 2 = 配置错误（state 坏了 / session 指错）。那是账本或环境问题，
+        // 由别的段去报；这里不重复开火，但也不能静默 —— 只有在完全拿不到输出时才说一句。
+        if (!parsed && e.status !== 2 && e.status !== 1) {
+          problems.push(
+            `files_touched × write/edit 对账没能执行：${String(e.message ?? e).slice(0, 200)}。\n`
+            + `如果这是环境问题（node 版本 / 权限），说明原因后继续；否则先修工具。`
+          );
+        }
+      }
+      if (parsed) {
+        for (const f of (parsed.problems ?? [])) {
+          if (f.level === 'FAIL') {
+            const tail = f.rule === 'files_touched_overclaimed_by_harness'
+              ? `\n本 hook 的判据是 harness 的 write/edit 调用记录，不是 \`git status\`。`
+                + `R19 那条（§3.7.6.4）看的是「相对 HEAD 有没有差异」，一个文件在修复前就脏、`
+                + `本轮一个字没碰也能蒙混过去；这里看的是「有没有人真的写过它」。`
+              : f.rule === 'files_touched_underreported_by_harness'
+                ? `\n这是外部基准判的 under-reporting，不是 \`git status\` 差值猜的：`
+                  + `分母是「这个 session 真的写了什么」，与仓库脏不脏无关。`
+                : f.rule === 'agent_attribution_mismatch'
+                  ? `\n这是 R19 §(b) 点名的归属问题：全局对账时 A 的漏登记会被 B 的登记抵消，`
+                    + `逐实例对账之后不会。`
+                  : '';
+            problems.push(
+              `files_touched 与 harness 的写操作记录对不上（${f.rule}）：${f.message}${tail}`
+            );
+          }
         }
       }
     }

@@ -313,19 +313,28 @@ console.log('case 17: phase=wave5 有契约没有裁决 → 拒绝结束（exit 
 import { zstdCompressSync } from 'node:zlib';
 // mkdirSync 已在文件顶部 import（R17 起顶部就需要它来造 FIXTURE_REPO）
 
-function makeFakeDshSession(root, projectDir, sessionId, { subagentCalls, toolCalls = 10, steps = 5 }) {
+function makeFakeDshSession(root, projectDir, sessionId, { subagentCalls, toolCalls = 10, steps = 5, writes = [] }) {
   const dir = join(root, projectDir, sessionId);
   mkdirSync(dir, { recursive: true });
   const events = [
     { type: 'session', version: 4, id: sessionId, cwd: 'D:\\fake', delegationDepth: 0 },
     { type: 'turn/start', data: { turn: 1 } },
-    { type: 'request/header', data: { header: { tools: [{ name: 'subagent' }, { name: 'read' }] } } },
+    { type: 'request/header', data: { header: { tools: [{ name: 'subagent' }, { name: 'read' }, { name: 'write' }, { name: 'edit' }] } } },
   ];
   for (let i = 0; i < toolCalls; i++) {
     events.push({ type: 'tool/call', data: { turn: 1, step: i + 1, name: 'read', arguments: '{}' } });
   }
   for (let i = 0; i < subagentCalls; i++) {
     events.push({ type: 'tool/call', data: { turn: 1, step: steps, name: 'subagent', arguments: '{}' } });
+  }
+  // 2026-11-17（R21）：§3.6b 会把 session 里的 write/edit 记录与 files_touched 对账。
+  // 想让一个用例**只**测 §3.6，就必须让它的写记录与产物信封里声称的文件对得上，
+  // 否则一条与本节无关的 overclaim FAIL 会混进断言里。
+  for (const w of writes) {
+    events.push({
+      type: 'tool/call',
+      data: { turn: 1, step: 1, name: 'write', arguments: JSON.stringify({ file_path: w, content: '// x\n' }) },
+    });
   }
   for (let i = 0; i < steps; i++) events.push({ type: 'step/end', data: { turn: 1, step: i + 1 } });
   const z = zstdCompressSync(Buffer.from(events.map((e) => JSON.stringify(e)).join('\n') + '\n'));
@@ -359,7 +368,12 @@ console.log('case 18: 洞 1 重演 —— 3 个假 fix_agent_id 但 harness 记�
     writeValidFixArtifact(ARTIFACT_DIR);
     const projectDir = '--' + repo.replace(/ /g, '~0020').replace(/[\\/:]+/g, '-')
       .replace(/[^A-Za-z0-9_~-]+/g, '-') + '--';
-    makeFakeDshSession(root, projectDir, 'session-fake-0001', { subagentCalls: 0 });
+    makeFakeDshSession(root, projectDir, 'session-fake-0001', {
+      subagentCalls: 0,
+      // R21：§3.6b 也会看这个 session 的 write 记录。本 case 测的是 §3.6（0 次派发），
+      // 所以让写记录与 writeValidFixArtifact 声称的 src/A.java 对得上，不引入第二条 FAIL。
+      writes: [join(FIXTURE_REPO, 'src', 'A.java')],
+    });
     const st = {
       phase: 'wave4', status: 'RUNNING', in_flight: [],
       path_mode: 'FIX',
@@ -407,7 +421,11 @@ console.log('case 19: 真派了 3 次 subagent + 3 个 id + spawned=3 → 放行
     writeValidFixArtifact(ARTIFACT_DIR);
     const projectDir = '--' + repo.replace(/ /g, '~0020').replace(/[\\/:]+/g, '-')
       .replace(/[^A-Za-z0-9_~-]+/g, '-') + '--';
-    makeFakeDshSession(root, projectDir, 'session-good-0002', { subagentCalls: 3 });
+    makeFakeDshSession(root, projectDir, 'session-good-0002', {
+      subagentCalls: 3,
+      // R21：同 case 18，让 §3.6b 的写记录与产物声称的文件一致。
+      writes: [join(FIXTURE_REPO, 'src', 'A.java')],
+    });
     const st = {
       phase: 'wave4', status: 'RUNNING', in_flight: [], path_mode: 'FIX',
       fix_contracts: [
@@ -1205,6 +1223,131 @@ console.log('case 48 (R20-F): 基线之后 HEAD 变了（中途 commit）→ WAR
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(d, { recursive: true, force: true });
+  }
+}
+
+// ── 3.6b · files_touched ↔ harness write/edit 记录（R21 集成）──────────────
+// 这一段存在的理由（R20 §三点原文）：
+//   「下一个层次必须换观测面（harness 记录 tool call 与文件写入），
+//     而不是继续往 state.json 加字段——每个新字段都是一个新省略点。」
+//
+// §3.6 用 harness 日志回答「派发了几次」，看的是 subagent 调用；
+// §3.7.6（R19/R20）用 `git status` 回答「文件改了没有」，那是**状态**，
+// 修复前就脏的文件能两个方向都蒙混。§3.6b 看的是 write/edit 的 file_path——**动作**。
+//
+// 与 R12/R13 反复批评的「接上了但没接在门上」直接对应：这里必须 **exit 2**，
+// 不能只 WARN。否则就是把检查跑通、输出写好，然后不改变任何结果。
+
+/** 造一个 dsh root，project 目录按 stop-hook 的编码规则从 repo 路径推出。 */
+function dshRootFor(repo, sessionId, opts) {
+  const root = mkdtempSync(join(tmpdir(), 'sess-r21-'));
+  const projectDir = '--' + repo.replace(/ /g, '~0020').replace(/[\\/:]+/g, '-')
+    .replace(/[^A-Za-z0-9_~-]+/g, '-') + '--';
+  makeFakeDshSession(root, projectDir, sessionId, opts);
+  return root;
+}
+
+console.log('case 49 (R21-A): files_touched 声称的文件 harness 从没写过 → 拒绝闭合（exit 2）');
+{
+  // 这是 R19 的 overclaimed 抓不到的形状：文件在仓库里**存在**（R18 的存在性检查绿），
+  // `git status` 里它也**可能已经脏**（R19/R20 会说「改过」），
+  // 但 harness 的 write/edit 记录里根本没有它。
+  const repo = mkdtempSync(join(tmpdir(), 'r21-repo-'));
+  mkdirSync(join(repo, 'src'), { recursive: true });
+  writeFileSync(join(repo, 'src', 'A.java'), 'class A {}\n');
+  let root = null;
+  try {
+    root = dshRootFor(repo, 'session-r21-a', {
+      subagentCalls: 1,
+      // 只写了 B.java，而产物声称改的是 A.java
+      writes: [join(repo, 'src', 'B.java')],
+    });
+    const d = makeArtifactDir({ 'done-1.md': '# 修复\n\n```json\n' + JSON.stringify({
+      schema_version: 'output-contract-v1', agent_id: 'fx1', role: 'fix', status: 'SUCCESS',
+      contract_valid: true, artifact_path: 'done-1.md',
+      payload: {
+        finding_id: 'F1', disposition: 'FIXED',
+        test_path: join(repo, 'src', 'A.java'), red_log_path: join(repo, 'src', 'A.java'),
+        files_touched: [{ path: 'src/A.java', change_summary: '改了 A' }],
+      },
+      error: null,
+    }, null, 2) + '\n```\n' });
+    const r = runHookWithSessions(closedWave4(d, { target_repo: repo, budget: { spawned_fix_agents: 1 } }), root);
+    expect('退出码 2（必须真的挡住闭合）', r.code === 2, `实际 ${r.code}：${r.err.slice(0, 600)}`);
+    expect('报 files_touched_overclaimed_by_harness',
+      /files_touched_overclaimed_by_harness/.test(r.err), r.err.slice(0, 800));
+    expect('说明判据是 write/edit 记录而不是 git status',
+      /write\/edit|git status/.test(r.err), r.err.slice(0, 1200));
+    rmSync(d, { recursive: true, force: true });
+  } finally {
+    if (root) rmSync(root, { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true });
+  }
+}
+
+console.log('case 50 (R21-B): harness 写了源码但没登记 → 拒绝闭合（exit 2）');
+{
+  const repo = mkdtempSync(join(tmpdir(), 'r21-repo-'));
+  mkdirSync(join(repo, 'src'), { recursive: true });
+  writeFileSync(join(repo, 'src', 'A.java'), 'class A {}\n');
+  let root = null;
+  try {
+    root = dshRootFor(repo, 'session-r21-b', {
+      subagentCalls: 1,
+      writes: [join(repo, 'src', 'A.java'), join(repo, 'src', 'Sneaky.java')],
+    });
+    const d = makeArtifactDir({ 'done-1.md': '# 修复\n\n```json\n' + JSON.stringify({
+      schema_version: 'output-contract-v1', agent_id: 'fx1', role: 'fix', status: 'SUCCESS',
+      contract_valid: true, artifact_path: 'done-1.md',
+      payload: {
+        finding_id: 'F1', disposition: 'FIXED',
+        test_path: join(repo, 'src', 'A.java'), red_log_path: join(repo, 'src', 'A.java'),
+        files_touched: [{ path: 'src/A.java', change_summary: '改了 A' }],
+      },
+      error: null,
+    }, null, 2) + '\n```\n' });
+    const r = runHookWithSessions(closedWave4(d, { target_repo: repo, budget: { spawned_fix_agents: 1 } }), root);
+    expect('退出码 2', r.code === 2, `实际 ${r.code}：${r.err.slice(0, 600)}`);
+    expect('报 files_touched_underreported_by_harness',
+      /files_touched_underreported_by_harness/.test(r.err), r.err.slice(0, 800));
+    expect('点名 Sneaky.java', /Sneaky\.java/.test(r.err), r.err.slice(0, 1200));
+    rmSync(d, { recursive: true, force: true });
+  } finally {
+    if (root) rmSync(root, { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true });
+  }
+}
+
+console.log('case 51 (R21-C): 声称 == 实际 → 放行（这条闸门不能误拦正常回合）');
+{
+  const repo = mkdtempSync(join(tmpdir(), 'r21-repo-'));
+  mkdirSync(join(repo, 'src'), { recursive: true });
+  writeFileSync(join(repo, 'src', 'A.java'), 'class A {}\n');
+  let root = null;
+  try {
+    root = dshRootFor(repo, 'session-r21-c', {
+      subagentCalls: 1,
+      writes: [join(repo, 'src', 'A.java')],
+    });
+    const d = makeArtifactDir({ 'done-1.md': '# 修复\n\n```json\n' + JSON.stringify({
+      schema_version: 'output-contract-v1', agent_id: 'fx1', role: 'fix', status: 'SUCCESS',
+      contract_valid: true, artifact_path: 'done-1.md',
+      payload: {
+        finding_id: 'F1', disposition: 'FIXED',
+        test_path: join(repo, 'src', 'A.java'), red_log_path: join(repo, 'src', 'A.java'),
+        files_touched: [{ path: 'src/A.java', change_summary: '改了 A' }],
+      },
+      error: null,
+    }, null, 2) + '\n```\n' });
+    const r = runHookWithSessions(closedWave4(d, { target_repo: repo, budget: { spawned_fix_agents: 1 } }), root);
+    expect('退出码 0', r.code === 0, `实际 ${r.code}：${r.err.slice(0, 800)}`);
+    expect('不退化成 overclaimed / underreported',
+      !/files_touched_overclaimed_by_harness|files_touched_underreported_by_harness/.test(r.err),
+      r.err.slice(0, 800));
+    rmSync(d, { recursive: true, force: true });
+  } finally {
+    if (root) rmSync(root, { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true });
   }
 }
 
