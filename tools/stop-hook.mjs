@@ -32,7 +32,13 @@
  * 本脚本自身也检查 stop_hook_active，避免在永远不成立的条件上死循环。
  */
 
-import { readFileSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { join, dirname, resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 const args = process.argv.slice(2);
 const stateIdx = args.indexOf('--state');
@@ -223,6 +229,103 @@ if (state.phase === 'wave4') {
       `修复相位没有 Skeptic 执法（Skeptic 只在 wave3），所以这条只能由本 hook 拦。\n` +
       `请按缺陷逐条派发独立实例，并把实际派发数写进 budget.spawned_fix_agents（实际计数，不得估算）。`
     );
+  }
+}
+
+// 3.6 · wave4/wave5：账本声称的实例数必须与 harness 日志对得上
+// 2026-11-15（R8）新增。上面 3.5 的判据只比较三个**都来自 state.json** 的数字：
+// distinct(finding_id)、distinct(fix_agent_id)、spawned_fix_agents。
+// 它们全是主 Agent 的自述，两个自述互相一致不产生外部约束力。
+//
+// R7 实测过完整绕过（`FIX-R7-report.md` §4 洞 1）：
+//   8 条发现登记成 8 个不同的假 fix_agent_id，spawned=8，实际 1 个 session 做完
+//   → stop-hook exit 0、check-fix-instances exit 0、missing 0、零规则触发
+//
+// 这里引入一个主 Agent 不能随手写的外部基准：harness 自己落的 session 日志里
+// 真实发起过几次 `subagent` 调用。伪造它的成本从「改账本」跳到
+// 「篡改 harness 运行时数据」（zstd 日志里还有 tool/result、job/registered、
+// seq 连续性，单改一处会对不上）。
+//
+// 降级纪律：只有探测到 dsh 格式的 session 日志时才启用。其他 harness 一律跳过——
+// 一个只支持 dsh 的判据不该在别处把流程卡死（见 check-fix-instances-harness.mjs 文件头）。
+if (state.phase === 'wave4' || state.phase === 'wave5') {
+  const sessionsRoot = process.env.DSH_SESSIONS_ROOT ||
+    join(homedir(), '.dsh', 'sessions');
+  if (existsSync(sessionsRoot)) {
+    // 从 state.json 所在目录推断 dsh 的 project 目录名。
+    //
+    // 为什么必须推断而不是让用户传参：`check-fix-instances-harness.mjs` 在 sessions root 下
+    // 有多个 project 时报 project_dir_ambiguous（exit 2）——它的立场是「不猜」。但如果集成层
+    // 也照抄这个立场，这条对账就永远跑不起来（真实环境的 sessions root 下有 19 个 project），
+    // 等于没接。所以推断的责任在调用方，也就是这里。
+    //
+    // dsh 的目录名编码（实测，见 sessions root 下的真实目录名）：
+    //   - 空格 → `~0020`
+    //   - 路径分隔符（`\` `/`）与冒号 → `-`
+    //   - **字母、数字、下划线 `_`、连字符 `-` 原样保留**
+    //   - 整体包一层 `--`
+    // 例如
+    //   D:\Projects\AI prompt\many-agents_multi-prompt-files_token-heavy\multi-agent-audit-framework
+    //   → --D-Projects-AI~0020prompt-many-agents_multi-prompt-files_token-heavy-multi-agent-audit-framework--
+    //
+    // 注意：下划线必须保留。早期版本把 `_` 也替换成 `-`，导致
+    // `..._multi-prompt-files_token-heavy...` 编码成 `...-multi-prompt-files-token-heavy...`，
+    // 与真实目录名永不匹配，集成静默失效。
+    const dshEncode = (absPath) => '--' + absPath
+      .replace(/ /g, '~0020')
+      .replace(/[\\/:]+/g, '-')
+      .replace(/[^A-Za-z0-9_~-]+/g, '-') + '--';
+    const guessProjectDir = (stateDirAbs) => {
+      let entries;
+      try { entries = readdirSync(sessionsRoot, { withFileTypes: true }); }
+      catch { return null; }
+      const dirs = entries.filter((e) => e.isDirectory() && e.name.startsWith('--')).map((e) => e.name);
+      if (dirs.length === 1) return dirs[0];
+      // state.json 按约定在 <repo>/docs/reports/round{N}/ 下，向上找三级得到仓库根
+      const candidates = [
+        stateDirAbs,
+        dirname(stateDirAbs),
+        dirname(dirname(stateDirAbs)),
+        dirname(dirname(dirname(stateDirAbs))),
+      ].map(dshEncode);
+      for (const c of candidates) {
+        if (dirs.includes(c)) return c;
+      }
+      return null;
+    };
+    const projectDir = guessProjectDir(dirname(resolve(statePath)));
+    const extraArgs = projectDir ? ['--project-dir', projectDir] : [];
+    let parsed = null;
+    try {
+      const out = execFileSync(process.execPath, [
+        join(HERE, 'check-fix-instances-harness.mjs'),
+        '--state', statePath,
+        '--sessions', sessionsRoot,
+        ...extraArgs,
+        '--json',
+      ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      parsed = JSON.parse(out);
+    } catch (e) {
+      try { parsed = JSON.parse(String(e.stdout ?? '')); } catch { /* 不是 JSON */ }
+      // exit 2 是配置错误（推断失败 / 没有本项目日志），这属于环境问题，不拦人
+      if (!parsed && e.status !== 2) {
+        problems.push(
+          `harness 日志对账没能执行：${String(e.message ?? e).slice(0, 200)}。` +
+          `如果这是环境问题，说明原因后继续；否则先修工具。`
+        );
+      }
+    }
+    if (parsed) {
+      for (const f of (parsed.problems ?? [])) {
+        if (f.level === 'FAIL') {
+          problems.push(
+            `账本声称与实际派发对不上（${f.rule}）：${f.message}\n` +
+            `本 hook 只认 harness 的 session 日志，不认账本自述——` +
+            `上面 3.5 那三条判据的数字全部来自 state.json，能被一致地写出来。`
+          );
+        }
+      }
+    }
   }
 }
 

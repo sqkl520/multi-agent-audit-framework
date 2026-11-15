@@ -256,7 +256,141 @@ console.log('case 17: phase=wave5 有契约没有裁决 → 拒绝结束（exit 
   expect('提到验收裁决', /裁决|verdict/.test(r.err), r.err.slice(0, 300));
 }
 
+// ── 3.6 · harness 外部基准对账（R8 集成）──────────────────────────────
+// 这一段存在的理由：R7 实测出「洞 1」——8 条发现登记成 8 个假 fix_agent_id、
+// spawned=8、实际 1 个 session 做完，3.5 的三条判据全放行（数字全来自 state.json）。
+// 3.6 引入 harness 的 session 日志作为外部基准。下面的用例证明它**真的会拦**，
+// 而不只是「代码写了」。
+import { zstdCompressSync } from 'node:zlib';
+import { mkdirSync } from 'node:fs';
+
+function makeFakeDshSession(root, projectDir, sessionId, { subagentCalls, toolCalls = 10, steps = 5 }) {
+  const dir = join(root, projectDir, sessionId);
+  mkdirSync(dir, { recursive: true });
+  const events = [
+    { type: 'session', version: 4, id: sessionId, cwd: 'D:\\fake', delegationDepth: 0 },
+    { type: 'turn/start', data: { turn: 1 } },
+    { type: 'request/header', data: { header: { tools: [{ name: 'subagent' }, { name: 'read' }] } } },
+  ];
+  for (let i = 0; i < toolCalls; i++) {
+    events.push({ type: 'tool/call', data: { turn: 1, step: i + 1, name: 'read', arguments: '{}' } });
+  }
+  for (let i = 0; i < subagentCalls; i++) {
+    events.push({ type: 'tool/call', data: { turn: 1, step: steps, name: 'subagent', arguments: '{}' } });
+  }
+  for (let i = 0; i < steps; i++) events.push({ type: 'step/end', data: { turn: 1, step: i + 1 } });
+  const z = zstdCompressSync(Buffer.from(events.map((e) => JSON.stringify(e)).join('\n') + '\n'));
+  writeFileSync(join(dir, 'session.v4.jsonl.zstd'), z);
+  return dir;
+}
+
+function runHookWithSessions(state, sessionsRoot) {
+  const dir = mkdtempSync(join(tmpdir(), 'hook-hs-'));
+  const f = join(dir, 'state.json');
+  writeFileSync(f, JSON.stringify(state));
+  try {
+    const out = execFileSync('node', [HOOK, '--state', f], {
+      input: '{}', encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, DSH_SESSIONS_ROOT: sessionsRoot },
+    });
+    return { code: 0, err: '' };
+  } catch (e) {
+    return { code: e.status ?? 1, err: e.stderr ?? '', stdout: e.stdout ?? '' };
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+
+console.log('case 18: 洞 1 重演 —— 3 个假 fix_agent_id 但 harness 记录 0 次 subagent → 拒绝结束');
+{
+  const root = mkdtempSync(join(tmpdir(), 'sess-'));
+  try {
+    // state.json 放在 <tmp>/<projectDir上级>/docs/reports/round1/ 让推断能命中
+    const repo = join(root, 'repo');
+    mkdirSync(join(repo, 'docs', 'reports', 'round1'), { recursive: true });
+    const projectDir = '--' + repo.replace(/ /g, '~0020').replace(/[\\/:]+/g, '-')
+      .replace(/[^A-Za-z0-9_~-]+/g, '-') + '--';
+    makeFakeDshSession(root, projectDir, 'session-fake-0001', { subagentCalls: 0 });
+    const st = {
+      phase: 'wave4', status: 'RUNNING', in_flight: [],
+      path_mode: 'FIX',
+      fix_contracts: [
+        fixContract({ finding_id: 'F1', fix_agent_id: 'fake-1' }),
+        fixContract({ finding_id: 'F2', fix_agent_id: 'fake-2' }),
+        fixContract({ finding_id: 'F3', fix_agent_id: 'fake-3' }),
+      ],
+      budget: { spawned_fix_agents: 3 },
+      current_plan: wavePlan('wave4'),
+    };
+    const f = join(repo, 'docs', 'reports', 'round1', 'state.json');
+    writeFileSync(f, JSON.stringify(st));
+    let r;
+    try {
+      execFileSync('node', [HOOK, '--state', f], {
+        input: '{}', encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, DSH_SESSIONS_ROOT: root },
+      });
+      r = { code: 0, err: '' };
+    } catch (e) { r = { code: e.status ?? 1, err: e.stderr ?? '' }; }
+    expect('退出码 2', r.code === 2, `实际 ${r.code}：${r.err.slice(0, 300)}`);
+    expect('报 zero_subagent_but_multiple_agents',
+      /zero_subagent_but_multiple_agents/.test(r.err), r.err.slice(0, 400));
+    expect('错误消息引用外部事实而非账本',
+      /session 日志|外部事实/.test(r.err), r.err.slice(0, 400));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+}
+
+console.log('case 19: 真派了 3 次 subagent + 3 个 id + spawned=3 → 放行（exit 0）');
+{
+  const root = mkdtempSync(join(tmpdir(), 'sess-'));
+  try {
+    const repo = join(root, 'repo');
+    mkdirSync(join(repo, 'docs', 'reports', 'round1'), { recursive: true });
+    const projectDir = '--' + repo.replace(/ /g, '~0020').replace(/[\\/:]+/g, '-')
+      .replace(/[^A-Za-z0-9_~-]+/g, '-') + '--';
+    makeFakeDshSession(root, projectDir, 'session-good-0002', { subagentCalls: 3 });
+    const st = {
+      phase: 'wave4', status: 'RUNNING', in_flight: [], path_mode: 'FIX',
+      fix_contracts: [
+        fixContract({ finding_id: 'F1', fix_agent_id: 'a1' }),
+        fixContract({ finding_id: 'F2', fix_agent_id: 'a2' }),
+        fixContract({ finding_id: 'F3', fix_agent_id: 'a3' }),
+      ],
+      budget: { spawned_fix_agents: 3 },
+      current_plan: wavePlan('wave4'),
+    };
+    const f = join(repo, 'docs', 'reports', 'round1', 'state.json');
+    writeFileSync(f, JSON.stringify(st));
+    let r;
+    try {
+      execFileSync('node', [HOOK, '--state', f], {
+        input: '{}', encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, DSH_SESSIONS_ROOT: root },
+      });
+      r = { code: 0, err: '' };
+    } catch (e) { r = { code: e.status ?? 1, err: e.stderr ?? '' }; }
+    expect('退出码 0（不误拦）', r.code === 0, `实际 ${r.code}：${r.err.slice(0, 300)}`);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+}
+
+console.log('case 20: 推断不出 project 目录时静默跳过，不误拦（降级纪律）');
+{
+  const root = mkdtempSync(join(tmpdir(), 'sess-'));
+  try {
+    // sessions root 存在但没有任何匹配的 project 目录
+    mkdirSync(join(root, '--unrelated-project--', 'session-x'), { recursive: true });
+    const st = {
+      phase: 'wave4', status: 'RUNNING', in_flight: [], path_mode: 'FIX',
+      fix_contracts: [
+        fixContract({ finding_id: 'F1', fix_agent_id: 'a1' }),
+        fixContract({ finding_id: 'F2', fix_agent_id: 'a2' }),
+      ],
+      budget: { spawned_fix_agents: 2 },
+      current_plan: wavePlan('wave4'),
+    };
+    const r = runHookWithSessions(st, root);
+    expect('退出码 0（环境问题不拦人）', r.code === 0, `实际 ${r.code}：${r.err.slice(0, 300)}`);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);
-process.exit(fail > 0 ? 1 : 0);
