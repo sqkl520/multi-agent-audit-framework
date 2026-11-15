@@ -144,6 +144,10 @@ source: 续写（2026-11-01）。解决 round31「跑不完、断了接不上、
     "is_complete": false
   },
 
+  "legacy_artifacts": [
+    "done-1.md — 可选字段。列被豁免的无信封历史产物（只写文件名）。见第 2.6 节"
+  ],
+
   "fix_contracts": [
     {
       "finding_id": "string",
@@ -250,6 +254,83 @@ source: 续写（2026-11-01）。解决 round31「跑不完、断了接不上、
 2. `stop-hook.mjs` 的 `wave4`/`wave5` 分支只在 `state.phase` 字面等于这两个值时进入，审计路径永远不会落到它们上面。
 
 **唯一的跨界改动是相位白名单本身**（`['wave2a','wave2b','wave3']` → 加上 `wave4`/`wave5`）。它是**加**不是**改**：`wave2a/wave2b/wave3` 的行为逐字不变，回归用例 `stop-hook.test.mjs` case 11 专门锁这一点。
+
+---
+
+## 第 2.6 节：产物信封检查与 `legacy_artifacts` 豁免（2026-11-15 / R13 新增）
+
+### 2.6.1 为什么需要这一节
+
+R12《`experiments/hilltop-dsh/FIX-R12-report.md`》§八·洞 B 逐字写下了一个「本轮之后仍然完全可行」的失败场景：
+
+> 修复 Agent 写完 6 份 `done-*.md`，全都没有信封，`check-payload` 一次没跑。
+> 主 Agent 不看模板第 7 节，直接收下返回（信封里 `payload` 为空也能过 `status` 检查——因为**根本没有信封可检查**）。
+> `stop-hook` 放行（`fix_contracts` 非空即可）。本轮仍然可以闭合。
+
+根因是 `stop-hook.mjs` 的 wave4 分支只检查**账本里写了什么**（`fix_contracts` 非空、实例数对得上），
+从不检查**产物本身**。而没有信封 = `check-payload` 除 `no_envelope` 外一条规则都不跑 = 产物未被观测 = 未交付。
+
+`stop-hook.mjs` §3.7 现在会在 `phase ∈ {wave4, wave5}` 且 `path_mode == 'FIX'` 时，
+调用 `check-fix-artifacts-envelope.mjs --dir <产物目录>`，把它的 FAIL 提升为拒绝闭合的理由。
+
+### 2.6.2 产物目录从哪里来（不新增必填字段）
+
+**用已有的 `report.dir_path`**，不新增字段。理由：
+
+- `report.dir_path` 在本文档第 2 节已经定义为「本轮产物目录的绝对路径」，且 `report.dir_ready` 是派发前的硬闸——
+  每个合规的轮次在派发任何子 Agent 之前就已经有它了；
+- 新增一个必填的顶层字段会让**所有存量 `state.json` 一夜之间变不合规**
+  （`check-state.mjs` 的 `TOP_REQUIRED` 有 7 项，加一项就是一次全量迁移）。
+
+推断顺序（失败即降级）：
+
+| 序 | 来源 | 说明 |
+|---|---|---|
+| 1 | `report.dir_path` | 首选，约定字段 |
+| 2 | `dirname(report.final_report_path)` | 兜底。`report-naming.md` §4：一轮一个目录、所有产物平铺 |
+| 3 | `dirname(fix_contracts[].test_path)` | 最后兜底；测试文件常在仓库里而非产物目录，容易推错 |
+| — | 三条都推不出 | **WARN，不 FAIL**（降级纪律，与 R8/R10/R11 同一条） |
+
+> **降级纪律的理由**：一个「需要外部信息」的判据缺输入时不能把整条流程卡死，
+> 否则所有既有项目一夜之间全红——那会让框架被绕过，而不是被遵守。
+> 但降级**必须留痕**：`stop-hook` 在 exit 0 时仍会往 stderr 写「本次没有执行产物信封检查」。
+
+### 2.6.3 `legacy_artifacts`：可声明豁免
+
+**字段定义**：`legacy_artifacts: string[]`，可选，**不是必填**。列出被豁免的无信封历史产物（只写文件名，`basename` 会被取）。
+
+**为什么要有它**：硬 FAIL 一个历史产物目录会让所有老项目无法闭合。
+`experiments/hilltop-dsh/repair/` 的 6 份产物就是这种情况——它们是 2026-11-15 那次派发的唯一自证数据
+（修复后的源码树已不在仓库里），补信封注定 FAIL（红测日志已被 `mvn clean` 删除）。
+决策与逐份分析见 `experiments/hilltop-dsh/LEGACY-ARTIFACTS.md`。
+
+**三条约束（缺一条这个字段就变成关掉检查的开关）**：
+
+| 约束 | 行为 | 理由 |
+|---|---|---|
+| 只能逐个列文件名 | 数组，不是布尔 | `true` 一旦存在就会成为默认路径 |
+| **不能全量豁免** | 豁免条目数 ≥ 产物目录下**文件总数** → **FAIL**（`stop-hook` exit 2） | 分母取文件总数而非产物数，因为 `report-naming.md` §4 规定产物与流程文档平铺共存；6 份产物 / 15 个文件才是「少数例外」的正确刻画 |
+| 每条豁免都留痕 | 逐条 WARN：「契约体系之外 / 证据不可机械复核 / 不是通过了检查，是没被检查」 | 「降级」与「什么都没发生」必须在日志上可区分 |
+| 悬空条目 WARN | 列了但目录里没有 → WARN，不阻断 | 一条永远匹配不上的豁免会在同名文件将来出现时静默生效 |
+
+**另一条退化形态**：产物 100% 被豁免但目录里有文档稀释了计数 → 不阻断，但报一条
+「本轮**没有任何**修复产物经过信封检查」。这是「整批承认不可复核」，不是「这批产物合规」。
+
+### 2.6.4 与 `check-fix-artifacts-envelope.mjs` 的分工
+
+**豁免是账本层的概念，不是检查器层的。** `check-fix-artifacts-envelope.mjs` 仍然故意**没有** `--ignore` 开关
+（见其文件头「降级纪律：无」）。所以：
+
+- `node tools/check-fix-artifacts-envelope.mjs --dir experiments/hilltop-dsh/repair` → 仍然报 6 条 FAIL；
+- `node tools/stop-hook.mjs --state <带 legacy_artifacts 的 state.json>` → exit 0 + 7 条 WARN。
+
+两者不一致是**刻意的**：检查器回答「这批能不能被观测」，账本回答「这一轮允许哪几份不可观测」。
+
+### 2.6.5 与审计路径的关系
+
+与 §2.5.4 同一条纪律：该检查只在 `phase ∈ {wave4, wave5}` **且** `path_mode == 'FIX'` 时启用。
+`AUDIT_ONLY` 路径的相位序列里没有 `wave4/wave5`，因此逐字不变
+（回归用例 `stop-hook.test.mjs` case 26 / case 27 锁定）。
 
 ---
 

@@ -34,7 +34,7 @@
 
 import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname, resolve, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
@@ -325,6 +325,296 @@ if (state.phase === 'wave4' || state.phase === 'wave5') {
           );
         }
       }
+    }
+  }
+}
+
+// 3.7 · wave4/wave5：交付的修复产物自己能不能被观测到（R13 新增）
+//
+// 上面 3.5 / 3.6 检查的全是「账本里写了什么」：distinct(finding_id)、
+// budget.spawned_fix_agents、以及 harness 日志里的 subagent 次数。
+// **没有一条检查产物本身。** 于是 R12《FIX-R12-report.md》§八·洞 B 逐字写下的
+// 失败场景在 R12 之后仍然完全可行：
+//
+//   修复 Agent 写完 6 份 done-*.md，全都没有信封，check-payload 一次没跑。
+//   主 Agent 不看模板第 7 节，直接收下返回 —— 信封里 payload 为空也能过 status 检查，
+//   因为**根本没有信封可检查**。stop-hook 放行（fix_contracts 非空即可）。本轮照样闭合。
+//
+// 这里把 `check-fix-artifacts-envelope.mjs`（证据链第 1 环的批量闸门）接上来。
+// 它只问一件事：这一批产物里，有几份根本进不了 check-payload。
+// 没有信封 = 无法被任何机械检查观测 = 未交付 —— 与 check-payload 的立场一致。
+//
+// ── 产物目录从哪来（本段的中心设计决策）──
+// 读 `framework/artifacts/run-state.md` 与 `report-naming.md` 后确认：
+// state.json **已有**约定的产物目录字段 `report.dir_path`
+// （run-state.md 第 2 节：「本轮产物目录的绝对路径，供子 Agent 拼 artifact_path」，
+//   且 `report.dir_ready` 是派发前的硬闸）。所以**不新增必填字段**——
+// `check-state.mjs` 的 TOP_REQUIRED 只有 7 个顶层键，但 check-state 对未列出的
+// 顶层字段是宽容的；真正的风险不是它，而是「新增必填字段会让所有存量 state.json
+// 一夜之间变不合规」。既有字段已经够用，就没有理由付那个代价。
+//
+// 推断顺序（后者是兜底，不是首选）：
+//   1. state.report.dir_path                       ← 约定字段，直接可信
+//   2. dirname(state.report.final_report_path)     ← report-naming.md §4：一层平铺，
+//                                                    报告与波次产物同目录
+//   3. dirname(state.fix_contracts[].test_path)    ← 最后兜底；测试文件常在仓库里，
+//                                                    不常在产物目录里，容易推错
+// 三条都推不出来 → **WARN，不 FAIL**。这是降级纪律（与 R8 的 unsupported_harness、
+// R10 的 --artifacts-dir 缺失、R11 的 evidence_existence_unchecked 同一条）：
+// 一个「需要外部信息」的判据缺输入时不能把整条流程卡死，
+// 否则所有既有项目一夜之间全红——那会让框架被绕过，而不是被遵守。
+//
+// ── 存量无信封产物怎么办：可声明豁免 ──
+// 硬 FAIL 一个历史产物目录会让所有老项目无法闭合。所以 state.json 可以声明
+// `legacy_artifacts: [<文件名>...]`（可选，**不是必填**，见 run-state.md §2.6）。
+// 但豁免必须留痕且可见，而且**不能变成关掉检查的开关**：
+//   - 每条被豁免的产物都单独 WARN，写明它在契约体系之外、证据不可机械复核；
+//   - 豁免条目若匹配不到任何产物，WARN（悬空豁免 = 悄悄复活的可能）；
+//   - 豁免条目数 ≥ 目录下待检产物总数 → **FAIL**。全量豁免等于把这段检查关掉，
+//     那它就是「有开关的检查」，而 R12 §洞 B 的失败场景会原样复现，
+//     只是这次账本里多了一个数组。
+if (state.phase === 'wave4' || state.phase === 'wave5') {
+  if (state.path_mode !== 'FIX') {
+    // wave4/wave5 只在 FIX 路径上有意义（run-state.md §2.5）。
+    // 相位与路径模式对不上是账本自己的问题，交给 check-state.mjs，这里不管。
+  } else {
+    const warnings = [];
+
+    // 3.7.1 推断产物目录
+    const inferArtifactDir = (st) => {
+      const candidates = [];
+      const dirPath = st.report?.dir_path;
+      if (typeof dirPath === 'string' && dirPath.trim() !== '') {
+        candidates.push({ from: 'report.dir_path', dir: resolve(dirname(resolve(statePath)), dirPath) });
+        candidates.push({ from: 'report.dir_path', dir: resolve(dirPath) });
+      }
+      const frp = st.report?.final_report_path;
+      if (typeof frp === 'string' && frp.trim() !== '') {
+        candidates.push({ from: 'dirname(report.final_report_path)', dir: resolve(dirname(resolve(statePath)), dirname(frp)) });
+        candidates.push({ from: 'dirname(report.final_report_path)', dir: resolve(dirname(frp)) });
+      }
+      const contracts = Array.isArray(st.fix_contracts) ? st.fix_contracts : [];
+      for (const c of contracts) {
+        const tp = c?.test_path;
+        if (typeof tp === 'string' && tp.trim() !== '' && /[\\/]/.test(tp)) {
+          const cand = resolve(dirname(resolve(statePath)), dirname(tp));
+          candidates.push({ from: 'dirname(fix_contracts[].test_path)', dir: cand });
+          break;
+        }
+      }
+      for (const c of candidates) {
+        try {
+          if (existsSync(c.dir) && statSync(c.dir).isDirectory()) return c;
+        } catch { /* 继续试下一个 */ }
+      }
+      return null;
+    };
+
+    const inferred = inferArtifactDir(state);
+    if (!inferred) {
+      warnings.push(
+        `WARN · 产物目录无法确定：state.json 里既没有可用的 report.dir_path，`
+        + `也没有 report.final_report_path / fix_contracts[].test_path 可供推断。\n`
+        + `因此本次**没有执行**产物信封检查（check-fix-artifacts-envelope.mjs）——`
+        + `「修复产物有没有信封」这一项在本回合未验证。\n`
+        + `按 report-naming.md §5.1，主 Agent 应在波次一启动前把产物目录写进 report.dir_path；`
+        + `补上它之后这个检查会自动生效。`
+      );
+    } else {
+      // 3.7.2 读目录、算分母
+      //
+      // 待检产物口径必须与 check-fix-artifacts-envelope.mjs 的默认 pattern 一致
+      // （done-*.md 与 *-fix-*.md），否则两套工具会对同一目录给出不同分母。
+      const patternRes = [/^done-.*\.md$/i, /^.*-fix-.*\.md$/i];
+      let files = [];
+      let subdirs = [];
+      let totalFiles = 0;
+      let dirReadable = true;
+      try {
+        const entries = readdirSync(inferred.dir, { withFileTypes: true });
+        const plainFiles = entries.filter((e) => e.isFile()).map((e) => e.name);
+        totalFiles = plainFiles.length;
+        files = plainFiles
+          .filter((n) => patternRes.some((re) => re.test(n)))
+          .sort();
+        subdirs = entries.filter((e) => e.isDirectory()).map((e) => e.name).sort();
+      } catch {
+        dirReadable = false;
+        warnings.push(
+          `WARN · 产物目录可推断（${inferred.dir}，来自 ${inferred.from}）但无法读取，`
+          + `本次跳过产物信封检查。这是环境问题，不是产物问题。`
+        );
+      }
+
+      if (dirReadable && subdirs.length > 0) {
+        // 这一条与检查器自己的 subdirectory_not_scanned 同义，但**必须在本层也报**：
+        // 「把存量产物移进 legacy/ 子目录」是本框架对「无信封历史产物」的官方出路
+        // （见 check-fix-artifacts-envelope.mjs 文件头），而子目录不进分母这件事
+        // 如果没人说出来，就等于给了它一个静默的豁免通道。留下痕迹，才能被审计。
+        warnings.push(
+          `WARN · 产物目录 ${inferred.dir} 下有子目录（${subdirs.slice(0, 6).join('、')}`
+          + `${subdirs.length > 6 ? ' …' : ''}）——其中的产物**不在**本次信封检查的范围内，也不进分母。\n`
+          + `若那是刻意保留的无信封历史产物（例如 legacy/），这个 WARN 就是它的痕迹：`
+          + `那些证据在契约体系之外，不可机械复核。若那是本轮产物，请摊平到 ${inferred.dir} 下。`
+        );
+      }
+
+      if (dirReadable && files.length === 0) {
+        // 0 份产物在逻辑上「每份都有信封」，但那不是通过，是「没什么可检查」。
+        // check-fix-artifacts-envelope.mjs 对空目录报 exit 2（配置错误），
+        // 在集成层这里降为 WARN：修复相位允许「产物还没写完」这个中间态，
+        // 真正的「这个相位做完了」由 3 的交付物判据（fix_contracts）负责。
+        warnings.push(
+          `WARN · 产物目录 ${inferred.dir}（来自 ${inferred.from}）下没有任何 done-*.md / *-fix-*.md，`
+          + `产物信封检查没有对象可查。若修复产物应已落盘，检查 pattern 或目录是否指错。`
+        );
+      } else if (dirReadable) {
+        // 3.7.3 legacy_artifacts 豁免（可选字段，不是必填）
+        const rawLegacy = state.legacy_artifacts;
+        let legacy = [];
+        if (rawLegacy !== undefined && rawLegacy !== null) {
+          if (!Array.isArray(rawLegacy)) {
+            problems.push(
+              `legacy_artifacts 必须是字符串数组（列被豁免的无信封产物文件名），`
+              + `实际是 ${Array.isArray(rawLegacy) ? 'array' : typeof rawLegacy}。`
+              + `一个自由格式的豁免字段无法被机械核对，等于没有。`
+            );
+          } else {
+            legacy = rawLegacy.filter((x) => typeof x === 'string' && x.trim() !== '').map((x) => basename(x.trim().replace(/\\/g, '/')));
+          }
+        }
+        const legacySet = new Set(legacy);
+
+        // ── 全量豁免 = 关掉检查 ──
+        //
+        // 分母用**目录下文件总数**（totalFiles），不是「被 pattern 选中的产物数」。
+        // 理由：repair/ 这类目录里产物与流程文档（SUMMARY / ADJUDICATION / 验收记录 /
+        // 退修日志）是平铺共存的——report-naming.md §4 明规定「一层平铺、不分子目录」。
+        // 而「全量豁免」要防的是「把整个目录都划到检查之外」。
+        // 若拿产物数当分母，真实场景里 6 份历史产物 + 6 条豁免立刻触发 6/6，
+        // 而这恰恰是**应当允许**的那一档（任务书与本轮 LEGACY-ARTIFACTS.md 的决定：
+        // 承认这批证据永久不可复核）。分母取文件总数，6/15 才是「少数例外」的正确刻画。
+        //
+        // 由此带来的形态是：目录里**只有**产物时（6 份产物、无文档）6/6 依然成立 → 正确拦截。
+        // 而「有文档稀释、但所有产物都被豁免」这一档不阻断，转由下面那条 WARN 大声留痕
+        // （「本轮没有任何修复产物经过信封检查」）。这是有意的取舍：
+        // 硬 FAIL 会把真实历史目录判死，而任务书对它的决定是「豁免 + 留痕」，不是「不许闭合」。
+        const matchedLegacy = legacy.filter((n) => files.includes(n));
+        if (totalFiles > 0 && matchedLegacy.length >= totalFiles) {
+          problems.push(
+            `legacy_artifacts 声明了 ${matchedLegacy.length} 条匹配到产物的豁免，`
+            + `而产物目录 ${inferred.dir} 下共 ${totalFiles} 个文件（其中待检产物 ${files.length} 份）——`
+            + `**全量豁免等于关掉这个检查**。\n`
+            + `这个字段的用途是「承认少数历史产物永久不可机械复核」，不是「让这轮通过」。`
+            + `两者在账本上必须可区分，否则它就是本轮之后仍然可行的失败场景，`
+            + `只是账本里多了一个数组（见 FIX-R12-report.md §八·洞 B）。\n`
+            + `请减少豁免条目，或把历史产物移出待检目录（例如 <dir>/legacy/，子目录不进分母），`
+            + `或补上信封。`
+          );
+        } else if (files.length > 0 && matchedLegacy.length === files.length) {
+          // 产物 100% 被豁免，但目录里有别的文件把计数稀释了，所以没触发上面那条。
+          // 不阻断（这是「少数产物 + 大量过程文档」的真实形态），
+          // 但必须大声说出来：这一轮的产物**一份都没被检查过**。
+          warnings.push(
+            `WARN · 待检产物 ${files.length} 份**全部**在 legacy_artifacts 里（${matchedLegacy.join('、')}）——`
+            + `本轮没有任何修复产物经过信封检查。\n`
+            + `这是「整批承认不可复核」，不是「这批产物合规」。凡是引用它们的验收结论都无法由工具复核。`
+          );
+        }
+
+        // 悬空豁免：列了但目录里没有这份产物。
+        // 不是闭合障碍（历史产物可能已被清理），但必须说出来——
+        // 一条永远匹配不上的豁免会在同名文件将来出现时悄悄生效。
+        const dangling = legacy.filter((n) => !files.includes(n));
+        if (dangling.length > 0) {
+          warnings.push(
+            `WARN · legacy_artifacts 有 ${dangling.length} 条豁免在 ${inferred.dir} 下匹配不到任何产物：`
+            + `${dangling.slice(0, 6).join('、')}${dangling.length > 6 ? ' …' : ''}。\n`
+            + `它们不阻断闭合，但会在同名产物将来出现时静默生效——确认这些文件确实已被清理，`
+            + `然后从 legacy_artifacts 里删掉对应条目。`
+          );
+        }
+
+        // 3.7.4 调批量闸门。豁免不在这里过滤：
+        // 让检查器照常报 FAIL，再由本层把「已声明豁免的」降级为 WARN。
+        // 这样检查器本身仍然保持「不提供 --ignore」的立场（它的文件头写了为什么），
+        // 豁免的唯一出口就在账本里，而且可见。
+        let parsed = null;
+        let configErr = null;
+        try {
+          const out = execFileSync(process.execPath, [
+            join(HERE, 'check-fix-artifacts-envelope.mjs'),
+            '--dir', inferred.dir,
+            '--json',
+          ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+          parsed = JSON.parse(out);
+        } catch (e) {
+          try { parsed = JSON.parse(String(e.stdout ?? '')); } catch { parsed = null; }
+          if (!parsed) configErr = e;
+        }
+
+        if (!parsed) {
+          // 配置错误（exit 2）与执行失败（其他）都是环境/接线问题，不拦人。
+          warnings.push(
+            `WARN · 产物信封检查没能执行：${String(configErr?.message ?? '无输出').slice(0, 200)}。`
+            + `这是工具/环境问题，不是产物合规问题——但意味着「有没有信封」本回合没有答案。`
+          );
+        } else {
+          const withoutEnvelope = [];
+          for (const f of (parsed.problems ?? [])) {
+            if (f.level !== 'FAIL') continue;
+            const file = f.file;
+            const isEnvelopeRule = ['artifact_without_envelope', 'envelope_invalid',
+              'envelope_wrong_role', 'envelope_missing_disposition'].includes(f.rule);
+
+            if (file && legacySet.has(file)) {
+              // 已声明豁免：留痕，不阻断。
+              warnings.push(
+                `WARN · 产物 ${file} 在契约体系之外（legacy_artifacts 已声明豁免）：${f.rule}。\n`
+                + `  证据不可机械复核——它不是「通过了检查」，是「没有被检查」。`
+                + `后续任何引用它的验收结论都无法由工具复核，只能由人读原文。`
+              );
+              continue;
+            }
+
+            if (isEnvelopeRule && file) {
+              withoutEnvelope.push({ file, rule: f.rule, msg: f.msg });
+            } else {
+              problems.push(
+                `修复产物的信封不可用（${f.rule}${file ? ` · ${file}` : ''}）：${f.msg}\n`
+                + `没有信封 = check-payload 的全部规则在这份产物上一次都不会跑 = 无法被观测 = 未交付。`
+              );
+            }
+          }
+
+          if (withoutEnvelope.length > 0) {
+            problems.push(
+              `有 ${withoutEnvelope.length} 份修复产物**没有可用的信封**（产物目录 ${inferred.dir}，`
+              + `来自 ${inferred.from}）：\n`
+              + withoutEnvelope.slice(0, 8).map((x) => `  - ${x.file}（${x.rule}）`).join('\n')
+              + (withoutEnvelope.length > 8 ? `\n  … 另有 ${withoutEnvelope.length - 8} 份` : '')
+              + `\n\n这不是「格式不规范」。没有信封 = check-payload 的全部规则在这份产物上一次都不会跑`
+              + `（含「红测日志必须在 target/ 之外」「证据文件必须存在」「disposition 必须表态」）——`
+              + `无法被任何机械检查观测 = 未交付。不是因为通过，是因为没跑。\n`
+              + `两份 2026-11-15 的修复产物就是这样交出去的。\n`
+              + `补法：在每份产物末尾追加一个 \`\`\`json 信封（components/output-contract.md §1），`
+              + `role="fix"，payload 里带 disposition（FIXED | WONT_FIX | DEFERRED | NEW_FINDING），`
+              + `然后跑 node tools/check-payload.mjs <产物> --role fix --repo <被审仓库>。\n`
+              + `若这些是**历史产物**、确实无法补信封，把它们列入 state.json 的 legacy_artifacts`
+              + `（会留 WARN 且计入不可复核证据；不能全量豁免）。`
+            );
+          }
+        }
+      }
+    }
+
+    // WARN 走 stderr 但不阻断：exit 0 时 stderr 仍会被 harness 记录，
+    // 这样「降级」与「什么都没发生」在日志上可区分。
+    if (warnings.length > 0) {
+      console.error(
+        `[产物信封检查 · 告警（不阻断）]\n\n`
+        + warnings.map((w, i) => `${i + 1}. ${w}`).join('\n\n')
+      );
     }
   }
 }

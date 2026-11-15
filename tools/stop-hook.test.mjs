@@ -391,6 +391,164 @@ console.log('case 20: 推断不出 project 目录时静默跳过，不误拦（�
   } finally { rmSync(root, { recursive: true, force: true }); }
 }
 
+// ── 3.7 · 产物信封闸门接到 stop-hook（R13）────────────────────────────
+// 这一段存在的理由：R12 §8 洞 B 逐字写下了一个「本轮之后仍然完全可行」的失败场景：
+//
+//   修复 Agent 写完 6 份 done-*.md，全都没有信封，check-payload 一次没跑。
+//   stop-hook 放行（fix_contracts 非空即可）→ 本轮仍然可以闭合。
+//
+// 3.5/3.6 检查的全是「账本里写了什么」，没有一条检查「产物本身能不能被观测」。
+// 没有信封 = check-payload 一条规则都不会跑 = 未交付，但 stop-hook 看不见。
+//
+// 下面每个用例都必须**真的会拦**或**真的会降级**，而不只是「代码写了」。
+import { spawnSync } from 'node:child_process';
+
+// 与 check-fix-artifacts-envelope.mjs 的判据一致：role=fix + payload.disposition
+const GOOD_ENVELOPE = '\n```json\n'
+  + '{"schema_version":"output-contract-v1","role":"fix","payload":{"disposition":"FIXED"}}\n'
+  + '```\n';
+const NO_ENVELOPE = '\n# 修复记录\n\n改了三行代码，测试全绿。\n';
+
+function makeArtifactDir(files) {
+  const d = mkdtempSync(join(tmpdir(), 'art-'));
+  for (const [name, body] of Object.entries(files)) writeFileSync(join(d, name), body);
+  return d;
+}
+
+// 需要读 exit 0 时的 stderr（WARN 走 stderr 但不阻断），execFileSync 拿不到，
+// 所以这里用 spawnSync。
+function runHookFull(state) {
+  const dir = mkdtempSync(join(tmpdir(), 'hook-'));
+  const f = join(dir, 'state.json');
+  writeFileSync(f, JSON.stringify(state));
+  const r = spawnSync('node', [HOOK, '--state', f], { input: '{}', encoding: 'utf8' });
+  rmSync(dir, { recursive: true, force: true });
+  return { code: r.status ?? 1, err: r.stderr ?? '', out: r.stdout ?? '' };
+}
+
+// 除此之外全部闭合的 wave4 账本：只让 3.7 成为唯一的拦截来源，
+// 否则用例可能因为别的问题 exit 2，测不到 3.7。
+const closedWave4 = (artifactDir, over = {}) => ({
+  phase: 'wave4', status: 'RUNNING', path_mode: 'FIX', in_flight: [],
+  fix_contracts: [fixContract()],
+  budget: { spawned_fix_agents: 1 },
+  current_plan: wavePlan('wave4'),
+  report: {
+    dir_ready: true, dir_path: artifactDir,
+    final_report_path: join(artifactDir, 'round1-final-report.md'),
+  },
+  ...over,
+});
+
+console.log('case 21: wave4 + 产物目录里 1 份无信封 → 拒绝结束（artifact_without_envelope）');
+{
+  const d = makeArtifactDir({ 'done-1.md': NO_ENVELOPE });
+  try {
+    const r = runHookFull(closedWave4(d));
+    expect('退出码 2', r.code === 2, `实际 ${r.code}：${r.err.slice(0, 300)}`);
+    expect('报 artifact_without_envelope', /artifact_without_envelope/.test(r.err), r.err.slice(0, 400));
+    expect('指名道姓点了 done-1.md', /done-1\.md/.test(r.err), r.err.slice(0, 400));
+    expect('说明没有信封等于无法被观测', /观测/.test(r.err), r.err.slice(0, 400));
+  } finally { rmSync(d, { recursive: true, force: true }); }
+}
+
+console.log('case 22: wave4 + 产物目录全部有信封 → 允许结束（exit 0）');
+{
+  const d = makeArtifactDir({ 'done-1.md': '# 修复\n' + GOOD_ENVELOPE, 'done-3.md': '# 修复\n' + GOOD_ENVELOPE });
+  try {
+    const r = runHookFull(closedWave4(d));
+    expect('退出码 0', r.code === 0, `实际 ${r.code}：${r.err.slice(0, 400)}`);
+    expect('不提 artifact_without_envelope', !/artifact_without_envelope/.test(r.err), r.err.slice(0, 300));
+  } finally { rmSync(d, { recursive: true, force: true }); }
+}
+
+console.log('case 23: wave4 + 产物目录推断不出来 → exit 0 + WARN（降级纪律）');
+{
+  // report 里没有任何目录线索：既没有 dir_path 也没有 final_report_path
+  const r = runHookFull({
+    ...closedWave4('__unused__'),
+    report: { dir_ready: false, dir_path: null, final_report_path: null },
+  });
+  expect('退出码 0（推断不出就降级，不拦人）', r.code === 0, `实际 ${r.code}：${r.err.slice(0, 400)}`);
+  expect('stderr 有 WARN 说明没检查', /WARN|警告/.test(r.err), r.err.slice(0, 400));
+  expect('说明产物目录无法确定', /无法确定|推断不出|推断失败/.test(r.err), r.err.slice(0, 400));
+}
+
+console.log('case 24: wave4 + legacy_artifacts 豁免了其中一份 → exit 0，但 stderr 留痕');
+{
+  // 目录里 2 份：一份无信封（历史）已豁免，一份有信封（本轮）。
+  // 豁免 1/2 是「少数例外」，不是「整目录豁免」。
+  const d = makeArtifactDir({
+    'done-1.md': NO_ENVELOPE,
+    'done-2.md': '# 修复\n' + GOOD_ENVELOPE,
+  });
+  try {
+    const r = runHookFull(closedWave4(d, { legacy_artifacts: ['done-1.md'] }));
+    expect('退出码 0（豁免生效）', r.code === 0, `实际 ${r.code}：${r.err.slice(0, 400)}`);
+    expect('WARN 提到 done-1.md', /done-1\.md/.test(r.err), r.err.slice(0, 400));
+    expect('写明证据在契约体系之外 / 不可机械复核',
+      /契约体系之外|不可机械复核/.test(r.err), r.err.slice(0, 400));
+  } finally { rmSync(d, { recursive: true, force: true }); }
+}
+
+console.log('case 24b: 目录里只有 1 份且被豁免 → exit 2（1/1 也是全量豁免）');
+{
+  // 这一条是刻意的严格：单产物目录里豁免了它，等于这一轮没有任何可检查的产物，
+  // 而「这一轮没有任何可检查的产物」正是 R12 §八·洞 B 的场景本身。
+  const d = makeArtifactDir({ 'done-1.md': NO_ENVELOPE });
+  try {
+    const r = runHookFull(closedWave4(d, { legacy_artifacts: ['done-1.md'] }));
+    expect('退出码 2', r.code === 2, `实际 ${r.code}：${r.err.slice(0, 400)}`);
+    expect('报全量豁免', /全量豁免/.test(r.err), r.err.slice(0, 400));
+  } finally { rmSync(d, { recursive: true, force: true }); }
+}
+
+console.log('case 25: wave4 + legacy_artifacts 覆盖了全部文件 → exit 2（全量豁免=关掉检查）');
+{
+  const d = makeArtifactDir({ 'done-1.md': NO_ENVELOPE, 'done-3.md': NO_ENVELOPE });
+  try {
+    const r = runHookFull(closedWave4(d, { legacy_artifacts: ['done-1.md', 'done-3.md'] }));
+    expect('退出码 2', r.code === 2, `实际 ${r.code}：${r.err.slice(0, 400)}`);
+    expect('报全量豁免', /全量豁免/.test(r.err), r.err.slice(0, 400));
+  } finally { rmSync(d, { recursive: true, force: true }); }
+}
+
+console.log('case 26: phase=wave2a（审计路径）→ 产物信封检查不启用');
+{
+  const d = makeArtifactDir({ 'done-1.md': NO_ENVELOPE });
+  try {
+    const r = runHookFull({
+      phase: 'wave2a', status: 'RUNNING', path_mode: 'AUDIT_ONLY', in_flight: [],
+      slices: { 'slice-01': { state: 'DONE' } },
+      wave2_completed: [{ agent_id: 'a1', final_status: 'SUCCESS' }],
+      current_plan: wavePlan('wave2a'),
+      report: { dir_ready: true, dir_path: d, final_report_path: join(d, 'x.md') },
+    });
+    expect('退出码 0', r.code === 0, `实际 ${r.code}：${r.err.slice(0, 400)}`);
+    expect('不提产物信封', !/artifact_without_envelope/.test(r.err), r.err.slice(0, 300));
+  } finally { rmSync(d, { recursive: true, force: true }); }
+}
+
+console.log('case 27: wave4 但 path_mode=AUDIT_ONLY → 产物信封检查不启用（判据要求两者同时成立）');
+{
+  const d = makeArtifactDir({ 'done-1.md': NO_ENVELOPE });
+  try {
+    const r = runHookFull(closedWave4(d, { path_mode: 'AUDIT_ONLY' }));
+    expect('退出码 0', r.code === 0, `实际 ${r.code}：${r.err.slice(0, 400)}`);
+    expect('不提产物信封', !/artifact_without_envelope/.test(r.err), r.err.slice(0, 300));
+  } finally { rmSync(d, { recursive: true, force: true }); }
+}
+
+console.log('case 28: legacy_artifacts 列了不存在的文件 → WARN 指出豁免条目悬空（不阻断）');
+{
+  const d = makeArtifactDir({ 'done-1.md': '# 修复\n' + GOOD_ENVELOPE });
+  try {
+    const r = runHookFull(closedWave4(d, { legacy_artifacts: ['done-99.md'] }));
+    expect('退出码 0（悬空豁免不是闭合障碍）', r.code === 0, `实际 ${r.code}：${r.err.slice(0, 400)}`);
+    expect('WARN 提到 done-99.md 没匹配到', /done-99\.md/.test(r.err), r.err.slice(0, 400));
+  } finally { rmSync(d, { recursive: true, force: true }); }
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);
