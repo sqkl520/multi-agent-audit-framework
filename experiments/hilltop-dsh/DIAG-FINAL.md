@@ -96,6 +96,69 @@ if (settingsYaml.contains("monsters." + key + ".explode-damage-multiplier")) {
 **这推翻了我的原假设。** 我以为它「判断修复该串行」，事实是「派发」**从未进入考虑范围**。
 任务书里明明有四个编号缺陷——**明显可分解的任务，没有触发分解**。
 
+### 2.2.1 三组排除性证据：工具、模型、压缩都不是原因
+
+**(a) 工具 schema 逐字节相同**
+
+我独立复现了哈希：审计 session `d6a9f092` 与修复 session `a40f0162` 的 `subagent` 工具 schema
+
+```
+a40f0162 subagent schema hash: bc9f677b65e0e81f | len: 1161
+d6a9f092 subagent schema hash: bc9f677b65e0e81f | len: 1161
+```
+
+**5 个 session（3 修复 + 2 审计）的 system prompt、25 个工具 schema、`subagent` schema 哈希全部相同。**
+
+更关键：`a40f0162` 在 196 步里，`subagent` 这个词在 prompt 中出现 **240 次**
+（16 个 `request/header` 快照 × 每个约 15 处「subagent」字样，含 `subagent` / `subagent_fork` /
+`list_agents` / `interrupt_agent` / `send_message` 的描述），外加 4 次 system prompt 的正面指引。
+**它自己一次都没写出这个词。**
+
+工具一直在它眼前，它自己一次都没用。**是检索/触发失败，不是没看见。**
+
+**(b) 工具描述里没有保守措辞**
+
+560 字符纯正向能力说明，扫描 `unless` / `only when` / `不要` / `除非` 全部 0 命中。
+唯一的保守措辞挂在 `workflow` 上，而且紧接着一句是「一到两次委派优先用普通 subagent」。
+
+所以不是「系统提示词劝退了它」。
+
+**(c) 上下文压缩没丢东西**
+
+`a40f0162` 196 步、5 次压缩、42 次 prune、20.4 万 token。原始任务书 `seq 8` **从未被 prune**
+（80 个被遮蔽事件全是 `tool/result`），5 份摘要每次都保留 5 条缺陷和测试纪律。
+摘要里没有分工要求，**因为源任务书就没有**。
+
+### 2.2.2 最干净的对照：两者第一次 `todo_write` 的差异
+
+审计 session `d6a9f092` 首次 todo（seq 17）：
+
+> 1. Inspect output contract, checker, and target module inventory
+> 2. **"Launch 3 parallel audit subagents (A/B/C) with strict evidence and output requirements"** ← 第 2 项就是派发
+
+修复 session `a40f0162` 首次 todo（seq 15），7 项：
+
+> 1. Inspect repo state, config loading, repair flow, explosion and reset code/tests
+> 2. #7 Add failing tests, then clamp load/merge values and mark normalization pending
+> 3. #3 Assess reload intent from messages.yml and implement/test chosen fix
+> 4. #1 Add failing tests, implement planRepair settlement and wire listener
+> 5. #6 Add failing test, separate explosion power from node-damage multiplier
+> 6. #4 Add failing test, choose safe reset ordering/rollback and implement
+> 7. Run full builds after each fix, write done-*.md artifacts and SUMMARY.md
+
+**7 项全是线性清单，没有 dispatch / delegate / parallel / subagent 任何一项。**
+
+计划阶段的第一个动作就分叉了。**修复任务书给了「5 条编号缺陷、测试先行、跑全量」，
+但编号子项本身不足以触发分解。**
+
+### 2.2.3 一处采样偏差（已在原报告中标注）
+
+`e0582c67` 是**不完整日志**：仅 9.4 分钟，最后事件是 step 66 的 `job/registered`，无 `turn/end`。
+它的 59 条 reasoning 仍为 0 命中，但**不应算作完整修复轮**。
+
+**承载结论的样本是 `a40f0162`（完整，57.5 分钟）和 `d5ad7820`（完整，19 分钟）。**
+两者合计 236 条 reasoning、368,908 字符，`subagent` 仍为 0。（见 2.3）
+
 **推论：修复方案不是「纠正错误的价值判断」，而是「提供一个能被模式匹配到的、任务形状的触发条件」。**
 
 ### 2.3 为什么从没被触发：修复侧规则一次都没加载
