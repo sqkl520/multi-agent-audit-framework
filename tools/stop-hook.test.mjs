@@ -856,6 +856,159 @@ console.log('case 36 (R17): 产物数 > 50 → 只查前 50 份并给 WARN（不
 
 
 
+// ── R19 · §3.7.6 files_touched ↔ git status 双向对账 ─────────────────────
+//
+// R18 §6 的原文（直接采信）：
+//   **path existence does not mean the file was changed by this instance.**
+//   R18 的 files_touched_not_found 只证明必要条件。仍未被回答的：
+//   它到底被改了没有、是不是这一轮改的、改了什么，以及最糟的 **under-reporting**——
+//   一个实例改了 10 个文件，只列 1 个存在的，R18 的规则完全绿。
+//
+// 所以下面的用例不是「再造一条更严的存在性检查」，而是**两个方向**：
+//   声称了却没改（overclaimed）  → FAIL
+//   改了却没声称（underreported）→ 源码 FAIL / 非源码 WARN
+//
+// 必须造真 git 仓库：要测的是 `git status --porcelain` 的真实输出。
+// 写法参照 verify-postfix-snapshot.test.mjs 的 makeRepo()。
+
+function gitIn(repo, args) {
+  return execFileSync('git', ['-c', 'core.autocrlf=false', '-C', repo, ...args], {
+    encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+function putFile(repo, rel, body) {
+  const abs = join(repo, rel);
+  mkdirSync(dirname(abs), { recursive: true });
+  writeFileSync(abs, body);
+}
+
+// 造一个已提交的干净仓库，再按需制造改动。
+function makeGitRepo(files) {
+  const d = mkdtempSync(join(tmpdir(), 'gitrepo-'));
+  for (const [rel, body] of Object.entries(files)) putFile(d, rel, body);
+  gitIn(d, ['init', '-q']);
+  gitIn(d, ['config', 'user.email', 'r19@test.local']);
+  gitIn(d, ['config', 'user.name', 'R19']);
+  gitIn(d, ['add', '-A']);
+  gitIn(d, ['commit', '-qm', 'init']);
+  return d;
+}
+
+// 所有 R19 用例共用的仓库底子：两个证据文件 + 三个源文件（都先提交，即「干净」）。
+// 注意：证据文件必须在这个仓库里，因为 §3.7.5 的 check-payload 会按 --repo 解析它们；
+// 用例只改 target_repo 时，test/t.mjs 与 red/red.log 仍然解析得到。
+const R19_REPO_FILES = () => ({
+  'red/red.log': 'FAIL: 修复前测试为红\n',
+  'test/t.mjs': '// 测试\n',
+  'src/A.java': 'class A {}\n',
+  'src/B.java': 'class B {}\n',
+  'src/C.java': 'class C {}\n',
+  'app.log': 'old log\n',
+});
+
+// artifacts 落在仓库之外（tmp 目录），否则未跟踪的产物目录会污染 git status。
+const r19Artifact = (filesTouched) => {
+  const d = mkdtempSync(join(tmpdir(), 'art19-'));
+  writeFileSync(join(d, 'done-1.md'), fixArtifactBody(VALID_FIX_ENV({
+    payload: { ...VALID_FIX_ENV().payload, files_touched: filesTouched },
+  })));
+  return d;
+};
+
+console.log('case 37 (R19): files_touched 列的文件确实被改了 → exit 0（防误伤）');
+{
+  const repo = makeGitRepo(R19_REPO_FILES());
+  const d = r19Artifact([{ path: 'src/A.java', change_summary: '改了 X' }]);
+  try {
+    putFile(repo, 'src/A.java', 'class A { int x; }\n');   // 真实改动
+    const r = runHookFull(closedWave4(d, { target_repo: repo }));
+    expect('退出码 0', r.code === 0, `实际 ${r.code}：${r.err.slice(0, 600)}`);
+    expect('不报 overclaimed / underreported',
+      !/files_touched_overclaimed|files_touched_underreported/.test(r.err), r.err.slice(0, 600));
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(d, { recursive: true, force: true });
+  }
+}
+
+console.log('case 38 (R19): files_touched 列了一个存在但没被改的文件 → overclaimed FAIL');
+{
+  // 关键：src/B.java **存在**（所以 R18 的 files_touched_not_found 全绿），
+  // 但 git status 里没有它。这正是 R18 §6 说的「必要条件不等于变更」。
+  const repo = makeGitRepo(R19_REPO_FILES());
+  const d = r19Artifact([{ path: 'src/B.java', change_summary: '声称改了' }]);
+  try {
+    const r = runHookFull(closedWave4(d, { target_repo: repo }));
+    expect('退出码 2', r.code === 2, `实际 ${r.code}：${r.err.slice(0, 600)}`);
+    expect('报 files_touched_overclaimed', /files_touched_overclaimed/.test(r.err), r.err.slice(0, 800));
+    expect('指名 src/B.java', /src\/B\.java/.test(r.err), r.err.slice(0, 800));
+    expect('说明路径存在不等于被改过', /git status|没有改动|存在/.test(r.err), r.err.slice(0, 800));
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(d, { recursive: true, force: true });
+  }
+}
+
+console.log('case 39 (R19): 仓库里改了源码文件却没登记 → underreported FAIL');
+{
+  // 「改了 10 个只列 1 个」的最小复现：2 个源码被改，files_touched 只列 1 个。
+  const repo = makeGitRepo(R19_REPO_FILES());
+  const d = r19Artifact([{ path: 'src/A.java', change_summary: '改了 A' }]);
+  try {
+    putFile(repo, 'src/A.java', 'class A { int x; }\n');
+    putFile(repo, 'src/C.java', 'class C { int y; }\n');   // 未登记
+    const r = runHookFull(closedWave4(d, { target_repo: repo }));
+    expect('退出码 2', r.code === 2, `实际 ${r.code}：${r.err.slice(0, 600)}`);
+    expect('报 files_touched_underreported', /files_touched_underreported/.test(r.err), r.err.slice(0, 800));
+    expect('指名 src/C.java', /src\/C\.java/.test(r.err), r.err.slice(0, 800));
+    expect('说明是「源码被改却没登记」', /源码|没有登记|未登记/.test(r.err), r.err.slice(0, 800));
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(d, { recursive: true, force: true });
+  }
+}
+
+console.log('case 40 (R19): 仓库里改了一个非源码文件（.log）没登记 → exit 0 + WARN（不升级）');
+{
+  // 修复相位里 .log / .md / repair-artifacts/ 这类改动是合法噪音。
+  // 无条件升 FAIL 会让每个回合都红，所以这一档必须仍然是 WARN。
+  const repo = makeGitRepo(R19_REPO_FILES());
+  const d = r19Artifact([{ path: 'src/A.java', change_summary: '改了 A' }]);
+  try {
+    putFile(repo, 'src/A.java', 'class A { int x; }\n');
+    putFile(repo, 'app.log', 'new log line\n');   // 非源码、未登记
+    const r = runHookFull(closedWave4(d, { target_repo: repo }));
+    expect('退出码 0（不误拦）', r.code === 0, `实际 ${r.code}：${r.err.slice(0, 600)}`);
+    expect('仍有 WARN 提到 underreported', /files_touched_underreported/.test(r.err), r.err.slice(0, 800));
+    expect('WARN 指名 app.log', /app\.log/.test(r.err), r.err.slice(0, 800));
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(d, { recursive: true, force: true });
+  }
+}
+
+console.log('case 41 (R19): target_repo 缺失 → 跳过双向对账并 WARN（不重复报 FAIL）');
+{
+  const repo = makeGitRepo(R19_REPO_FILES());
+  const d = r19Artifact([{ path: 'src/A.java', change_summary: '改了 A' }]);
+  try {
+    putFile(repo, 'src/A.java', 'class A { int x; }\n');
+    const st = closedWave4(d, { target_repo: repo });
+    delete st.target_repo;
+    const r = runHookFull(st);
+    expect('WARN 说明未做双向对账', /未做双向对账/.test(r.err), r.err.slice(0, 800));
+    expect('不报 files_touched_overclaimed', !/files_touched_overclaimed/.test(r.err), r.err.slice(0, 800));
+    expect('不报 files_touched_underreported', !/files_touched_underreported/.test(r.err), r.err.slice(0, 800));
+    // exit 2 是 §3.7.5 早有的「target_repo 缺失」判据造成的（那不是本段的重复报错），
+    // 本段只负责留一条 WARN，且不因缺 target_repo 而多开一枪。
+    expect('退出码 2 来自既有的 target_repo 判据', r.code === 2, `实际 ${r.code}`);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(d, { recursive: true, force: true });
+  }
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

@@ -899,6 +899,365 @@ if (state.phase === 'wave4' || state.phase === 'wave5') {
           }
         }
 
+        // 3.7.6 · files_touched ↔ git status 双向对账（R19 新增）
+        //
+        // R18 §6 原文（直接采信）：
+        //   **path existence does not mean the file was changed by this instance.**
+        //   R18 的 files_touched_not_found 只证明必要条件。仍未回答：它到底被改了没有、
+        //   是不是这一轮改的、改了什么，以及最糟的 under-reporting——
+        //   一个实例改了 10 个文件，只列 1 个存在的，R18 的规则完全绿。
+        //
+        // 判据是**两个方向**，缺任何一个都只堵一半：
+        //
+        //   overclaimed   claimed - actual 非空 → FAIL
+        //     「我在 files_touched 里写了它，但仓库里它没有改动」。
+        //     R18 已经覆盖「路径不存在」；这条覆盖「路径存在但没被改」——两者是不同的洞。
+        //     一个实例把某个**一直存在、从未被碰过**的文件写进 files_touched，
+        //     R18 全绿，而它实际上什么都没改。这就是「凭证存在 ≠ 凭证为真」。
+        //
+        //   underreported actual - claimed 非空（**过滤后**）→ 源码 FAIL / 非源码 WARN
+        //     「仓库里有改动，但没有任何 fix 产物把它列进 files_touched」。
+        //     为什么不无条件 FAIL：修复相位的 actual 里必然混着合法噪音——
+        //     日志、快照目录、repair-artifacts/、主 Agent 自己写的账本与产物目录。
+        //     无条件升 FAIL 会让每个回合都红，然后被一条 WARN 关掉（R10 的教训：
+        //     「降级路径本身就是一条明面上的后门」——但反过来，把降级全删掉同样会
+        //     让人把整道闸门关掉）。所以判据是「过滤之后还剩不剩源码」：
+        //     源码被改却没登记，正是 under-reporting 的典型形态，那一档必须 FAIL。
+        //
+        // ── 过滤规则（必须先排除再判断）──
+        // 排除项不是「我觉得不重要」，每一条都对应修复相位里真实存在的合法产物：
+        //   · state.report.dir_path 指向的目录 —— 本轮产物目录，里面全是 .md
+        //   · state.legacy_artifacts 里列的文件 —— 已声明为历史证据
+        //   · repair-artifacts / experiments / docs / .work / target / build ——
+        //     产物、实验记录、构建输出；target/ 与 build/ 还会被构建清理，
+        //     把它们算成「改了没登记」等于让每个跑过构建的回合都红
+        //   · .md .log .json .yml .yaml .txt .xml .properties —— 非源码扩展名
+        // 先排除、再判断：剩下的才叫「应该被 files_touched 覆盖的东西」。
+        //
+        // ── 降级纪律 ──
+        //   target_repo 缺失        → 跳过，WARN「未做双向对账」
+        //                             （check-state 报 target_repo_required，
+        //                               §3.7.5 也报账本问题，这里不重复开火）
+        //   git status 执行失败     → WARN，不 FAIL（不是 git 仓库 = 环境问题）
+        //   没有任何 fix 产物       → 跳过（没有 claimed 集合可比，比较无意义）
+        //
+        // ── 性能 ──
+        // git status 是**一次**调用，不是逐份产物调用。整个相位只付一次进程启动。
+        if (state.phase === 'wave4' || state.phase === 'wave5') {
+          const warnings2 = warnings;   // 同一个 stderr 汇总块，便于阅读
+
+          // 3.7.6.1 收集 claimed：所有 fix 信封里的 payload.files_touched[].path 并集。
+          //
+          // 信封可能有两种形态（check-payload 里写过）：
+          //   单发现  payload.files_touched
+          //   多发现  payload.dispositions[].files_touched
+          // 两种都要收，否则「换个写法」就能让一个实例的改动不进 claimed 集合——
+          // 而 claimed 集合为空时本段直接跳过，等于整道闸门失效。
+          const collectFilesTouched = (payload) => {
+            const out = [];
+            const take = (entry) => {
+              const ft = entry?.files_touched;
+              if (!Array.isArray(ft)) return;
+              for (const item of ft) {
+                const p = item?.path;
+                if (typeof p === 'string' && p.trim() !== '') out.push(p.trim());
+              }
+            };
+            take(payload);
+            if (Array.isArray(payload?.dispositions)) {
+              for (const d of payload.dispositions) take(d);
+            }
+            return out;
+          };
+
+          // 只读「本段待检产物」里真的有信封且 role=fix 的（legacy 豁免的没有信封，
+          // 读了也只会得到一堆解析失败的噪音）。
+          const claimedRaw = [];
+          let fixEnvelopeCount = 0;
+          for (const name of files) {
+            if (legacySet.has(name)) continue;
+            let text;
+            try { text = readFileSync(join(inferred.dir, name), 'utf8'); } catch { continue; }
+            for (const b of text.matchAll(/```json\s*\n([\s\S]*?)```/g)) {
+              let env;
+              try { env = JSON.parse(b[1]); } catch { continue; }
+              if (env?.role !== 'fix') continue;
+              fixEnvelopeCount++;
+              claimedRaw.push(...collectFilesTouched(env.payload));
+            }
+          }
+
+          if (fixEnvelopeCount === 0 || claimedRaw.length === 0) {
+            // 没有 fix 产物 = 没有 claimed 集合。此时「双向对账」只剩一个方向，
+            // 而 under-reported 的判据（actual - claimed）会把仓库里的**全部**改动
+            // 报成未登记——那是误伤，不是信号。所以直接跳过。
+            //
+            // 注意这条与「没有产物」的判据（3.7.2 的 files.length === 0）不同：
+            // 产物可能有，只是它们不是 fix 角色（例如 wave5 的 verify 产物）。
+            // 那种情况下 files_touched 本来就不该存在，比对没有意义。
+          } else {
+            const rawRepo = state.target_repo;
+            const repoMissing = !(typeof rawRepo === 'string' && rawRepo.trim() !== '');
+            let repoDir = null;
+            let repoUsable = false;
+            if (!repoMissing) {
+              repoDir = isAbsolute(rawRepo) ? rawRepo : resolve(dirname(resolve(statePath)), rawRepo);
+              try { repoUsable = existsSync(repoDir) && statSync(repoDir).isDirectory(); } catch { repoUsable = false; }
+            }
+
+            if (repoMissing || !repoUsable) {
+              // 重复报错的问题：target_repo 缺失时 §3.7.5 已经 push 了一条完整的
+              // FAIL（它比本段更急，因为缺 --repo 会让 check-payload 降级）。
+              // 这里只留一条 WARN，写明「对账没做」——「检查没跑」必须与
+              // 「检查通过」在日志上可区分。
+              warnings2.push(
+                `WARN · 未做双向对账（files_touched ↔ git status）：`
+                + `${repoMissing
+                  ? 'state.json 顶层没有 target_repo'
+                  : `target_repo="${rawRepo}"（解析为 ${repoDir}）不是真实存在的目录`}，`
+                + `无法执行 git status。\n`
+                + `这意味着「files_touched 里声称改过的文件，真的被改了吗」以及`
+                + `「仓库里还有没有源码被改却没登记」这两项**本回合没有答案**——`
+                + `不是通过，是没查。补上 target_repo 后本段会自动生效。`
+              );
+            } else {
+              // 3.7.6.2 一次 git status 拿 actual
+              let porcelain = null;
+              let gitErr = null;
+              try {
+                porcelain = execFileSync('git', ['-C', repoDir, 'status', '--porcelain'], {
+                  encoding: 'utf8',
+                  stdio: ['ignore', 'pipe', 'pipe'],
+                  timeout: 20_000,
+                });
+              } catch (e) {
+                gitErr = e;
+              }
+
+              if (porcelain === null) {
+                // 环境问题（不是 git 仓库 / 没有 git / 权限）→ WARN，不 FAIL。
+                // 「拿不到外部信息」与「账本写错了」的区别见 §3.7 开头那段。
+                warnings2.push(
+                  `WARN · 未做双向对账（files_touched ↔ git status）：`
+                  + `在 ${repoDir} 执行 git status 失败（`
+                  + `${String(gitErr?.stderr ?? gitErr?.message ?? '无输出').slice(0, 200)}）。\n`
+                  + `最可能是 target_repo 不是 git 仓库。这是环境问题，不阻断闭合——`
+                  + `但「文件到底改了没有」这一项本回合没有答案。`
+                );
+              } else {
+                // porcelain 行格式：`XY <path>`，rename 是 `XY <old> -> <new>`。
+                // XY 里可能含空格（` M` / `??` / `R `），所以按前两个字符切。
+                // 与 verify-postfix-snapshot.mjs 的解析保持一致。
+                //
+                // 噪音前缀在**展开之前**就要用上。原因不是判据，是性能：
+                // 未跟踪目录 `?? node_modules/` / `?? target/` 展开会走十万级文件，
+                // 而其中每一个随后都会被过滤掉。先排除再展开，代价从「一次全盘 walk」
+                // 降到「一次字符串比较」。
+                // 同一份清单也用于 3.7.6.5 的 under-reported 过滤——**两侧必须同一口径**，
+                // 否则会出现「因为不看它所以算没登记」这种自相矛盾的判断。
+                const NOISE_PREFIXES = [
+                  'repair-artifacts/', 'experiments/', 'docs/', '.work/', 'target/', 'build/',
+                  // 这两条不参与判据，只为避免展开巨型目录
+                  'node_modules/', '.git/',
+                ];
+                const isNoisePath = (p) => {
+                  const lower = p.toLowerCase().replace(/^\.\//, '');
+                  return NOISE_PREFIXES.some((pre) => lower === pre.slice(0, -1) || lower.startsWith(pre));
+                };
+
+                const rawEntries = [];
+                for (const line of porcelain.split('\n')) {
+                  if (!line.trim()) continue;
+                  const xy = line.slice(0, 2);
+                  let rest = line.slice(3).trim();
+                  if (rest.includes(' -> ')) rest = rest.split(' -> ').pop().trim();
+                  rawEntries.push({ xy, path: rest.replace(/\\/g, '/') });
+                }
+
+                // 未跟踪目录（porcelain 里写作 `?? newdir/`）展开成其中的文件。
+                // **不能跳过**：跳过等于把「一个新目录里 20 个源文件」算作 0 条，
+                // 那正好是 under-reporting 的最短路径（verify-postfix-snapshot
+                // 的文件头也记过一次真实的漏补事故）。
+                // 唯一的例外是上面那些噪音前缀——它们本来就要在判据里被排掉，
+                // 展开它们只会付出代价。
+                const WALK_LIMIT = 20000;
+                let walked = 0;
+                let walkTruncated = false;
+                const actualAll = [];
+                for (const en of rawEntries) {
+                  if (isNoisePath(en.path)) {
+                    // 仍然记下目录条目本身（不是文件）：后续若有人声称改了
+                    // `repair-artifacts/x.md`，会落进「噪音区不可对账」那一档。
+                    continue;
+                  }
+                  const abs = join(repoDir, en.path.replace(/\/$/, ''));
+                  let isDir = false;
+                  try { isDir = statSync(abs).isDirectory(); } catch { /* 已删除的文件 */ }
+                  if (isDir && en.xy.includes('?')) {
+                    const walk = (dir) => {
+                      if (walked >= WALK_LIMIT) { walkTruncated = true; return; }
+                      let entries;
+                      try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+                      for (const e of entries) {
+                        if (walked >= WALK_LIMIT) { walkTruncated = true; return; }
+                        const p = join(dir, e.name);
+                        if (e.isDirectory()) walk(p);
+                        else {
+                          walked++;
+                          // 保持与 porcelain 同样的正斜杠、仓库根相对口径
+                          const rel = p.slice(repoDir.length).replace(/^[\\/]+/, '').replace(/\\/g, '/');
+                          actualAll.push(rel);
+                        }
+                      }
+                    };
+                    walk(abs);
+                  } else {
+                    actualAll.push(en.path.replace(/\/$/, ''));
+                  }
+                }
+                if (walkTruncated) {
+                  warnings2.push(
+                    `WARN · 未跟踪目录展开触到硬上限 ${WALK_LIMIT} 个文件，双向对账**只覆盖了一部分**：`
+                    + `被截断之后没枚举到的文件既不会被算进 git status 的 actual，`
+                    + `也不会被判成 under-reported。\n`
+                    + `这一档是性能保护（防止未跟踪的 node_modules/ 这类目录把 hook 挂死），`
+                    + `不是通过。若被审仓库常有大量未跟踪文件，请先 .gitignore 掉构建产物目录。`
+                  );
+                }
+                const actualSet = new Set(actualAll);
+
+                // 3.7.6.3 归一化 claimed 到「仓库根相对的 posix 路径」
+                //
+                // 信封里的写法至少有三种：`src/main/java/X.java`（仓库相对，最常见）、
+                // `.\src\X.java`（Windows 手写）、`D:/repo/src/X.java`（绝对路径）。
+                // 不归一化会让同一个文件在两边看起来不同，产生**假 overclaim**——
+                // 而假 FAIL 会让人把整段关掉，比漏报更糟。
+                const repoNorm = repoDir.replace(/\\/g, '/').replace(/\/+$/, '');
+                const claimed = new Set();
+                const unnormalizable = [];
+                for (const p of claimedRaw) {
+                  const n = p.replace(/\\/g, '/');
+                  if (/^[A-Za-z]:\//.test(n) || n.startsWith('/')) {
+                    const absNorm = n.replace(/\/+$/, '');
+                    if (absNorm.toLowerCase().startsWith(repoNorm.toLowerCase() + '/')) {
+                      claimed.add(absNorm.slice(repoNorm.length + 1));
+                    } else {
+                      // 绝对路径且不在被审仓库里：无法与这个仓库的 git status 对账。
+                      // 不判 overclaim（那是误伤），但要说出来。
+                      unnormalizable.push(p);
+                    }
+                  } else {
+                    claimed.add(n.replace(/^\.\//, '').replace(/\/+$/, ''));
+                  }
+                }
+                if (unnormalizable.length > 0) {
+                  warnings2.push(
+                    `WARN · files_touched 里有 ${unnormalizable.length} 个绝对路径不在被审仓库 `
+                    + `${repoDir} 内，无法与 git status 对账：`
+                    + `${unnormalizable.slice(0, 5).join('、')}`
+                    + `${unnormalizable.length > 5 ? ' …' : ''}。\n`
+                    + `这些条目既不算 overclaim 也不算已登记——它们在本次对账之外。`
+                  );
+                }
+
+                // 3.7.6.4 overclaimed：声称了但 git status 里没有
+                //
+                // 这里用**未过滤**的 actual：过滤是给 under-reporting 用的
+                //（「剩下的是应该被覆盖的东西」）。若 overclaim 也用过滤后的集合，
+                // 那么「声称改了 docs/x.md 而且确实改了」会被误报——
+                // 它明明改了，只是被我们的噪音过滤器排掉了。
+                const overclaimed = [...claimed].filter((p) => !actualSet.has(p)).sort();
+                if (overclaimed.length > 0) {
+                  problems.push(
+                    `这些路径在 files_touched 里，但 \`git status\` 显示仓库里它们没有改动`
+                    + `（${overclaimed.length} 个，被审仓库 ${repoDir}）：\n`
+                    + overclaimed.slice(0, 12).map((p) => `  - ${p}`).join('\n')
+                    + (overclaimed.length > 12 ? `\n  … 另有 ${overclaimed.length - 12} 个` : '')
+                    + `\n\n规则：files_touched_overclaimed。`
+                    + `R18 的 files_touched_not_found 只回答「这些文件存在吗」；`
+                    + `**存在不等于被改过**（R18 §6 原文：path existence does not mean `
+                    + `the file was changed by this instance）。一个实例把一直存在、`
+                    + `从未被碰过的文件写进 files_touched，R18 全绿，而它什么都没改。\n`
+                    + `补法：要么真的去改（然后重跑），要么从 files_touched 里删掉这些条目。`
+                    + `不要用「它在仓库里存在」当改动凭证——凭证是改动本身。`
+                  );
+                }
+
+                // 3.7.6.5 underreported：改了但没声称（过滤后判断）
+                //
+                // 排除顺序按「最便宜且最确定」排：前缀 → 产物目录 → legacy → 扩展名。
+                // NOISE_PREFIXES 在 3.7.6.2 已定义，这里**复用同一份**：
+                // 展开阶段与判据阶段口径不一致会让「没展开」被读成「没改动」，
+                // 那是自相矛盾的判断。
+                const dirRel = inferred.dir.replace(/\\/g, '/').replace(/\/+$/, '');
+                const dirRelInRepo = dirRel.toLowerCase().startsWith(repoNorm.toLowerCase() + '/')
+                  ? dirRel.slice(repoNorm.length + 1)
+                  : null;
+                // 与 verify-postfix-snapshot.mjs 同一个 SRC_EXT（R15 同款）。
+                // 用扩展名白名单而不是路径黑名单：黑名单要求枚举所有产物目录名，
+                // 必然漏；白名单漏一个的代价是「那个语言没被保护」，
+                // 而不是「整道门失效」。
+                const SRC_EXT = /\.(java|js|mjs|cjs|ts|tsx|jsx|py|go|rs|kt|kts|c|cc|cpp|h|hpp|cs|rb|php|swift|scala|sh)$/i;
+                const NON_SRC_EXT = /\.(md|log|json|yml|yaml|txt|xml|properties)$/i;
+                const legacyNames = new Set(legacy);
+
+                const isNoise = (p) => {
+                  if (isNoisePath(p)) return true;
+                  const lower = p.toLowerCase();
+                  if (dirRelInRepo && (lower === dirRelInRepo.toLowerCase()
+                    || lower.startsWith(dirRelInRepo.toLowerCase() + '/'))) return true;
+                  // legacy_artifacts 通常只写文件名（basename），按 basename 比
+                  const base = p.split('/').pop();
+                  if (legacyNames.has(base)) return true;
+                  if (NON_SRC_EXT.test(p)) return true;
+                  return false;
+                };
+
+                const unclaimed = [...actualSet].filter((p) => !claimed.has(p));
+                const unclaimedNoisy = unclaimed.filter(isNoise);
+                const unclaimedMaterial = unclaimed.filter((p) => !isNoise(p)).sort();
+                const unclaimedSrc = unclaimedMaterial.filter((p) => SRC_EXT.test(p));
+
+                if (unclaimed.length > 0) {
+                  const listOf = (arr, n = 10) => arr.slice(0, n).join('、')
+                    + (arr.length > n ? ` … 另有 ${arr.length - n} 个` : '');
+                  if (unclaimedSrc.length > 0) {
+                    // 源码被改却没登记 → FAIL。这是 under-reporting 的典型形态：
+                    // 「改了 10 个只列 1 个」里剩下的 9 个通常就是源码。
+                    problems.push(
+                      `仓库里有 ${unclaimed.length} 个文件被改动，其中 ${unclaimedSrc.length} 个是**源码文件**`
+                      + `，但没有任何 fix 产物把它们列进 files_touched（被审仓库 ${repoDir}）：\n`
+                      + unclaimedSrc.slice(0, 12).map((p) => `  - ${p}`).join('\n')
+                      + (unclaimedSrc.length > 12 ? `\n  … 另有 ${unclaimedSrc.length - 12} 个` : '')
+                      + `\n\n规则：files_touched_underreported。`
+                      + `这就是 R18 §6 点名的 under-reporting：一个实例改了 10 个文件，`
+                      + `只列 1 个存在的，R18 的存在性检查完全绿。`
+                      + `存在性只证明「凭证不是假的」，不证明「凭证是完整的」。\n`
+                      + `已排除的合法噪音（${unclaimedNoisy.length} 个）：产物目录、legacy_artifacts、`
+                      + `repair-artifacts/ 等前缀、以及 .md/.log/.json 这类非源码扩展名——`
+                      + `排除之后**剩下的**才叫「应该被 files_touched 覆盖的东西」。\n`
+                      + `补法：把这些源码改动登记进对应 fix 产物的 payload.files_touched`
+                      + `（或确认它们不属于本次修复，然后回滚 / 说明来源）。`
+                    );
+                  } else {
+                    warnings2.push(
+                      `WARN · 仓库里有 ${unclaimed.length} 个文件被改动，但没有任何 fix 产物`
+                      + `把它们列进 files_touched（${listOf([...unclaimedNoisy, ...unclaimedMaterial])}）。\n`
+                      + `规则：files_touched_underreported。**本回合不阻断**——`
+                      + `被改动但未登记的文件里没有源码（按 SRC_EXT 判），`
+                      + `多半是日志 / 快照 / 产物目录 / 构建输出这类合法噪音。\n`
+                      + `之所以只 WARN：把这些无条件升 FAIL 会让每一个跑过构建、写过日志的回合都红，`
+                      + `然后这条规则会被整体关掉——那比漏报更糟。`
+                      + `但若这些文件其实应该登记，请补进 files_touched；`
+                      + `否则可以忽略（它已经留痕，可审计）。`
+                    );
+                  }
+                }
+              }
+            }
+          }
+        }
+
       }
     }
 
