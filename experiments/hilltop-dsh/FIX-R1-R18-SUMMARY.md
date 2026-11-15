@@ -1,4 +1,4 @@
-# 修复相位加固：R1–R13 全记录
+# 修复相位加固：R1–R18 全记录
 
 **时间跨度**：2026-11-15
 **起点**：用户指出「你的重要任务是诊断目前提示词有什么问题，而不是跟我汇报工作，
@@ -99,7 +99,14 @@ stop-hook.mjs:70    if (['wave2a','wave2b','wave3'].includes(state.phase)) {
 | **R10** | 裁决「出处」交叉校验 | 堵洞 3 |
 | **R11** | `red_log_path` / `test_path` 的 `existsSync` | 堵洞 4 |
 | **R12** | 信封闸门 + 自检表补 `check-payload` | 证据链第 1、2 环 |
-| **R13** | 信封闸门接入 stop-hook + 存量产物决策 | 进行中 |
+| **R13** | 信封闸门接入 stop-hook + 存量产物决策 | 缺口改成一个可机械判定的 FAIL |
+| **R14** | `report.dir_path` 条件必填 | 堵「不写字段 = 一条 WARN 换掉闸门」 |
+| **R15** | 空目录 + `in_flight` 为空 → 拒绝闭合 | R14 自己承认没堵完的那一半 |
+| **R16a** | `target_repo` 字段 | 判据是「resolve 后是存在的目录」，不是「字符串非空」 |
+| **R16b** | 快照自检进 `wave4-fix` / `wave5-verify` | 相位闭合前必须产出 post-fix 快照并校验 |
+| **R16 附** | `exclude_hides_source` | 有开关的检查会被用来关掉检查，所以开关自己要有守卫 |
+| **R17** | `check-payload` 接进 stop-hook | 口子 2/3：规则存在但从不执行，等于不存在 |
+| **R18** | `files_touched` 存在性 | 口子 4（进行中） |
 
 ---
 

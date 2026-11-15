@@ -355,14 +355,14 @@ $ node tools/check-all.mjs
 exit 0
 
 $ node tools/fix-phase-e2e.test.mjs
-=== 结果: 47 通过 / 1 失败 ===   ← 见 §5.2，这是真阳性，不是回归
+=== 结果: 48 通过 / 0 失败 ===   ← 见 §5.2：本任务改到中途是 47/1，由同一工作区的另一个会话修好了 fixture
 ```
 
 ### 5.1 原 68 条回归
 
 `stop-hook.test.mjs` 原有 68 条断言全部通过（改前 68/0，改后 86/0，新增 18 条断言）。
 
-### 5.2 `fix-phase-e2e.test.mjs` 从 48/0 变成 47/1 —— 这是真阳性
+### 5.2 `fix-phase-e2e.test.mjs` 曾从 48/0 变成 47/1 —— 真阳性，已被另一会话修正
 
 **先确认不是我的回归**：`git checkout -- tools/stop-hook.mjs tools/stop-hook.test.mjs`
 回到 HEAD 后跑，是 `48 通过 / 0 失败`；改后是 `47 通过 / 1 失败`。所以是本轮改动引起的。
@@ -392,21 +392,26 @@ const cp = runNode(CHECK_PAYLOAD, [goodFix, '--role', 'fix', '--json']);
 ```
 
 没传 `--repo` → 降级成 `evidence_existence_unchecked` WARN → `ok=true` → B4 断言通过。
-**B4 的绿是站在口子 3 上的。** 现在 stop-hook 强制带 `--repo`，这份 fixture 的真实状态暴露了。
+**B4 的绿是站在口子 3 上的。**
 
 同理，`test_path: 'tools/red-green.test.mjs'` 在 `--repo` 下也解析不到
 （`ls tools/red-green.test.mjs` → No such file），是第二条同类问题。
 
-**我没有改它**：`tools/fix-phase-e2e.test.mjs` 不在本次授权的两个文件里。
-按 R16a §4 的先例（当时 B0 变红也是同一个原因，记录在案、留给下轮），
-本次只在这里留痕。修复方向很明确，两条选一条：
+**结局**：`tools/fix-phase-e2e.test.mjs` 不在本次授权的两个文件里，我**没有改它**。
+但在本任务执行期间（02:53），同一工作区里的**另一个会话**修改了它的 `:504-521`，
+真的把 `experiments/round1/red-*.log` 与 `tools/red-green.test.mjs` 写了出来，
+注释里明确写着「2026-11-15（R17）：日志文件必须真的建出来」。
 
-1. 在 fixture 里真的把 `experiments/round1/red-*.log` 和 `tools/red-green.test.mjs` 写出来
-   （3 行 `writeFileSync`），fixture 就名副其实了；
-2. 或者接受「场景 B 本来就是合成 fixture，不必真有那些文件」，把 `red_log_path`
-   写成绝对存在的路径（例如 fixture 自己 `mkdtemp` 出来的路径）。
+现在：
 
-我倾向 1——它让 fixture 的叙述与事实一致，也让 B4 不再依赖「不传 `--repo`」这个降级。
+```
+$ node tools/fix-phase-e2e.test.mjs
+=== 结果: 48 通过 / 0 失败 ===
+```
+
+**要注意这两个「R17」是两件事**：本次任务（本报告）与那个会话都把自己的改动标成 R17，
+它们是同一轮的两个并行子任务。上面这段 diff 不是我写的；
+`git diff tools/fix-phase-e2e.test.mjs` 可复核。
 
 ### 5.3 §1.2 引用的「同一份产物两种结论」
 
@@ -478,9 +483,17 @@ R17 之后仍然是这样，而且**第二道闸门同样只看 `files`（平铺
    所以理论上没有「check-state 绿但 stop-hook 红」的账本；但如果有人的流程只跑
    stop-hook 不跑 check-state，会直接撞上。这是**有意的严格**（理由见 §1.2），
    但它是行为变更，值得记一笔。
-2. **`fix-phase-e2e.test.mjs` 1 条红**，见 §5.2。不在授权范围内，未修。
+2. **`target_repo` 现在是硬前置。** 既有 wave4 账本若没有这个字段，
+   stop-hook 会在有产物时报 exit 2。R16a 已让 check-state 报 `target_repo_required`，
+   所以理论上没有「check-state 绿但 stop-hook 红」的账本；但如果有人的流程只跑
+   stop-hook 不跑 check-state，会直接撞上。这是**有意的严格**（理由见 §1.2），
+   但它是行为变更，值得记一笔。
 3. 性能：Windows 上约 180 ms/份，20 份约占 2.5 s。若某轮产物数常态超过 20，
    值得考虑让 check-payload 支持多文件（一次进程启动），但那是下一轮的事。
+4. **同一工作区有并行会话在改同一批文件。** 本任务执行期间，`tools/fix-phase-e2e.test.mjs`
+   被另一个会话改了（02:53），`experiments/hilltop-dsh/FIX-R16a-report.md` 也是之前
+   另一个会话改的（02:16）。两个会话都把自己的改动标成「R17」。
+   `git status` 里看到的 `M tools/fix-phase-e2e.test.mjs` **不是本任务改的**。
 
 ---
 
@@ -491,4 +504,20 @@ R17 之后仍然是这样，而且**第二道闸门同样只看 `files`（平铺
 | `tools/stop-hook.mjs` | 新增 §3.7.5（约 130 行含注释）：`hasEnvelope` 探测、50 份上限 + WARN、10 s 单份超时、`target_repo` 硬判据、逐份串行 `check-payload --role fix`、四条汇总（字段不合规 / 超时 / 执行失败 / `evidence_existence_unchecked` 透传）。`isAbsolute` 加入 `node:path` import。 |
 | `tools/stop-hook.test.mjs` | 新增 case 32~36（18 条断言）+ `FIXTURE_REPO` fixture；`writeValidFixArtifact` 与 `GOOD_ENVELOPE` 升级为完整合法信封；case 18/19/20 补 `target_repo`；`mkdirSync` 提到顶部 import。 |
 
-**没有执行 `git add` / `git commit`。**
+### 7.1 关于 commit
+
+**本任务没有执行 `git add` / `git commit`。**
+
+但工作区里出现了提交 `24ab2d3 feat(R17): check-payload 接进 stop-hook —— 口子 2/3 堵上`，
+它把我改的两个文件、我的报告、以及那个并行会话对 `tools/fix-phase-e2e.test.mjs` 的修复
+**一起**提交了。那是同一工作区里另一个会话做的（与我 R16a §4 记录的情况同构）。
+
+可复核：(本任务结束时)
+
+```
+$ git diff --stat tools/stop-hook.mjs tools/stop-hook.test.mjs
+（空 —— 说明提交内容与我留下的内容逐字一致）
+```
+
+同一时刻 `git status` 里还有另一个会话的痕迹（`D FIX-R1-R13-SUMMARY.md` /
+`?? FIX-R1-R18-SUMMARY.md` 的重命名），也**不是本任务**做的。
