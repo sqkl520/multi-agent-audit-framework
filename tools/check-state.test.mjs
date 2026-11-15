@@ -291,6 +291,9 @@ const donePlan = (phase) => ({
 // 2026-11-15（R14）：FIX + 有契约时目录字段是条件必填（report_dir_required），
 // 「应当完全合规」的样本必须带上它，否则它测的是别的东西。
 const fixReport = { dir_path: '/x/artifacts' };
+// 2026-11-16（R16a）：同理，target_repo 在 FIX + wave4/wave5 + 有契约时条件必填
+// （target_repo_required），且要求是一个真实存在的目录。HERE（tools/）测试时必然存在。
+const fixTargetRepo = HERE;
 
 console.log('case 29: phase=wave4 / wave5 不再被判 invalid_enum');
 {
@@ -300,7 +303,8 @@ console.log('case 29: phase=wave4 / wave5 不再被判 invalid_enum');
       fix_contracts: [fc()], current_plan: donePlan(ph),
       // 2026-11-15（R14）：FIX + 有契约时目录字段是条件必填（report_dir_required），
       // 所以这个「应当完全合规」的样本必须带上它，否则它测的是别的东西。
-      report: fixReport,
+      // 2026-11-16（R16a）：target_repo 同理（target_repo_required）。
+      report: fixReport, target_repo: fixTargetRepo,
     }));
     expect(`${ph} 不报 phase invalid_enum`,
       !(r.r?.errors ?? []).some(x => x.rule === 'invalid_enum' && x.field === 'phase'),
@@ -332,7 +336,7 @@ console.log('case 32: path_mode=FIX + phase=wave5 且契约齐备 → 合规');
   const r = run(base({ path_mode: 'FIX', phase: 'wave5', status: 'RUNNING',
     fix_contracts: [fc({ verdict: 'PASS', verified_at: '2026-11-15T12:00:00Z' })],
     current_plan: donePlan('wave5'),
-    report: fixReport }));
+    report: fixReport, target_repo: fixTargetRepo }));
   expect('无错误', (r.r?.errors ?? []).length === 0, JSON.stringify(r.r?.errors));
 }
 
@@ -391,6 +395,7 @@ console.log('case 37: FIX + wave4 + 只有 final_report_path → 通过');
     path_mode: 'FIX', phase: 'wave4', status: 'RUNNING',
     fix_contracts: [fc()], current_plan: donePlan('wave4'),
     report: { dir_ready: true, dir_path: null, final_report_path: '/x/artifacts/r.md' },
+    target_repo: fixTargetRepo,
   }));
   expect('不报 report_dir_required',
     !(r.r?.errors ?? []).some(x => x.rule === 'report_dir_required'),
@@ -405,6 +410,7 @@ console.log('case 38: FIX + wave4 + 两个都有 → 通过');
     fix_contracts: [fc()], current_plan: donePlan('wave4'),
     report: { dir_ready: true, dir_path: '/x/artifacts',
       final_report_path: '/x/artifacts/r.md' },
+    target_repo: fixTargetRepo,
   }));
   expect('无错误', (r.r?.errors ?? []).length === 0, JSON.stringify(r.r?.errors));
 }
@@ -444,6 +450,73 @@ console.log('case 41: FIX + wave4 + fix_contracts 为空 → 报 fix_contracts_r
     JSON.stringify(r.r?.errors));
   expect('不报 report_dir_required',
     !(r.r?.errors ?? []).some(x => x.rule === 'report_dir_required'),
+    JSON.stringify(r.r?.errors));
+}
+
+// ── target_repo 条件必填（2026-11-16 R16a 新增）──────────────────────────
+// 为什么需要它：check-payload.mjs 的 red_log_not_found / test_path_not_found
+// 要把信封里的相对路径解析成绝对路径才能 existsSync，而这一步需要 --repo <被审仓库根>。
+// 此前 state.json 没有任何字段记录被审仓库在哪，于是「忘了传 --repo」时
+// 这两条规则整档降级成 evidence_existence_unchecked WARN——检查被跳过，而不是不通过。
+console.log('case 42: FIX + wave4 + 有契约但完全没有 target_repo → 报 target_repo_required');
+{
+  const r = run(base({
+    path_mode: 'FIX', phase: 'wave4', status: 'RUNNING',
+    fix_contracts: [fc(), fc({ finding_id: 'F2' })],
+    current_plan: donePlan('wave4'),
+    report: fixReport,
+  }));
+  const e = (r.r?.errors ?? []).find(x => x.rule === 'target_repo_required');
+  expect('报 target_repo_required', !!e, JSON.stringify(r.r?.errors));
+  expect('字段指向 target_repo', e?.field === 'target_repo', e?.field);
+}
+
+console.log('case 43: FIX + wave4 + target_repo 指向不存在的路径 → 报错（不是字符串非空就算数）');
+{
+  const r = run(base({
+    path_mode: 'FIX', phase: 'wave4', status: 'RUNNING',
+    fix_contracts: [fc()], current_plan: donePlan('wave4'), report: fixReport,
+    target_repo: join(tmpdir(), 'definitely-not-here-r16a', 'no-such-repo'),
+  }));
+  const e = (r.r?.errors ?? []).find(x => x.rule === 'target_repo_required');
+  expect('报 target_repo_required', !!e, JSON.stringify(r.r?.errors));
+  expect('消息点明「不是字符串非空就算数」',
+    /不是字符串非空就算数/.test(e?.msg ?? ''), e?.msg);
+}
+
+console.log('case 44: FIX + wave4 + target_repo 指向真实存在的目录 → 通过');
+{
+  const r = run(base({
+    path_mode: 'FIX', phase: 'wave4', status: 'RUNNING',
+    fix_contracts: [fc()], current_plan: donePlan('wave4'), report: fixReport,
+    target_repo: HERE, // tools/ 目录，测试时必然存在
+  }));
+  expect('不报 target_repo_required',
+    !(r.r?.errors ?? []).some(x => x.rule === 'target_repo_required'),
+    JSON.stringify(r.r?.errors));
+  expect('无错误', (r.r?.errors ?? []).length === 0, JSON.stringify(r.r?.errors));
+}
+
+console.log('case 45: AUDIT_ONLY + wave4 + 无 target_repo → 通过（不误伤审计路径）');
+{
+  const r = run(base({
+    path_mode: 'AUDIT_ONLY', phase: 'wave4', status: 'RUNNING',
+    current_plan: donePlan('wave4'),
+  }));
+  expect('不报 target_repo_required',
+    !(r.r?.errors ?? []).some(x => x.rule === 'target_repo_required'),
+    JSON.stringify(r.r?.errors));
+  expect('无错误', (r.r?.errors ?? []).length === 0, JSON.stringify(r.r?.errors));
+}
+
+console.log('case 46: FIX + wave4 + fix_contracts 为空 → 不报 target_repo_required（与 case 41 同一条纪律）');
+{
+  const r = run(base({
+    path_mode: 'FIX', phase: 'wave4', status: 'RUNNING',
+    fix_contracts: [], current_plan: donePlan('wave4'),
+  }));
+  expect('不报 target_repo_required',
+    !(r.r?.errors ?? []).some(x => x.rule === 'target_repo_required'),
     JSON.stringify(r.r?.errors));
 }
 

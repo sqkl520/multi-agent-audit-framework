@@ -286,6 +286,7 @@ planned_verify_agents = 返回 SUCCESS 且契约合规的 fix_agent_id 数
 
 | 检查 | 通过条件 | 失败动作 |
 |---|---|---|
+| **快照完整（先于一切）** | `verify-postfix-snapshot.mjs` 退出码 0——被审仓库的每条改动在 `<OUTDIR>/repair-work/post-fix/` 里都有同名且逐字节相同的副本 | **停止验收**，先补快照；缺快照时验收的对象是什么都不确定 |
 | 单缺陷边界 | 只验收了派发时指定的 `finding_id`，未评价其他修复 | 移除越界内容 |
 | 未引用修复者说法 | `payload` 中无"根据修复报告""修复Agent已测试"等表述 | 删除该表述，改为自身观察 |
 | 定向检查瞄准缺陷 | 检查直接观察 `finding_ref` 声称的行为，而非通用测试套件 | 重新构造检查，或在 `notes` 说明无法构造的原因 |
@@ -298,13 +299,29 @@ planned_verify_agents = 返回 SUCCESS 且契约合规的 fix_agent_id 数
 | 返回符合契约 | `payload.finding_id`、`fix_agent_id`、`verdict`、`evidence` 齐备，`evidence` 三项布尔值均有实际依据 | 补全 |
 | **机读信封完整** | 产物末尾有合法 JSON 信封，`check-payload --role verify` 退出码 0 | 补信封 / 修正字段直到通过 |
 
-> **自检（机械，不可跳过）**：
+> **自检一（先于验收，快照完整性）**：
+> ```
+> node <FRAMEWORK_ROOT>/tools/verify-postfix-snapshot.mjs \
+>   --repo <被审仓库> \
+>   --snapshot <OUTDIR>/repair-work/post-fix \
+>   --exclude <产物目录名>/
+> ```
+> 退出码非 0 = 快照与被审仓库的实际改动对不上（有文件没被快照，或快照是旧版本）。
+> **这时不要开始验收**：你观察到的是哪一个版本都不确定，结论无法归因给「修复后的代码」。
+> 先让主Agent补快照（`wave4-fix.md` §0.7），再重跑这条直到退出码 0。
+>
+> **自检二（产物合规）**：
 > ```
 > node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物> --role verify --artifact-dir <产物目录> --repo <被审仓库>
 > ```
 > 退出码非 0 就是不合规——按它的提示修到通过为止，**不要用「我已人工核对」代替**。
 >
-> **为什么这一条必须存在**：上表中除最后一行以外的 10 行全都是**内容检查**，靠的是验收Agent自己诚实地逐项确认。
+> **为什么「快照完整」必须排在最前**：验收的全部产出都是「我看到了什么」的断言。
+> 若被审源码与你手上的快照不是同一份，`evidence` 指的就是一个实验记录里不存在的对象——
+> 它既不能被复核，也不能在事后被任何人重现。2026-11-15 那次实验正是这样：
+> 修复后快照**根本不存在**，而当时的自检清单里没有任何一条会因此报警。
+>
+> **为什么「产物合规」必须存在**：上表中除最后一行以外的条目全都是**内容检查**，靠的是验收Agent自己诚实地逐项确认。
 > 而契约校验器的全部规则都挂在 JSON 信封上——信封不在，`verdict`、`mutation_check`、
 > `residual_risk_disposition` 一个都取不到，`check-payload` 除 `no_json_envelope` 外一条都不跑。
 > **没有信封的验收产物，在机械层面等于没交付。**

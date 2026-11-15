@@ -220,6 +220,33 @@ console.log('case 12: --exclude 不能吞掉源码（匹配按路径段边界，
   } finally { rmSync(root, { recursive: true, force: true }); }
 }
 
+console.log('case 13: --exclude 排除源码 → FAIL（有开关的检查会被用来关掉检查）');
+{
+  const { root, repo } = makeRepo();
+  // 造一个源码文件 + 一个产物文件
+  write(repo, 'src/Main.java', 'class Main {}');
+  const snap = makeSnapshot(root, repo, { skip: ['src/Main.java'] });
+  try {
+    const r = run(['--repo', repo, '--snapshot', snap, '--exclude', 'src/Main.java']);
+    expect('退出码 1', r.code === 1, `实际 ${r.code}`);
+    expect('报 exclude_hides_source', /exclude_hides_source/.test(r.out), r.out.slice(0, 400));
+    expect('点名被藏起来的源码文件', /src\/Main\.java/.test(r.out), r.out.slice(0, 500));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+}
+
+console.log('case 14: --exclude 排除非源码（产物目录）→ 允许');
+{
+  const { root, repo } = makeRepo();
+  write(repo, 'artifacts/report.json', '{}');
+  write(repo, 'artifacts/notes.md', 'notes');
+  const snap = makeSnapshot(root, repo);
+  try {
+    const r = run(['--repo', repo, '--snapshot', snap, '--exclude', 'artifacts/']);
+    expect('退出码 0（.json/.md 不算源码）', r.code === 0, `实际 ${r.code}：${r.out.slice(0, 300)}`);
+    expect('不报 exclude_hides_source', !/exclude_hides_source/.test(r.out), r.out.slice(0, 300));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

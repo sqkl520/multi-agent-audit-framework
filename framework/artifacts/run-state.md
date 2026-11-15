@@ -56,6 +56,7 @@ source: 续写（2026-11-01）。解决 round31「跑不完、断了接不上、
   "path_mode": "AUDIT_ONLY | FIX",
   "phase": "init | wave1 | wave2a | wave2b | wave3 | wave4 | wave5 | report | closed",
   "status": "RUNNING | PARTIALLY_CLOSED | CLOSED | BLOCKED",
+  "target_repo": "path|null — 被审仓库绝对路径。FIX 路径下必填（缺或指向不存在的目录则报 target_repo_required，见第 2 节）",
 
   "budget": {
     "total_cap": 60,
@@ -191,6 +192,33 @@ source: 续写（2026-11-01）。解决 round31「跑不完、断了接不上、
 
 > **为什么它是一个硬闸而不是一句提醒**：目录缺失会让**每一个**子 Agent 的写入失败，且重派不会好转——这正是 `protocol.md` §4.1 定义的「系统性契约缺陷」。放在派发前检查，一次就拦住；不检查则要等所有 Agent 失败一遍才发现。
 
+**`target_repo`：被审仓库在哪（2026-11-16 / R16a 新增）**
+
+| 字段 | 规则 |
+|---|---|
+| `target_repo` | 被审仓库根的**绝对路径**，`string\|null`。`path_mode = FIX` 且 `phase ∈ {wave4, wave5}` 且 `fix_contracts` 非空时必须非空**且解析后是一个真实存在的目录**，否则 `check-state.mjs` 报 `target_repo_required`。**不在 `TOP_REQUIRED` 里**——AUDIT_ONLY 路径可缺席，存量账本不会一夜不合规 |
+| 谁写 | 主 Agent 建产物目录的那一步一起写（即 `report.dir_ready` 置 `true` 的同一步，见 `report-naming.md` §5.1）。位置在顶层，不在 `report` 下 |
+
+**为什么需要这个字段**：`check-payload.mjs` 有两条规则 `red_log_not_found` / `test_path_not_found`，
+它们要判断「信封里写的 `red_log_path` / `test_path` 真的存在吗」。而这两条路径通常是**相对路径**（相对被审仓库根），
+`check-payload` 只有拿到 `--repo <被审仓库根>` 才能把它们解析成绝对路径去 `existsSync`。
+没有 `--repo` 时它判定不了，只能降级成 `evidence_existence_unchecked` **WARN** 而不是 FAIL——
+也就是说，**「证据文件是否真的存在过」这一整项检查被跳过**，只留下路径形状检查（见 `check-payload.mjs` 规则 1 / 2 之后的降级分支）。
+在 `target_repo` 之前，`state.json` 里**没有任何字段记录被审仓库在哪**，于是每一次接收产物都只能由主 Agent 自己决定要不要传 `--repo`——
+而正是那个「忘了传」的时刻，降级路径会静默生效。
+
+**它不是自述吗？承认。** `target_repo` 由主 Agent 自己写，它可以指向一个假仓库，甚至指向一个存在但无关的目录。
+这一层防不住存心造假。但它仍然值得存在，因为两类失效形态在**可追溯性**上完全不同：
+
+| 失效形态 | 事后能不能看出问题 |
+|---|---|
+| `target_repo` 指向一个假仓库 | 能。路径写在账本里，任何人拿它一试就知道对不对；它和 `fix_contracts[].test_path`、产物路径是同一个坐标系，可以互相印证 |
+| **根本不写 `target_repo`** | 不能。账本上没有任何关于「被审对象在哪」的记录，事后无法重建当时到底查没查，也无法重跑那次校验 |
+
+**「指向一个假仓库」至少留了痕，「不写这个字段」连痕迹都没有。** 这与 R14 §6.1 的教训是同一条：
+只验「字符串非空」等于没验——所以这里的判据不止要求非空，还要求 `resolve()` 之后**目录真实存在**。
+（它仍然不能证明「这个目录就是被审仓库」；能证明这一点的只有独立来源，见 `check-payload.mjs` 的独立性约束。）
+
 ---
 
 ## 第 2.5 节：修复相位（`wave4`）与验收相位（`wave5`）（2026-11-15 新增）
@@ -216,7 +244,7 @@ source: 续写（2026-11-01）。解决 round31「跑不完、断了接不上、
 | **相位内允许的动作** | 按 `finding_id` **逐条派发独立修复实例**（`templates/wave4-fix.md`）；每个实例在**第一次 Edit 之前**把五个前置字段登记进 `fix_contracts` |
 | **闭合条件** | `fix_contracts` **非空**（每条被派发的缺陷都有登记）+ 所有修复实例到终态 + `budget.spawned_fix_agents` 已按实际派发数更新 |
 | **交付物** | `fix_contracts[]`（账本条目）+ 各修复实例的产物文件 |
-| **机械校验** | `check-state.mjs`：`path_mode=FIX` 且 `phase ∈ {wave4, wave5}` 时 `fix_contracts` 必须存在且非空（`fix_contracts_required`），且 `report.dir_path` / `report.final_report_path` 不能都为空（`report_dir_required`，2026-11-15 / R14 新增）。`stop-hook.mjs`：`wave4` 无 `current_plan` 或 `fix_contracts` 为空时拒绝结束回合 |
+| **机械校验** | `check-state.mjs`：`path_mode=FIX` 且 `phase ∈ {wave4, wave5}` 时 `fix_contracts` 必须存在且非空（`fix_contracts_required`），`report.dir_path` / `report.final_report_path` 不能都为空（`report_dir_required`，2026-11-15 / R14 新增），且 `target_repo` 必须是一个真实存在的目录（`target_repo_required`，2026-11-16 / R16a 新增）。`stop-hook.mjs`：`wave4` 无 `current_plan` 或 `fix_contracts` 为空时拒绝结束回合 |
 
 **并行下限（比 `wave2a` 更严的一条）**：如果 `fix_contracts` 里有 **≥2 条不同的 `finding_id`**，而 `budget.spawned_fix_agents` **≤ 1**，`stop-hook.mjs` 拒绝闭合该相位，理由写「多条独立缺陷在单个实例里串行完成，违反 `triage.md` 的面板下限」。
 

@@ -272,7 +272,7 @@ const mergedRecord = (mergedFindingIds, sharedTargetFiles) => ({
  * 「相位尚未闭合」判据不触发——这样场景 A 里它唯一的拦阻理由就是
  * 「多缺陷单实例串行」，断言才能精确指到那道门。
  */
-function stateOf({ contracts, spawned, discipline = [], reportDir = null }) {
+function stateOf({ contracts, spawned, discipline = [], reportDir = null, targetRepo = null }) {
   return {
     schema_version: 'run-state-v1',
     trace_id: 'trace-hilltop-replay',
@@ -304,6 +304,9 @@ function stateOf({ contracts, spawned, discipline = [], reportDir = null }) {
     ...(reportDir
       ? { report: { dir_ready: true, dir_path: reportDir, final_report_path: join(reportDir, 'round1-final-report.md') } }
       : {}),
+    // 2026-11-15（R16a）：wave4 + fix_contracts 非空时 target_repo 必填，
+    // 且必须 resolve 到一个真实存在的目录（只验字符串非空等于没验）。
+    ...(targetRepo ? { target_repo: targetRepo } : {}),
   };
 }
 
@@ -488,7 +491,7 @@ console.log('    红测日志放到 experiments/ 下。四道门必须全部放�
     }));
     const literalDiscipline = [mergedRecord(['round3-A::A-01', 'round3-A::A-04'], MERGE_FILES)];
     writeFileSync(ws.statePath,
-      JSON.stringify(stateOf({ contracts: literalContracts, spawned: 8, discipline: literalDiscipline, reportDir: ws.fixOut }), null, 2));
+      JSON.stringify(stateOf({ contracts: literalContracts, spawned: 8, discipline: literalDiscipline, reportDir: ws.fixOut, targetRepo: ws.root }), null, 2));
     writeFileSync(ws.reportPath, finalReportMd(HIGH_IDS.map((id) => [id, 'UPHELD', 'HIGH'])));
 
     // 去向表：8 条 HIGH 标 FIXED，其余 30 条 DEFERRED（依据 ≥10 字）

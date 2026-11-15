@@ -18,7 +18,8 @@
  * 退出码：0 合规 / 1 不合规 / 2 用法错误
  */
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, statSync } from 'node:fs';
+import { resolve, isAbsolute } from 'node:path';
 
 const args = process.argv.slice(2);
 const jsonOut = args.includes('--json');
@@ -267,6 +268,54 @@ if (fixContractsRequired && hasFixContracts) {
       `换句话说：不写这两个字段，等于用省略换掉一道门。` +
       `补法：把本轮产物目录的绝对路径写进 report.dir_path` +
       `（report-naming.md §5.1：波次一启动前就该有它），或至少写 report.final_report_path`);
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// 4.56 · target_repo：被审仓库在哪（R16a 新增）
+// ────────────────────────────────────────────────────────────────────
+// 这一段堵的是 R13 / R14 之后仍然敞开的一条：`check-payload.mjs` 有
+// `red_log_not_found` / `test_path_not_found` 两条规则，判的是「信封里的
+// red_log_path / test_path 真的存在吗」。这两条路径通常是**相对**被审仓库根的，
+// 只有拿到 `--repo <被审仓库根>` 才能 resolve 成绝对路径去 existsSync；
+// 拿不到就降级成 `evidence_existence_unchecked` WARN——**检查被跳过，而不是不通过**。
+//
+// 而 `state.json` 里此前**没有任何字段记录被审仓库在哪**。于是：
+//   - 主 Agent 每次接收产物都得自己记得传 `--repo`；
+//   - 「忘了传」的那一刻，降级路径静默生效，账本上看不出这次校验到底跑没跑。
+//
+// 判据故意比「非空字符串」强一档（R14 §6.1 的教训：只验非空等于没验）：
+// `target_repo` 必须 resolve 成一个**真实存在的目录**。
+// 这条仍然是自述字段——主 Agent 可以指向一个假仓库。但「指向假仓库」留下了痕迹
+// （路径写在账本里，可被任何人拿一试），而「不写」连痕迹都没有。
+// 这层差别是它值得存在的全部理由，不要把这条规则读成「被审仓库已被证明」。
+//
+// 条件与 fix_contracts_required / report_dir_required 同构，且同样**不进 TOP_REQUIRED**：
+// 加进顶层必填会让所有存量审计账本一夜之间变不合规。
+if (fixContractsRequired && hasFixContracts) {
+  const tr = state.target_repo;
+  const trMissing = !nonEmptyStr(tr);
+  if (trMissing) {
+    err('target_repo', 'target_repo_required',
+      `path_mode=FIX 且 phase=${state.phase}，账本里有 ${state.fix_contracts.length} 条 fix_contract，` +
+      `但顶层没有 target_repo。` +
+      `这不是格式问题——check-payload.mjs 的 red_log_not_found / test_path_not_found ` +
+      `要把信封里的相对路径解析成绝对路径，必须知道被审仓库根在哪（它只认 --repo <被审仓库根>）。` +
+      `没有它，这两条规则只能降级成 evidence_existence_unchecked 的 WARN，` +
+      `也就是「证据文件是否真的存在过」这一整项**本轮没有验证**。` +
+      `补法：把被审仓库根的绝对路径写进顶层 target_repo`);
+  } else {
+    // 只验字符串非空等于没验（R14 §6.1）：还要它 resolve 出来真是一个目录。
+    const abs = isAbsolute(tr) ? tr : resolve(tr);
+    let isDir = false;
+    try { isDir = existsSync(abs) && statSync(abs).isDirectory(); } catch { isDir = false; }
+    if (!isDir) {
+      err('target_repo', 'target_repo_required',
+        `target_repo="${tr}"（解析为 ${abs}）不是一个真实存在的目录。` +
+        `**不是字符串非空就算数**——写一个不存在的路径与不写它，在 check-payload 那里效果完全相同：` +
+        `相对路径仍然 resolve 不出来，red_log_not_found / test_path_not_found 仍然降级成 WARN。` +
+        `一个指不到的仓库根，账本上看起来却是「填了」，比留空更坏：它是把降级伪装成了已配置`);
+    }
   }
 }
 

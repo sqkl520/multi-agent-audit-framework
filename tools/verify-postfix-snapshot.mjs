@@ -162,11 +162,37 @@ const excluded = (p) => ARGS.exclude.some((ex) => {
   const e = ex.replace(/\\/g, '/').replace(/\*+$/, '');
   return p === e || p.startsWith(e.endsWith('/') ? e : e + '/');
 });
+
+// `--exclude` 是一个开关，而**有开关的检查会被用来关掉检查**。
+// `wave4-fix.md` §0.7 写了「不要把 --exclude 用在源码路径上；那等于给校验器开了一个静默的口子」——
+// 但文档写得再清楚，也只是「靠自觉」。所以这里加一道机械约束：
+// **如果被排除掉的条目里有任何一个看起来是源码文件（.java/.js/.ts/.py/.go/.rs/.kt/.c/.cpp/.h），
+// 就报 FAIL，并把那些路径逐条列出。** 产物目录（.md/.json/.log）不受影响。
+//
+// 判据故意用「扩展名白名单」而不是「路径黑名单」：后者要求我列举所有可能的产物目录名，
+// 必然漏；前者只需要列举所有可能的源码扩展名，漏一个的代价是「那个语言的文件没被保护」，
+// 而不是「整道门失效」。
+const SRC_EXT = /\.(java|js|mjs|cjs|ts|tsx|jsx|py|go|rs|kt|kts|c|cc|cpp|h|hpp|cs|rb|php|swift|scala|sh)$/i;
+{
+  const excludedSrc = [];
+  for (const c of expanded) {
+    if (!excluded(c.path)) continue;
+    if (SRC_EXT.test(c.path)) excludedSrc.push(c.path);
+  }
+  if (excludedSrc.length > 0) {
+    fail('exclude_hides_source',
+      `--exclude 排除了 ${excludedSrc.length} 个**源码文件**，这等于给校验器开了一个静默的口子：\n`
+      + `    ${excludedSrc.slice(0, 8).join('\n    ')}${excludedSrc.length > 8 ? `\n    …另有 ${excludedSrc.length - 8} 个` : ''}\n`
+      + `--exclude 的用途是跳过**修复产物**目录（repair-artifacts/ 这类），不是跳过源码。\n`
+      + `源码快照的意义就是「修复后的代码长什么样」——把源码排掉，快照就只剩产物了。`,
+      { paths: excludedSrc });
+  }
+}
+
 for (const c of expanded) {
   if (excluded(c.path)) continue;
   repoChangedSet.add(c.path);
-  const snapFile = join(ARGS.snapshot, c.path);
-  if (!existsSync(snapFile)) {
+  const snapFile = join(ARGS.snapshot, c.path);  if (!existsSync(snapFile)) {
     fail('changed_file_not_snapshotted',
       `仓库里 ${c.path} 有改动（${c.xy.trim() || c.xy}），但快照里没有这个文件`,
       { path: c.path });
