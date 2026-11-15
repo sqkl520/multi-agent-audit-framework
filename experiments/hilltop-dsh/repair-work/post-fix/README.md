@@ -65,12 +65,29 @@ repair-work/post-fix/    修复后（本次）
   `grep -c "DEFAULT_EXPLOSION_POWER"` 在 `ExplodeBeetleGoal.java` 里是 2
 - 新测试类真实存在，可以读内容核对它们测什么
 
+**能证明（机械）**：这份快照**完整覆盖了被审仓库的全部改动**。跑：
+
+```
+node tools/verify-postfix-snapshot.mjs \
+  --repo "<TARGET_REPO>" \
+  --snapshot experiments/hilltop-dsh/repair-work/post-fix \
+  --exclude repair-artifacts/
+```
+
+它逐条比对 `git status --porcelain` 的每一项：改动文件必须在快照里有同名且**逐字节相同**的副本。
+
+> **为什么需要这条命令**：第一次补拍漏了 7 个文件（4 个被修改的测试类 + 3 个新增测试类），
+> 是人工逐行读 `git status` 才发现的。事后补拍的东西有共同的失效模式——**补漏了没人发现**。
+> 那句 `--exclude repair-artifacts/` 也不是随口加的：那是**修复产物**目录（不是源码），
+> 它有自己的落点（框架仓库的 `repair/`），混进源码快照会让「快照是否完整」这个判据变模糊。
+
 **不能证明**：
 
 - **红测日志仍然不可恢复。** 那三个「修复前是红的」日志被 `mvn clean` 删光了，
   快照里没有、也不可能有。`LEGACY-ARTIFACTS.md` 选 C（豁免）的核心原因正是这一条。
 - 这份快照是**事后补拍**的，不是修复当时留下的。它的可信度低于
   「修复过程中自动落盘」的产物——但高于「什么都没有」。
+- 快照内容与仓库一致，**不代表这些改动是对的**。那是评审的事。
 
 ---
 

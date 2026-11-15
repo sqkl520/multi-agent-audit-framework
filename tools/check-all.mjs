@@ -196,6 +196,25 @@ const CHECKS = [
     script: 'check-fix-instances.test.mjs',
     desc: '用例：UPHELD 少登记点名 / 修了 DOWNGRADED 警告 / 杜撰 id / 无申报合并 / 合并集合不等 / spawned 缺失按 0 / 审计路径跳过',
   },
+  {
+    name: '修复后快照一致性（事后补拍有没有补漏）',
+    // 注册 **.test.mjs 自测**，理由同上。
+    //
+    // 收口时应手动跑一次真实核对：
+    //   node tools/verify-postfix-snapshot.mjs \
+    //     --repo <被审仓库> --snapshot experiments/<run>/repair-work/post-fix \
+    //     [--exclude repair-artifacts/]
+    //
+    // 为什么需要它：`post-fix/` 是**事后补拍**的源码快照。事后补拍有一个共同的
+    // 失效模式——补漏了没人发现。2026-11-15 第一次补拍就漏了 7 个文件
+    // （4 个被改的测试类 + 3 个新增测试类），是人工逐行比对 `git status` 才发现的。
+    // 这个校验器把那次人工比对变成机械检查：仓库的每一条改动都必须在快照里有同名
+    // 且逐字节相同的文件。
+    //
+    // 一时间想到的替代方案是「相信补拍的人看全了 `git status`」——那正是失效的那一次。
+    script: 'verify-postfix-snapshot.test.mjs',
+    desc: '用例：漏补点名 / 快照过期内容不同 / 多余文件仅 WARN / 空快照 exit 2 / 未跟踪目录展开 / --exclude 不误伤源码',
+  },
 ];
 
 let failed = 0;
