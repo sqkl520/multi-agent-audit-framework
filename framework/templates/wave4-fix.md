@@ -279,6 +279,25 @@ break-ai-fix-loops 的核心实践是：**在第一次编辑之前，记录精�
 | 不自我验收 | 返回中不声称“已修复”“验收通过” | 删除该表述 |
 | 未修改测试以通过 | 未删除/跳过/弱化测试断言；冲突时标记 `TEST_CONFLICT` | 恢复测试或标记 `TEST_CONFLICT` |
 | 尝试预算 | 尝试次数 ≤3 | 返回 `PERMANENT_FAILURE`，`attempts_exhausted: true` |
+| **机读信封完整** | 产物末尾有合法 JSON 信封，`check-payload --role fix` 退出码 0 | 补信封 / 修正字段直到通过 |
+
+> **自检（机械，不可跳过）**：
+> ```
+> node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物> --role fix --artifact-dir <产物目录> --repo <被审仓库>
+> ```
+> 退出码非 0 就是不合规——按它的提示修到通过为止，**不要用「我已人工核对」代替**。
+>
+> 先跑一条更粗的闸门，确认产物不是「看不见的」：
+> ```
+> node <FRAMEWORK_ROOT>/tools/check-fix-artifacts-envelope.mjs --dir <产物目录>
+> ```
+> 它只问一件事：这批产物里有没有哪一份**根本没有信封**。退出码非 0 = 有产物进不了 `check-payload`。
+>
+> **2026-11-15 的教训**：某次修复的 6 份产物全部没有 JSON 信封
+> （`grep -c '"schema_version"'` 逐份为 0），而 `check-payload` 的全部规则都挂在信封上——
+> `role` 取不到时，除 `no_json_envelope` 外一条都不跑。于是「红测日志必须在 `target/` 之外」
+> 「证据文件必须存在」「disposition 必须表态」这些规则**在这批产物上一次都没执行过**。
+> 它们不是通过了，是**没跑**。**产物不带信封 = 校验器无法观测它 = 未交付。**
 
 ---
 

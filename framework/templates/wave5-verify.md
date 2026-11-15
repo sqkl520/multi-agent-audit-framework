@@ -296,6 +296,23 @@ planned_verify_agents = 返回 SUCCESS 且契约合规的 fix_agent_id 数
 | 不自行放行 | 命中第 7 节任一情形时，结论不是无条件的 `PASS` | 改为 `PASS` + `escalation_required:true`，或 `FAIL` |
 | 只读纪律 | 未修改任何 `target_files` 或测试文件；临时脚本路径已说明 | 回退修改，返回 `CONTRACT_VIOLATION` |
 | 返回符合契约 | `payload.finding_id`、`fix_agent_id`、`verdict`、`evidence` 齐备，`evidence` 三项布尔值均有实际依据 | 补全 |
+| **机读信封完整** | 产物末尾有合法 JSON 信封，`check-payload --role verify` 退出码 0 | 补信封 / 修正字段直到通过 |
+
+> **自检（机械，不可跳过）**：
+> ```
+> node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物> --role verify --artifact-dir <产物目录> --repo <被审仓库>
+> ```
+> 退出码非 0 就是不合规——按它的提示修到通过为止，**不要用「我已人工核对」代替**。
+>
+> **为什么这一条必须存在**：上表中除最后一行以外的 10 行全都是**内容检查**，靠的是验收Agent自己诚实地逐项确认。
+> 而契约校验器的全部规则都挂在 JSON 信封上——信封不在，`verdict`、`mutation_check`、
+> `residual_risk_disposition` 一个都取不到，`check-payload` 除 `no_json_envelope` 外一条都不跑。
+> **没有信封的验收产物，在机械层面等于没交付。**
+>
+> 这条教训来自 2026-11-15：某次修复的 6 份产物全部没有信封，
+> 而当时两个相位（修复 / 验收）的自检表里都**没有任何一条要求跑 `check-payload`**。
+> 再强的规则，不被调用就等于不存在。修复产物的全目录闸门见
+> `tools/check-fix-artifacts-envelope.mjs`（`--dir <修复产物目录>`）。
 
 ---
 

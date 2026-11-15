@@ -3,7 +3,14 @@
 **任务**：`check-payload` 对 fix 角色的 `FIXED` 产物只校验 `red_log_path` 的**路径形状**（正则 `(^|\/)target\/`），从不 `existsSync`。于是「路径写在 `target/` 之外、但那个文件从来没生成过」可以通过。
 **依据**：`experiments/hilltop-dsh/FIX-R7-report.md` §4（洞 4，R7 实测，直接采信）。
 **日期**：2026-11-15
-**改动范围**：只改 `tools/check-payload.mjs` 和 `tools/check-payload.test.mjs`。未 commit，未改 stop-hook，未改契约文档。
+**改动范围**：只改 `tools/check-payload.mjs` 和 `tools/check-payload.test.mjs`。未改 stop-hook，未改契约文档。
+
+> **关于 commit（如实记录）**：我没有执行任何 `git commit`。但在我写完报告后，工作树由外部动作
+> 提交为 `afb590e fix(R11): 洞 4 —— 证据文件必须真实存在，不只路径形状对`
+> （作者 `sqkl520`，22:30:58；该 commit 同时装进了并行进行的 R9/R10 的改动）。
+> 我已核对：`git diff HEAD` 对本次三个文件为空，即**提交内容与工作树逐字一致**，
+> 且 `git show HEAD:tools/check-payload.mjs` 拿到独立目录实跑仍是 **161 通过 / 0 失败**。
+> 记录在此是因为任务书要求「不要 commit」——若这是不该发生的提交，它已经发生了，需要由人决定是否回退。
 
 ---
 
@@ -521,12 +528,12 @@ $ node tools/check-payload.mjs /tmp/a.md --role fix --repo ./不存在的目录
 
 | 文件 | 改动 |
 |---|---|
-| `tools/check-payload.mjs` | +约 190 行。新增 `--repo` / `--artifact-dir` 参数（含缺值 exit 2、选项值不当作产物路径）、`EVIDENCE_ROOTS` / `locateEvidence()` / `isPlaceholderPath()` / `UNDECIDED_WARNED`，以及 6 条新规则：`red_log_not_found`、`test_path_not_found`、`red_log_no_directory`、`test_path_placeholder`、`evidence_existence_unchecked`、`evidence_root_not_found`。**既有规则一行未改**，既有调用方式（`<产物> --role <角色>`）行为不变。 |
-| `tools/check-payload.test.mjs` | +约 250 行。新增 `runIn()` 辅助（在产物目录里真建文件、显式传根、可指定 cwd）、`hasRule` / `hasWarn`，以及 case 117–128 共 35 个断言。既有 fixture（`env` / `fixEnv`）与辅助（`run` / `runRaw`）原样保留。 |
+| `tools/check-payload.mjs` | `git diff d119b39 HEAD --numstat` = **+182 / −3**。新增 `--repo` / `--artifact-dir` 参数（含缺值 exit 2、选项值不当作产物路径）、`EVIDENCE_ROOTS` / `locateEvidence()` / `isPlaceholderPath()` / `UNDECIDED_WARNED`，以及 6 条新规则：`red_log_not_found`、`test_path_not_found`、`red_log_no_directory`、`test_path_placeholder`、`evidence_existence_unchecked`、`evidence_root_not_found`。**既有规则一行未改**，既有调用方式（`<产物> --role <角色>`）行为不变。 |
+| `tools/check-payload.test.mjs` | `git diff d119b39 HEAD --numstat` = **+280 / −1**。新增 `runIn()` 辅助（在产物目录里真建文件、显式传根、可指定 cwd）、`hasRule` / `hasWarn`，以及 case 117–128 共 35 个断言。既有 fixture（`env` / `fixEnv`）与辅助（`run` / `runRaw`）原样保留。 |
 
 **未改**：`stop-hook.mjs`（理由见第七节）、任何契约文档、`check-all.mjs`（新测试被既有条目 `check-payload.test.mjs` 自动收纳，无需登记）。
 
-**未 commit。**
+**我的改动未 commit**（见文首关于 `afb590e` 的记录：它由外部动作产生，不是我执行 `git commit` 的结果；内容与本轮工作树逐字一致）。
 
 ---
 
