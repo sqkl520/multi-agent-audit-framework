@@ -501,8 +501,26 @@ console.log('    红测日志放到 experiments/ 下。四道门必须全部放�
     writeFileSync(ws.ledgerPath, ledgerMd(ledgerRows));
 
     // 修复产物：8 条，红测日志全部移到 experiments/ 下
+    //
+    // 2026-11-15（R17）：日志文件必须**真的建出来**。
+    // R17 把 check-payload 接进 stop-hook 之后，`red_log_not_found` 开始生效——
+    // 而这里此前只把路径写进信封、从不创建文件，正是「路径形状对了但文件不存在」。
+    // 那恰恰是 R11 那条规则要抓的形态（2026-11-15 真实事故：三个红测日志被
+    // mvn clean 删光，验收却写「证据存在且内容可信」）。
+    // 所以 fixture 要造真文件——否则它测的就不是「修好之后应该全绿」，
+    // 而是「故意留一个假证据看会不会被抓」。
+    const redLogDir = join(ws.root, 'experiments', 'round1');
+    mkdirSync(redLogDir, { recursive: true });
+    // R17 之后 test_path 也要 existsSync（`test_path_not_found`）。
+    // 信封里写的是 `tools/red-green.test.mjs`，同理必须是真的文件。
+    mkdirSync(join(ws.root, 'tools'), { recursive: true });
+    writeFileSync(join(ws.root, 'tools', 'red-green.test.mjs'),
+      '// 合成 fixture：修复前红、修复后绿\n');
     for (const [i, c] of literalContracts.entries()) {
-      const redLogPath = `experiments/round1/red-${c.finding_id.replace(/::/g, '-')}.log`;
+      const rel = `experiments/round1/red-${c.finding_id.replace(/::/g, '-')}.log`;
+      const redLogPath = rel;
+      writeFileSync(join(ws.root, rel),
+        `[ERROR] Tests run: 1, Failures: 1 -- ${c.finding_id} 修复前是红的\n`);
       writeFileSync(join(ws.fixOut, `fix-${i + 1}.md`),
         fixArtifactMd({ agentId: `fix-${i + 1}`, findingId: c.finding_id, redLogPath }));
     }

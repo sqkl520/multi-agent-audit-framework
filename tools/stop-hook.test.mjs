@@ -8,13 +8,30 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const HOOK = join(HERE, 'stop-hook.mjs');
+
+// 2026-11-16（R17）：一个真实存在的「被审仓库」临时目录，供 §3.7 第二道闸门
+// （check-payload --repo）解析信封里的相对路径。必须定义在文件顶部：
+// case 19/20 在 §3.7 段之前就要用，而 `const` 在模块作用域里有 TDZ，
+// 定义在后面会在运行时抛 ReferenceError。
+//
+// 里面的两个文件对应测试信封里的 test_path / red_log_path：
+//   red/red.log   修复前为红的日志
+//   test/t.mjs    测试文件
+const FIXTURE_REPO = (() => {
+  const d = mkdtempSync(join(tmpdir(), 'repo-'));
+  mkdirSync(join(d, 'red'), { recursive: true });
+  mkdirSync(join(d, 'test'), { recursive: true });
+  writeFileSync(join(d, 'red', 'red.log'), 'FAIL: 修复前测试为红\n');
+  writeFileSync(join(d, 'test', 't.mjs'), '// 测试\n');
+  return d;
+})();
 
 let pass = 0, fail = 0;
 const expect = (n, c, d = '') => {
@@ -35,9 +52,13 @@ function writeValidFixArtifact(dir, name = 'done-1.md') {
     schema_version: 'output-contract-v1',
     agent_id: 'agent-1', role: 'fix', status: 'SUCCESS',
     contract_valid: true, artifact_path: `${name}`,
+    // 2026-11-16（R17）：§3.7 多了第二道闸门（check-payload）。它会真的去
+    // existsSync 这两个证据路径，所以不能再写指不到任何文件的占位路径——
+    // 否则下面「这是 §3.6 的用例」的断言会因为新闸门而 exit 2，测的东西就变了。
+    // 路径相对 FIXTURE_REPO（见下方 §3.7 段），由 locateEvidence 的 --repo 根解析。
     payload: {
       finding_id: 'F1', disposition: 'FIXED',
-      test_path: 'src/test/A.java', red_log_path: 'experiments/red.log',
+      test_path: 'test/t.mjs', red_log_path: 'red/red.log',
       files_touched: [{ path: 'src/A.java', change_summary: 'x' }],
     },
     error: null,
@@ -285,7 +306,7 @@ console.log('case 17: phase=wave5 有契约没有裁决 → 拒绝结束（exit 
 // 3.6 引入 harness 的 session 日志作为外部基准。下面的用例证明它**真的会拦**，
 // 而不只是「代码写了」。
 import { zstdCompressSync } from 'node:zlib';
-import { mkdirSync } from 'node:fs';
+// mkdirSync 已在文件顶部 import（R17 起顶部就需要它来造 FIXTURE_REPO）
 
 function makeFakeDshSession(root, projectDir, sessionId, { subagentCalls, toolCalls = 10, steps = 5 }) {
   const dir = join(root, projectDir, sessionId);
@@ -347,6 +368,10 @@ console.log('case 18: 洞 1 重演 —— 3 个假 fix_agent_id 但 harness 记�
       // 2026-11-15（R14）：让 exit 2 的理由只有一个来源（§3.6 的 harness 对账），
       // 否则本 case 会在「账本缺 report.dir_path」上也 exit 2，测的就不再是 §3.6。
       report: { dir_ready: true, dir_path: ARTIFACT_DIR },
+      // 2026-11-16（R17）：§3.7 第二道闸门需要被审仓库根来解析证据相对路径。
+      // 指向 FIXTURE_REPO（顶部造的真实目录，含 red/red.log 与 test/t.mjs），
+      // 否则这条 case 会因为「账本缺 target_repo」而 exit 2，测的就不再是 §3.6。
+      target_repo: FIXTURE_REPO,
     };
     // f 的定义在 status 分支之后，这里要用到，提前声明
     const f = join(repo, 'docs', 'reports', 'round1', 'state.json');
@@ -391,6 +416,8 @@ console.log('case 19: 真派了 3 次 subagent + 3 个 id + spawned=3 → 放行
       // 否则 §3.7 会拒绝闭合（report_dir_required）。本 case 测的是 §3.6 的 harness 对账，
       // 所以把目录指向一个真实存在但没有产物的空目录（§3.7 只会 WARN「没有对象可查」）。
       report: { dir_ready: true, dir_path: ARTIFACT_DIR },
+      // 2026-11-16（R17）：同 case 18，第二道闸门需要被审仓库根。
+      target_repo: FIXTURE_REPO,
     };
     const f = join(repo, 'docs', 'reports', 'round1', 'state.json');
     writeFileSync(f, JSON.stringify(st));
@@ -424,6 +451,8 @@ console.log('case 20: 推断不出 project 目录时静默跳过，不误拦（�
       // → 跳过 harness 对账，不拦人），所以要把 §3.7 的输入补齐，否则 exit 2 会来自
       // 「账本缺 report.dir_path」而不是被测的那条路径。
       report: { dir_ready: true, dir_path: join(root, 'repo', 'docs', 'reports', 'round1') },
+      // 2026-11-16（R17）：同 case 19，第二道闸门需要被审仓库根。
+      target_repo: FIXTURE_REPO,
     };
     mkdirSync(join(root, 'repo', 'docs', 'reports', 'round1'), { recursive: true });
     // R15：空目录 + in_flight 为空 = 拒绝闭合。本 case 要测的是 §3.6 的降级，
@@ -449,9 +478,27 @@ console.log('case 20: 推断不出 project 目录时静默跳过，不误拦（�
 import { spawnSync } from 'node:child_process';
 
 // 与 check-fix-artifacts-envelope.mjs 的判据一致：role=fix + payload.disposition
+//
+// 2026-11-16（R17）：§3.7 接了第二道闸门（check-payload）之后，这条 fixture 必须
+// 变成**字段完全合法**的信封。理由：它被用来断言「有信封 → exit 0」，
+// 而「有信封但字段错」现在会被拦。若 fixture 只写 schema_version + role + disposition，
+// 它会在 check-payload 那里报 missing_top_field / fixed_without_test 之类——
+// 于是这条 case 从「测信封闸门」变成了「测第二道闸门」，测的东西变了。
+// 完整合法字段见 VALID_FIX_ENV()（在 §3.7 段末尾定义）；这里保留一个字面量版本，
+// 因为它在文件里出现得比 VALID_FIX_ENV 早（TDZ）。
 const GOOD_ENVELOPE = '\n```json\n'
-  + '{"schema_version":"output-contract-v1","role":"fix","payload":{"disposition":"FIXED"}}\n'
-  + '```\n';
+  + JSON.stringify({
+    schema_version: 'output-contract-v1',
+    agent_id: 'fx1', role: 'fix', status: 'SUCCESS', contract_valid: true,
+    artifact_path: '<OUTDIR>/done-1.md',
+    payload: {
+      finding_id: 'F1', disposition: 'FIXED',
+      test_path: 'test/t.mjs', red_log_path: 'red/red.log',
+      files_touched: [{ path: 'src/main.js', change_summary: '改了 X' }],
+    },
+    error: null,
+  })
+  + '\n```\n';
 const NO_ENVELOPE = '\n# 修复记录\n\n改了三行代码，测试全绿。\n';
 
 function makeArtifactDir(files) {
@@ -471,13 +518,20 @@ function runHookFull(state) {
   return { code: r.status ?? 1, err: r.stderr ?? '', out: r.stdout ?? '' };
 }
 
-// 除此之外全部闭合的 wave4 账本：只让 3.7 成为唯一的拦截来源，
+// 除 此之外全部闭合的 wave4 账本：只让 3.7 成为唯一的拦截来源，
 // 否则用例可能因为别的问题 exit 2，测不到 3.7。
+//
+// 2026-11-16（R17）：新增 `target_repo`。原因：§3.7 的第二道闸门（check-payload）
+// 需要被审仓库根才能把信封里的相对路径（red_log_path / test_path）解析成绝对路径。
+// 不给它，check-payload 会降级成 evidence_existence_unchecked 的 WARN——
+// 那正好是 R14 表里口子 3 的形态（「不给 --repo 就降级」）。FIXTURE_REPO
+// 见文件顶部：真造的临时仓库，里面有两个证据文件。
 const closedWave4 = (artifactDir, over = {}) => ({
   phase: 'wave4', status: 'RUNNING', path_mode: 'FIX', in_flight: [],
   fix_contracts: [fixContract()],
   budget: { spawned_fix_agents: 1 },
   current_plan: wavePlan('wave4'),
+  target_repo: FIXTURE_REPO,
   report: {
     dir_ready: true, dir_path: artifactDir,
     final_report_path: join(artifactDir, 'round1-final-report.md'),
@@ -678,6 +732,124 @@ console.log('case 31: 空产物目录 + in_flight 非空 → 底部由 in_flight
       /在飞|in_flight/.test(r.err) && !/写完了却什么都没交/.test(r.err), r.err.slice(0, 500));
   } finally { rmSync(d, { recursive: true, force: true }); }
 }
+
+// ── R17 · §3.7 第二道闸门：check-payload 逐份校验 ────────────────────────
+//
+// R14 §六的表里，口子 2/3 的「还差什么」都写着同一句话：
+//   「stop-hook §3.7 只调 check-fix-artifacts-envelope，不调 check-payload」。
+// 前者只问「有没有信封」，不问「信封里的字段对不对」。于是：
+//
+//   有信封 + schema_version 乱写 → 信封闸门通过 → stop-hook 放行。
+//   「格式合规」变成了「内容合规」的替代品。
+//
+// 下面这几个 case 的关键是 **case 33**：所有字段完全合法的产物必须 exit 0。
+// 没有它，这次改动很容易变成「一接上就全红」，然后被人用一条 WARN 关掉。
+
+// 一个字段完全合法的 fix 信封。路径都相对 FIXTURE_REPO：
+//   red/red.log   存在
+//   test/t.mjs    存在
+//   src/main.js   存在（files_touched[]，不过 check-payload 目前不校验它的存在性）
+const VALID_FIX_ENV = (over = {}) => ({
+  schema_version: 'output-contract-v1',
+  agent_id: 'fx1',
+  role: 'fix',
+  status: 'SUCCESS',
+  contract_valid: true,
+  artifact_path: '<OUTDIR>/done-1.md',
+  payload: {
+    finding_id: 'F1',
+    disposition: 'FIXED',
+    test_path: 'test/t.mjs',
+    red_log_path: 'red/red.log',
+    files_touched: [{ path: 'src/main.js', change_summary: '改了 X' }],
+  },
+  error: null,
+  ...over,
+});
+
+const fixArtifactBody = (env) => `# 修复产物\n\n\`\`\`json\n${JSON.stringify(env, null, 2)}\n\`\`\`\n`;
+
+console.log('case 32 (R17): 有信封但 schema_version 错 → exit 2，消息含 wrong_schema_version');
+{
+  const d = makeArtifactDir({ 'done-1.md': fixArtifactBody(VALID_FIX_ENV({ schema_version: 'output-contract-v2' })) });
+  try {
+    const r = runHookFull(closedWave4(d));
+    expect('退出码 2', r.code === 2, `实际 ${r.code}：${r.err.slice(0, 400)}`);
+    expect('报 wrong_schema_version', /wrong_schema_version/.test(r.err), r.err.slice(0, 600));
+    expect('指名是哪份产物', /done-1\.md/.test(r.err), r.err.slice(0, 600));
+    expect('指名是哪个字段', /schema_version/.test(r.err), r.err.slice(0, 600));
+  } finally { rmSync(d, { recursive: true, force: true }); }
+}
+
+console.log('case 33 (R17): 所有字段完全合法 → exit 0（最重要：证明没有误伤）');
+{
+  const d = makeArtifactDir({ 'done-1.md': fixArtifactBody(VALID_FIX_ENV()) });
+  try {
+    const r = runHookFull(closedWave4(d));
+    expect('退出码 0', r.code === 0, `实际 ${r.code}：${r.err.slice(0, 800)}`);
+    expect('没有 check-payload 类错误', !/check-payload/.test(r.err), r.err.slice(0, 600));
+  } finally { rmSync(d, { recursive: true, force: true }); }
+}
+
+console.log('case 34 (R17): red_log_path 指向不存在的文件 + target_repo 有效 → exit 2，含 red_log_not_found');
+{
+  const d = makeArtifactDir({
+    'done-1.md': fixArtifactBody(VALID_FIX_ENV({
+      payload: { ...VALID_FIX_ENV().payload, red_log_path: 'red/DOES_NOT_EXIST.log' },
+    })),
+  });
+  try {
+    const r = runHookFull(closedWave4(d));
+    expect('退出码 2', r.code === 2, `实际 ${r.code}：${r.err.slice(0, 400)}`);
+    expect('报 red_log_not_found', /red_log_not_found/.test(r.err), r.err.slice(0, 800));
+    expect('指名是哪份产物', /done-1\.md/.test(r.err), r.err.slice(0, 800));
+    expect('不降级成 evidence_existence_unchecked',
+      !/evidence_existence_unchecked/.test(r.err), r.err.slice(0, 800));
+  } finally { rmSync(d, { recursive: true, force: true }); }
+}
+
+console.log('case 35 (R17): target_repo 缺失 → exit 2，说明这是账本问题');
+{
+  const d = makeArtifactDir({ 'done-1.md': fixArtifactBody(VALID_FIX_ENV()) });
+  try {
+    const st = closedWave4(d);
+    delete st.target_repo;
+    const r = runHookFull(st);
+    expect('退出码 2', r.code === 2, `实际 ${r.code}：${r.err.slice(0, 400)}`);
+    expect('说明缺的是账本字段', /target_repo/.test(r.err), r.err.slice(0, 800));
+    expect('点明这是账本问题而不是打包/证据问题',
+      /账本/.test(r.err), r.err.slice(0, 800));
+    // 关键：不能把它报成「产物不合规」。产物本身是好的，错的是账本没给解析根。
+    // 断言要看的是「有没有把产物判红的那个汇总块」，不是消息里有没有提到规则名——
+    // 上面那段解释文字本来就要引用 red_log_not_found 说明「为什么必须给 --repo」。
+    expect('没有「产物信封字段不合规」的判定块',
+      !/份修复产物\*\*信封里的字段不合规\*\*/.test(r.err), r.err.slice(0, 800));
+    expect('没有 check-payload 汇总里的 [rule] field：结构',
+      !/\[[a-z_]+\]\s*payload\./.test(r.err), r.err.slice(0, 800));
+  } finally { rmSync(d, { recursive: true, force: true }); }
+}
+
+console.log('case 36 (R17): 产物数 > 50 → 只查前 50 份并给 WARN（不阻断）');
+{
+  // 造 51 份：前 50 份合法，第 51 份（按文件名排序靠后）故意违规。
+  // 如果上限没生效，第 51 份会被检查到从而 exit 2；上限生效则 exit 0 + WARN。
+  // 用 done-XX.md 保证排序稳定（done-051 排在最后）。
+  const files = {};
+  for (let i = 1; i <= 50; i++) {
+    files[`done-${String(i).padStart(2, '0')}.md`] = fixArtifactBody(VALID_FIX_ENV());
+  }
+  files['done-99.md'] = fixArtifactBody(VALID_FIX_ENV({ schema_version: 'BAD' }));
+  const d = makeArtifactDir(files);
+  try {
+    const r = runHookFull(closedWave4(d));
+    expect('退出码 0（第 51 份没被检查）', r.code === 0, `实际 ${r.code}：${r.err.slice(0, 600)}`);
+    expect('WARN 说明超过 50 只查了前 50', /50/.test(r.err) && /只检查/.test(r.err),
+      r.err.slice(0, 800));
+    expect('WARN 提到被跳过的份数', /跳过|未检查|没有检查/.test(r.err), r.err.slice(0, 800));
+  } finally { rmSync(d, { recursive: true, force: true }); }
+}
+
+
 
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===

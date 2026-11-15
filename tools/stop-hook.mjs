@@ -34,7 +34,7 @@
 
 import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { join, dirname, resolve, basename } from 'node:path';
+import { join, dirname, resolve, basename, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
@@ -698,6 +698,207 @@ if (state.phase === 'wave4' || state.phase === 'wave5') {
             );
           }
         }
+        // 3.7.5 · 第二道闸门：check-payload 逐份校验（R17 新增）
+        //
+        // 3.7.4 的 check-fix-artifacts-envelope.mjs 只问**一件事**：这批产物里
+        // 有几份根本进不了 check-payload。它回答「有没有信封」。
+        // 但 R14 §六 的表里，口子 2 和口子 3 的「还差什么」写的是同一句话：
+        //
+        //   口子 2  有信封但字段错（schema_version / role / disposition 非法）
+        //   口子 3  red_log_path 指向已删除文件
+        //   → **stop-hook §3.7 只调 check-fix-artifacts-envelope，不调 check-payload**
+        //
+        // 所以「有信封」变成了「信封内容正确」的替代品。实测形态：
+        // 一份 schema_version 写成 output-contract-v2、red_log_path 指向已删文件的产物，
+        // 在 R14 之后仍然能 exit 0 闭合本轮。而 check-payload 早就有
+        // wrong_schema_version / red_log_not_found 这两条规则——**规则存在，
+        // 只是没有任何强制的调用点**。规则存在但从不执行，等于不存在。
+        //
+        // 这道闸门补的就是那个调用点：对 3.7.2 算出的每一份产物，逐份调用
+        // check-payload.mjs --role fix --repo <state.target_repo> --artifact-dir <dir>。
+        //
+        // ── 为什么必须传 --repo 和 --artifact-dir ──
+        // check-payload 的 red_log_not_found / test_path_not_found 要把信封里的
+        // **相对路径**解析成绝对路径才能 existsSync。只给 --artifact-dir 时，
+        // 相对被审仓库根的路径（例如 src/test/X.java）解析不出来，于是降级成
+        // evidence_existence_unchecked 的 WARN——**检查被跳过，而不是不通过**。
+        // 那正是口子 3 的形态。所以 target_repo 缺失时本层必须报错而不是静默降级：
+        // 否则「接上了 check-payload」这句话在账本上看不出真假。
+        //
+        // R16a 已经在 check-state.mjs 加了 target_repo 的条件必填（FIX + wave4 +
+        // 契约非空 → 必须是非空且真实存在的目录）。但 stop-hook 不能依赖
+        // check-state 先跑过：这里是 harness 强制的最后一道闸，必须自己判。
+        //
+        // ── 性能：串行 + 硬上限 + 单份超时（R17 的取舍，不要重新设计）──
+        // 逐份调用 = N 次进程启动。修复相位的产物数通常是 1~20 份，
+        // 串行几十毫秒一份，总代价在百毫秒量级；并发带来的复杂度
+        // （进程池、错误聚合顺序不确定）不值得。
+        // 两个上限防止病态情况挂死：
+        //   1. 超过 50 份只查前 50 份（按文件名排序，确定性），并 WARN 说出被跳过多少
+        //   2. 单份 10 秒超时（execFileSync 的 timeout）——超时报 FAIL，但明确标注
+        //      「这是工具没跑完，不是产物被判定违规」，避免把超时读成违规
+        const MAX_PAYLOAD_FILES = 50;
+        const PAYLOAD_TIMEOUT_MS = 10_000;
+
+        // 只检查真的能进 check-payload 的产物。
+        // 已声明 legacy 豁免的、以及根本没信封的，3.7.4 已经报过/降级过，
+        // 这里再调一次 check-payload 只会得到一堆 no_json_envelope，是噪音。
+        // 复用一个与 3.7.4 相同的信封探测，避免对同一份文件跑两次 json 解析逻辑：
+        // 只要文件里有含 schema_version 或 role 的 ```json 块，就认为有信封可查。
+        const hasEnvelope = (absPath) => {
+          let text;
+          try { text = readFileSync(absPath, 'utf8'); } catch { return false; }
+          const blocks = [...text.matchAll(/```json\s*\n([\s\S]*?)```/g)];
+          return blocks.some((b) => /"(schema_version|role)"\s*:/.test(b[1]));
+        };
+
+        const candidates = files
+          .filter((f) => !legacySet.has(f))
+          .map((f) => ({ name: f, abs: join(inferred.dir, f) }))
+          .filter((x) => hasEnvelope(x.abs));
+
+        const toCheck = candidates.slice(0, MAX_PAYLOAD_FILES);
+        if (candidates.length > MAX_PAYLOAD_FILES) {
+          warnings.push(
+            `WARN · 待检产物 ${candidates.length} 份，超过硬上限 ${MAX_PAYLOAD_FILES} 份——`
+            + `**只检查了前 ${MAX_PAYLOAD_FILES} 份**（按文件名排序），`
+            + `另外 ${candidates.length - MAX_PAYLOAD_FILES} 份本次**没有经过 check-payload**。\n`
+            + `这是性能保护，不是通过：被跳过的那 ${candidates.length - MAX_PAYLOAD_FILES} 份`
+            + `的字段合规性本轮无答案。若这是真实形态（数百份产物），`
+            + `请分批闭合，或先确认产物目录没把历史文件一起摊平进来。`
+          );
+        }
+
+        if (toCheck.length > 0) {
+          // target_repo 的判据。缺它 = check-payload 的相对路径解析会降级，
+          // 而「降级」在这里等于口子 3 原样复现。所以是 problems 不是 warnings。
+          const rawRepo = state.target_repo;
+          const repoMissing = !(typeof rawRepo === 'string' && rawRepo.trim() !== '');
+          let repoDir = null;
+          let repoUsable = false;
+          if (!repoMissing) {
+            repoDir = isAbsolute(rawRepo) ? rawRepo : resolve(dirname(resolve(statePath)), rawRepo);
+            try { repoUsable = existsSync(repoDir) && statSync(repoDir).isDirectory(); } catch { repoUsable = false; }
+          }
+
+          if (repoMissing || !repoUsable) {
+            problems.push(
+              `${repoMissing
+                ? 'state.json 顶层没有 target_repo'
+                : `state.json 的 target_repo="${rawRepo}"（解析为 ${repoDir}）不是一个真实存在的目录`}，`
+              + `而 stop-hook 需要它来对 ${toCheck.length} 份修复产物跑 check-payload。\n\n`
+              + `**这是账本问题，不是产物问题。** check-payload 的 red_log_not_found / `
+              + `test_path_not_found 要把信封里的相对路径解析成绝对路径才能 existsSync；`
+              + `拿不到被审仓库根时，这两条规则会降级成 evidence_existence_unchecked 的 WARN——`
+              + `也就是「证据文件是否真的存在过」这一整项**本轮没有验证**，而不是不通过。\n`
+              + `这正是 R14 §六 口子 3 的形态：不给 --repo 就降级。所以本层不降级。\n\n`
+              + `补法：把被审仓库根的**绝对路径**写进 state.json 顶层的 target_repo`
+              + `（R16a 已在 check-state.mjs 把它设为 FIX + wave4/wave5 + 契约非空时的条件必填）。`
+            );
+          } else {
+            const checked = [];
+            const failed = [];
+            const timedOut = [];
+
+            for (const { name, abs } of toCheck) {
+              let json = null;
+              let execErr = null;
+              try {
+                const out = execFileSync(process.execPath, [
+                  join(HERE, 'check-payload.mjs'),
+                  abs,
+                  '--role', 'fix',
+                  '--repo', repoDir,
+                  '--artifact-dir', inferred.dir,
+                  '--json',
+                ], {
+                  encoding: 'utf8',
+                  stdio: ['ignore', 'pipe', 'pipe'],
+                  timeout: PAYLOAD_TIMEOUT_MS,
+                });
+                json = JSON.parse(out);
+              } catch (e) {
+                // exit 1（不合规）也会走这里——stdout 里仍然是完整 JSON。
+                try { json = JSON.parse(String(e.stdout ?? '')); } catch { json = null; }
+                if (!json) execErr = e;
+              }
+
+              if (json) {
+                const errs = Array.isArray(json.errors) ? json.errors : [];
+                const warns = Array.isArray(json.warnings) ? json.warnings : [];
+                checked.push({ name, errs, warns });
+                if (errs.length > 0) failed.push({ name, errs });
+                // WARN 也带上来：evidence_existence_unchecked 就藏在这里面。
+                // 若出现它，说明 --repo 给了但某条路径仍然解析不出——这是枚举层面的
+                // 信息，比 FAIL 更值得看，因为它意味着「这条路径的检查没跑」。
+                for (const w of warns) {
+                  if (w.rule === 'evidence_existence_unchecked') {
+                    warnings.push(
+                      `WARN · 产物 ${name} 的证据存在性**没能校验**：${w.msg}\n`
+                      + `  （--repo / --artifact-dir 都已提供。可能是该路径写成了绝对路径但指向别处，`
+                      + `或路径里带变量占位。这一条不是通过，是「本回合没答案」。）`
+                    );
+                  }
+                }
+              } else {
+                const isTimeout = execErr?.code === 'ETIMEDOUT'
+                  || /timed? ?out/i.test(String(execErr?.message ?? ''));
+                if (isTimeout) {
+                  timedOut.push(name);
+                } else {
+                  warnings.push(
+                    `WARN · 产物 ${name} 的 check-payload 没能执行：`
+                    + `${String(execErr?.stderr ?? execErr?.message ?? '无输出').slice(0, 200)}。`
+                    + `这是工具/环境问题，不是产物违规——但意味着这份产物的字段合规性本回合没有答案。`
+                  );
+                }
+              }
+            }
+
+            // ── 汇总失败：每条都必须能回答「哪份产物、哪个字段、错在哪 ──
+            // 只说「check-payload 失败」的消息无法行动：读的人不知道去改哪一句。
+            if (failed.length > 0) {
+              const totalErrs = failed.reduce((s, f) => s + f.errs.length, 0);
+              const lines = [];
+              for (const { name, errs } of failed.slice(0, 10)) {
+                lines.push(`  ${name}：`);
+                for (const e of errs.slice(0, 6)) {
+                  lines.push(`    - [${e.rule}] ${e.field}：${String(e.msg ?? '').split('\n')[0]}`);
+                }
+                if (errs.length > 6) lines.push(`    … 另有 ${errs.length - 6} 项`);
+              }
+              problems.push(
+                `有 ${failed.length} 份修复产物**信封里的字段不合规**`
+                + `（产物目录 ${inferred.dir}，共检查 ${toCheck.length} 份，`
+                + `合计 ${totalErrs} 项违规）：\n`
+                + lines.join('\n')
+                + (failed.length > 10 ? `\n  … 另有 ${failed.length - 10} 份产物不合规` : '')
+                + `\n\n这不是「格式不规范」那么轻。3.7.4 的信封闸门只回答「有没有信封」——`
+                + `而这 ${failed.length} 份**有信封**，所以上一道闸门放行了；`
+                + `答案在信封里面：schema_version 错了会让下游按错误的契约解析，`
+                + `red_log_path / test_path 指向不存在的文件意味着「声称有的证据」其实没有。\n`
+                + `这正是 R14 §六 的口子 2 与口子 3：规则（wrong_schema_version / red_log_not_found）`
+                + `在 check-payload 里早就存在，但没有任何强制的调用点——规则存在但从不执行，等于不存在。\n`
+                + `补法：逐份修。可以先自己跑一遍看完整理由：\n`
+                + `  node tools/check-payload.mjs ${join(inferred.dir, failed[0].name)} --role fix `
+                + `--repo ${repoDir} --artifact-dir ${inferred.dir}`
+              );
+            }
+
+            if (timedOut.length > 0) {
+              problems.push(
+                `有 ${timedOut.length} 份产物的 check-payload **检查超时**（单份上限 `
+                + `${PAYLOAD_TIMEOUT_MS / 1000} 秒）：${timedOut.slice(0, 8).join('、')}`
+                + `${timedOut.length > 8 ? ` … 另有 ${timedOut.length - 8} 份` : ''}。\n`
+                + `**这不是「产物违规」的判定**——是检查没跑完，所以这份产物的字段合规性本回合无答案。`
+                + `最可能的原因是产物过大（几十万字的正文会让 json 块提取变慢）。\n`
+                + `补法：确认这份产物是不是被误当成了产物（例如把整个会话记录写进了 done-*.md）；`
+                + `若确实需要保留，请把正文压到必要证据，信封仍然完整。`
+              );
+            }
+          }
+        }
+
       }
     }
 

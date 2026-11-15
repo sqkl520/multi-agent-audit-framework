@@ -81,20 +81,33 @@ $ node tools/check-state.test.mjs
 
 ---
 
-## 4. 遗留：`fix-phase-e2e.test.mjs` 场景 B 变红（不在三个允许改的文件里）
+## 4. 曾短暂变红、已解除：`fix-phase-e2e.test.mjs` 场景 B
+
+在本次改动的中间态，`tools/fix-phase-e2e.test.mjs` 的场景 B（B0「应当 exit 0」）曾变红：
 
 ```
 ✗ B0 [R1/check-state] exit 0（wave4 合法 + 8 条契约字段完整） — 实际 exit 1；["target_repo_required"]
 === 结果: 47 通过 / 1 失败 ===
 ```
 
-改前该文件是 `48 通过 / 0 失败`（已用 `git stash` 验证）。原因是它的
-`stateOf()` 构造器产出的正是「FIX + wave4 + 8 条 fix_contract」——新规则对这个形状要求 `target_repo`，
-而它没有。**这是新规则按设计生效，不是回归。**
+改前该文件是 `48 通过 / 0 失败`（已用 `git stash` 验证），所以这不是既有问题。
+原因是它的 `stateOf()` 构造器产出的正是「FIX + wave4 + 8 条 fix_contract」——
+新规则对这个形状要求 `target_repo`，而它没有。**这是新规则按设计生效。**
 
-补法是一行：在 `tools/fix-phase-e2e.test.mjs:275` 的 `stateOf()` 返回值里加
-`target_repo: <一个真实存在的目录>`。但该文件不在本次授权的三个文件里，所以**没有动它**。
-它没进 `check-all.mjs`（确认过：`CHECKS` 里没有 `fix-phase-e2e`），所以 `node tools/check-all.mjs` 仍然是绿的。
+该文件不在本次授权的三个文件里，所以当时**没有动它**，只在报告里留了记录。
+随后同一工作区里的另一个任务（R16b）在 `tools/fix-phase-e2e.test.mjs:307` 按同样的
+`...(targetRepo ? { target_repo: targetRepo } : {})` 写法补上了这个样本参数，
+现在该文件已回到 **`48 通过 / 0 失败`**：
+
+```
+$ node tools/fix-phase-e2e.test.mjs
+=== 结果: 48 通过 / 0 失败 ===
+```
+
+`node tools/check-all.mjs` 也是 `✅ 全部通过`。
+
+> 注：本次会话**没有执行任何 `git add` / `git commit`**。工作区里出现了一个提交
+> `01c8647`，它把 R16a 与 R16b 一起提交了——那是同一工作区里另一个会话做的，不是本任务。
 
 ---
 
