@@ -229,6 +229,47 @@ if (fixContractsRequired) {
   }
 }
 
+// ────────────────────────────────────────────────────────────────────
+// 4.55 · report.dir_path / final_report_path：有修复登记时必须可推断（R14 新增）
+// ────────────────────────────────────────────────────────────────────
+// 这一段堵的是 `experiments/hilltop-dsh/FIX-R13-report.md` §7.2 的口子 1，
+// R13 自己把它标为「本轮最大的残留口子」：
+//
+//   不写 report.dir_path / final_report_path → 产物目录推断不出来 →
+//   stop-hook §3.7 只能 WARN 放行 → **整道产物信封闸门被一个「省略」换掉。**
+//
+// 它比「格式写错」严重，因为它把「检查不通过」和「检查没跑」混成了同一种结局。
+// 这正好是 R10 点名的失效形态：「降级路径本身就是一条明面上的后门」。
+// 降级纪律（R8 的 unsupported_harness、R11 的 evidence_existence_unchecked）适用于
+// **拿不到外部信息**的环境问题；而这里缺的是账本自己的字段，不是外部信息——
+// 主 Agent 只要写一行就能让闸门跑起来，所以省略不是「受环境所限」，是选择。
+//
+// 判据与 R1 的 fix_contracts_required 同构，故意放在它旁边：
+// 两条规则描述的是同一件事的两个必要条件（有修复登记 + 能定位修复产物），
+// 分开写会让读者以为它们是无关的两条。
+//
+// 条件里要求 fix_contracts 非空，不只是为了不误伤：没有修复登记时，
+// 这一相位没有任何待检产物，目录对信封检查也就没有意义——
+// 此时报错会把修改清单指向一个修不修都无所谓的字段。
+const hasFixContracts = Array.isArray(state.fix_contracts) && state.fix_contracts.length > 0;
+const nonEmptyStr = (v) => typeof v === 'string' && v.trim() !== '';
+
+if (fixContractsRequired && hasFixContracts) {
+  const hasDir = nonEmptyStr(state.report?.dir_path);
+  const hasFinal = nonEmptyStr(state.report?.final_report_path);
+  if (!hasDir && !hasFinal) {
+    err('report.dir_path', 'report_dir_required',
+      `path_mode=FIX 且 phase=${state.phase}，账本里有 ${state.fix_contracts.length} 条 fix_contract，` +
+      `但 report.dir_path 和 report.final_report_path 都没写。` +
+      `这不是格式问题——stop-hook.mjs §3.7 要从这两个字段推断修复产物目录，` +
+      `才能跑「产物必须带 JSON 信封」那道闸门。` +
+      `两个字段都空 = 闸门推断不出目录 = 只能用一条 WARN 放行。` +
+      `换句话说：不写这两个字段，等于用省略换掉一道门。` +
+      `补法：把本轮产物目录的绝对路径写进 report.dir_path` +
+      `（report-naming.md §5.1：波次一启动前就该有它），或至少写 report.final_report_path`);
+  }
+}
+
 if (Array.isArray(state.fix_contracts)) {
   const required = ['finding_id', 'fix_agent_id', 'registered_at',
     'defect_statement', 'disproof_condition', 'rollback_command', 'test_path'];

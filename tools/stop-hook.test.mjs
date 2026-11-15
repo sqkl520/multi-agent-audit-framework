@@ -25,6 +25,29 @@ const expect = (n, c, d = '') => {
 // 返回 { code, err }
 function writeState(dir, st){ const f=join(dir,"state.json"); writeFileSync(f, JSON.stringify(st)); return f; }
 
+// 2026-11-15（R15）：§3.7 的空目录判据收紧了。
+// 从「空目录 → WARN」改为「空目录 + in_flight 为空 → 拒绝闭合」，
+// 因为 R14 发现「把 dir_path 指向一个空目录」是「用一条 WARN 换掉闸门」的另一种写法。
+// 所以凡是想要 §3.7 放行的用例，必须真的放一份带信封的产物进去——
+// 不能再用空目录「蒙混」过闸门（那正是被堵掉的行为）。
+function writeValidFixArtifact(dir, name = 'done-1.md') {
+  const env = {
+    schema_version: 'output-contract-v1',
+    agent_id: 'agent-1', role: 'fix', status: 'SUCCESS',
+    contract_valid: true, artifact_path: `${name}`,
+    payload: {
+      finding_id: 'F1', disposition: 'FIXED',
+      test_path: 'src/test/A.java', red_log_path: 'experiments/red.log',
+      files_touched: [{ path: 'src/A.java', change_summary: 'x' }],
+    },
+    error: null,
+  };
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, name),
+    `# fix 产物\n\n\`\`\`json\n${JSON.stringify(env, null, 2)}\n\`\`\`\n`);
+}
+
+// 返回 { code, err }
 function runHook(state, stdin = '{}') {
   const dir = mkdtempSync(join(tmpdir(), 'hook-'));
   const f = join(dir, 'state.json');
@@ -306,6 +329,8 @@ console.log('case 18: 洞 1 重演 —— 3 个假 fix_agent_id 但 harness 记�
     // state.json 放在 <tmp>/<projectDir上级>/docs/reports/round1/ 让推断能命中
     const repo = join(root, 'repo');
     mkdirSync(join(repo, 'docs', 'reports', 'round1'), { recursive: true });
+    const ARTIFACT_DIR = join(repo, 'fix-out');
+    writeValidFixArtifact(ARTIFACT_DIR);
     const projectDir = '--' + repo.replace(/ /g, '~0020').replace(/[\\/:]+/g, '-')
       .replace(/[^A-Za-z0-9_~-]+/g, '-') + '--';
     makeFakeDshSession(root, projectDir, 'session-fake-0001', { subagentCalls: 0 });
@@ -319,7 +344,11 @@ console.log('case 18: 洞 1 重演 —— 3 个假 fix_agent_id 但 harness 记�
       ],
       budget: { spawned_fix_agents: 3 },
       current_plan: wavePlan('wave4'),
+      // 2026-11-15（R14）：让 exit 2 的理由只有一个来源（§3.6 的 harness 对账），
+      // 否则本 case 会在「账本缺 report.dir_path」上也 exit 2，测的就不再是 §3.6。
+      report: { dir_ready: true, dir_path: ARTIFACT_DIR },
     };
+    // f 的定义在 status 分支之后，这里要用到，提前声明
     const f = join(repo, 'docs', 'reports', 'round1', 'state.json');
     writeFileSync(f, JSON.stringify(st));
     let r;
@@ -344,6 +373,8 @@ console.log('case 19: 真派了 3 次 subagent + 3 个 id + spawned=3 → 放行
   try {
     const repo = join(root, 'repo');
     mkdirSync(join(repo, 'docs', 'reports', 'round1'), { recursive: true });
+    const ARTIFACT_DIR = join(repo, 'fix-out');
+    writeValidFixArtifact(ARTIFACT_DIR);
     const projectDir = '--' + repo.replace(/ /g, '~0020').replace(/[\\/:]+/g, '-')
       .replace(/[^A-Za-z0-9_~-]+/g, '-') + '--';
     makeFakeDshSession(root, projectDir, 'session-good-0002', { subagentCalls: 3 });
@@ -356,6 +387,10 @@ console.log('case 19: 真派了 3 次 subagent + 3 个 id + spawned=3 → 放行
       ],
       budget: { spawned_fix_agents: 3 },
       current_plan: wavePlan('wave4'),
+      // 2026-11-15（R14）：wave4 + 契约非空时必须有可推断的产物目录，
+      // 否则 §3.7 会拒绝闭合（report_dir_required）。本 case 测的是 §3.6 的 harness 对账，
+      // 所以把目录指向一个真实存在但没有产物的空目录（§3.7 只会 WARN「没有对象可查」）。
+      report: { dir_ready: true, dir_path: ARTIFACT_DIR },
     };
     const f = join(repo, 'docs', 'reports', 'round1', 'state.json');
     writeFileSync(f, JSON.stringify(st));
@@ -385,9 +420,19 @@ console.log('case 20: 推断不出 project 目录时静默跳过，不误拦（�
       ],
       budget: { spawned_fix_agents: 2 },
       current_plan: wavePlan('wave4'),
+      // 2026-11-15（R14）：同 case 19，本 case 测的是 §3.6 的降级（推断不出 project 目录
+      // → 跳过 harness 对账，不拦人），所以要把 §3.7 的输入补齐，否则 exit 2 会来自
+      // 「账本缺 report.dir_path」而不是被测的那条路径。
+      report: { dir_ready: true, dir_path: join(root, 'repo', 'docs', 'reports', 'round1') },
     };
+    mkdirSync(join(root, 'repo', 'docs', 'reports', 'round1'), { recursive: true });
+    // R15：空目录 + in_flight 为空 = 拒绝闭合。本 case 要测的是 §3.6 的降级，
+    // 所以必须真的放一份带信封的产物，让 §3.7 走「有对象可查」那条路径。
+    writeValidFixArtifact(st.report.dir_path);
     const r = runHookWithSessions(st, root);
     expect('退出码 0（环境问题不拦人）', r.code === 0, `实际 ${r.code}：${r.err.slice(0, 300)}`);
+    expect('§3.6 不因环境问题拦人（不出 zero_subagent / 对账失败）',
+      !/harness 日志对账没能执行/.test(r.err), r.err.slice(0, 400));
   } finally { rmSync(root, { recursive: true, force: true }); }
 }
 
@@ -462,16 +507,65 @@ console.log('case 22: wave4 + 产物目录全部有信封 → 允许结束（exi
   } finally { rmSync(d, { recursive: true, force: true }); }
 }
 
-console.log('case 23: wave4 + 产物目录推断不出来 → exit 0 + WARN（降级纪律）');
+console.log('case 23: wave4 + 契约非空 + 产物目录推断不出来 → exit 2（R14：不再是 WARN）');
 {
+  // 2026-11-15（R14）改判：本 case 在 R13 断言的是 exit 0 + WARN。
+  // 那条断言本身就是在锁住 FIX-R13-report.md §7.2 的口子 1 ——
+  // 「不写 report.dir_path/final_report_path 就能用一条 WARN 换掉整道信封闸门」。
+  // 留着它绿，等于把要堵的洞写成契约。
   // report 里没有任何目录线索：既没有 dir_path 也没有 final_report_path
   const r = runHookFull({
     ...closedWave4('__unused__'),
     report: { dir_ready: false, dir_path: null, final_report_path: null },
   });
-  expect('退出码 0（推断不出就降级，不拦人）', r.code === 0, `实际 ${r.code}：${r.err.slice(0, 400)}`);
-  expect('stderr 有 WARN 说明没检查', /WARN|警告/.test(r.err), r.err.slice(0, 400));
-  expect('说明产物目录无法确定', /无法确定|推断不出|推断失败/.test(r.err), r.err.slice(0, 400));
+  expect('退出码 2（拒绝闭合）', r.code === 2, `实际 ${r.code}：${r.err.slice(0, 400)}`);
+  expect('指出这是账本缺字段，不是环境问题',
+    /账本缺字段/.test(r.err), r.err.slice(0, 600));
+  expect('点明它等于用省略换掉一道门', /省略/.test(r.err), r.err.slice(0, 600));
+}
+
+console.log('case 23b: wave4 + 契约非空 + 目录推断不出 + 审计路径（AUDIT_ONLY）→ 不启用该检查');
+{
+  const r = runHookFull({
+    ...closedWave4('__unused__'),
+    path_mode: 'AUDIT_ONLY',
+    report: { dir_ready: false, dir_path: null, final_report_path: null },
+  });
+  expect('退出码 0（判据要求 path_mode=FIX）', r.code === 0, `实际 ${r.code}：${r.err.slice(0, 400)}`);
+  expect('不提账本缺字段', !/账本缺字段/.test(r.err), r.err.slice(0, 400));
+}
+
+console.log('case 23c: wave4 + fix_contracts 为空 + 目录推断不出 → 3.7 仍降级 WARN（不叠加一条缺字段 FAIL）');
+{
+  // 注意：这个账本 exit 2 是 §3 的「wave4 交付物缺失」（fix_contracts 为空）造成的，
+  // 与 3.7 无关——wave4 的闭合条件本来就要求契约非空，所以这条路在真实运行里
+  // 一定已经被前一道门拦住。这里要证明的是：**3.7 不叠加**，它只 WARN，
+  // 不会在同一份账本上再报一条「目录推断不出」的 FAIL（那会把报错清单指向
+  // 一个此时修不修都无所谓的字段）。
+  const r = runHookFull({
+    ...closedWave4('__unused__'),
+    fix_contracts: [],
+    report: { dir_ready: false, dir_path: null, final_report_path: null },
+  });
+  expect('确有降级 WARN 说明没执行信封检查',
+    /本次\*\*没有执行\*\*产物信封检查|没有执行/.test(r.err), r.err.slice(0, 600));
+  expect('3.7 不报「账本缺字段」',
+    !/账本缺字段/.test(r.err), r.err.slice(0, 600));
+  expect('exit 2 的理由是交付物，不是目录',
+    /交付物/.test(r.err), r.err.slice(0, 600));
+}
+
+console.log('case 23d: wave2a（审计路径）+ 目录推断不出 → exit 0（不启用这个检查）');
+{
+  const r = runHookFull({
+    phase: 'wave2a', status: 'RUNNING', path_mode: 'AUDIT_ONLY', in_flight: [],
+    slices: { 'slice-01': { state: 'DONE' } },
+    wave2_completed: [{ agent_id: 'a1', final_status: 'SUCCESS' }],
+    current_plan: wavePlan('wave2a'),
+    report: { dir_ready: false, dir_path: null, final_report_path: null },
+  });
+  expect('退出码 0', r.code === 0, `实际 ${r.code}：${r.err.slice(0, 400)}`);
+  expect('不提账本缺字段', !/账本缺字段/.test(r.err), r.err.slice(0, 400));
 }
 
 console.log('case 24: wave4 + legacy_artifacts 豁免了其中一份 → exit 0，但 stderr 留痕');
@@ -546,6 +640,42 @@ console.log('case 28: legacy_artifacts 列了不存在的文件 → WARN 指出�
     const r = runHookFull(closedWave4(d, { legacy_artifacts: ['done-99.md'] }));
     expect('退出码 0（悬空豁免不是闭合障碍）', r.code === 0, `实际 ${r.code}：${r.err.slice(0, 400)}`);
     expect('WARN 提到 done-99.md 没匹配到', /done-99\.md/.test(r.err), r.err.slice(0, 400));
+  } finally { rmSync(d, { recursive: true, force: true }); }
+}
+
+console.log('case 30: 空产物目录 + in_flight 为空 → 拒绝闭合（R15 堵「用空目录换掉闸门」）');
+{
+  // R14 §6.1 实测的绕过：report.dir_path 写成一个真实存在但没有产物的目录，仍然 exit 0。
+  // R14 当时不升 FAIL 的理由是「修复相位允许『产物还没写完』这个中间态」——
+  // 但那个理由只在**还有实例在跑**时成立。本 case 与 case 31 分别验证这两侧。
+  const d = makeArtifactDir({});
+  try {
+    const r = runHookFull(closedWave4(d, {}));
+    expect('退出码 2（活干完了却一份产物都没有）', r.code === 2, `实际 ${r.code}：${r.err.slice(0, 400)}`);
+    expect('说明这不是「还没写完」而是「写完了却什么都没交」',
+      /写完了却什么都没交|不是「还没写完」/.test(r.err), r.err.slice(0, 500));
+    expect('点明空目录可被用来让闸门失效',
+      /空目录|闸门失效/.test(r.err), r.err.slice(0, 500));
+  } finally { rmSync(d, { recursive: true, force: true }); }
+}
+
+console.log('case 31: 空产物目录 + in_flight 非空 → 底部由 in_flight 判据拦（不是 3.7）');
+{
+  // 这一条不是测 3.7 的降级，而是记录一个事实：**「空目录 + 还有实例在跑」这个组合没法
+  // 单独考察 3.7**——因为既有的 in_flight 判据会先一步拒绝闭合（有实例没到终态就不许结束）。
+  // 也就是说 R14 担心的「用空目录换掉闸门」在实践中只有 in_flight 为空时才成立，
+  // 而归一化到那个形态之后，case 30 已经覆盖了。
+  //
+  // 保留本 case 是为了让「3.7 的降级分支在什么条件下可达」这件事在测试里有痕迹：
+  // 答案是**只有 in_flight 非空时**，而那时别的判据已经拦住了。
+  const d = makeArtifactDir({});
+  try {
+    const st = closedWave4(d, {});
+    st.in_flight = [{ agent_id: 'a1', status: 'RUNNING' }];
+    const r = runHookFull(st);
+    expect('退出码 2', r.code === 2, `实际 ${r.code}：${r.err.slice(0, 400)}`);
+    expect('拦它的是 in_flight 判据，不是 3.7 的空目录判据',
+      /在飞|in_flight/.test(r.err) && !/写完了却什么都没交/.test(r.err), r.err.slice(0, 500));
   } finally { rmSync(d, { recursive: true, force: true }); }
 }
 

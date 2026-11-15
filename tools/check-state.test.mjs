@@ -288,6 +288,9 @@ const donePlan = (phase) => ({
   phase, steps: [{ action: '修 F1', done_when: 'F1 的 disproof_condition 转绿' }],
   exit_condition: '全部契约都有终态', current_step: 2,
 });
+// 2026-11-15（R14）：FIX + 有契约时目录字段是条件必填（report_dir_required），
+// 「应当完全合规」的样本必须带上它，否则它测的是别的东西。
+const fixReport = { dir_path: '/x/artifacts' };
 
 console.log('case 29: phase=wave4 / wave5 不再被判 invalid_enum');
 {
@@ -295,6 +298,9 @@ console.log('case 29: phase=wave4 / wave5 不再被判 invalid_enum');
     const r = run(base({
       path_mode: 'FIX', phase: ph, status: 'RUNNING',
       fix_contracts: [fc()], current_plan: donePlan(ph),
+      // 2026-11-15（R14）：FIX + 有契约时目录字段是条件必填（report_dir_required），
+      // 所以这个「应当完全合规」的样本必须带上它，否则它测的是别的东西。
+      report: fixReport,
     }));
     expect(`${ph} 不报 phase invalid_enum`,
       !(r.r?.errors ?? []).some(x => x.rule === 'invalid_enum' && x.field === 'phase'),
@@ -325,7 +331,8 @@ console.log('case 32: path_mode=FIX + phase=wave5 且契约齐备 → 合规');
 {
   const r = run(base({ path_mode: 'FIX', phase: 'wave5', status: 'RUNNING',
     fix_contracts: [fc({ verdict: 'PASS', verified_at: '2026-11-15T12:00:00Z' })],
-    current_plan: donePlan('wave5') }));
+    current_plan: donePlan('wave5'),
+    report: fixReport }));
   expect('无错误', (r.r?.errors ?? []).length === 0, JSON.stringify(r.r?.errors));
 }
 
@@ -359,6 +366,85 @@ console.log('case 35: wave4/wave5 与 wave2a 一样要求 current_plan（两份�
       (r.r?.errors ?? []).some(x => x.rule === 'missing_plan_in_execution_phase'),
       JSON.stringify(r.r?.errors));
   }
+}
+
+// ── report.dir_path 条件必填（2026-11-15 R14 新增）──────────────────────
+console.log('case 36: FIX + wave4 + 有契约但两个目录字段都没写 → 报 report_dir_required');
+{
+  const r = run(base({
+    path_mode: 'FIX', phase: 'wave4', status: 'RUNNING',
+    fix_contracts: [fc(), fc({ finding_id: 'F2' })],
+    current_plan: donePlan('wave4'),
+  }));
+  const e = (r.r?.errors ?? []).find(x => x.rule === 'report_dir_required');
+  expect('报 report_dir_required', !!e, JSON.stringify(r.r?.errors));
+  expect('字段指向 report.dir_path', e?.field === 'report.dir_path', e?.field);
+  expect('说明不是格式问题，而是闸门推断不出目录',
+    /不是格式问题/.test(e?.msg ?? '') && /推断/.test(e?.msg ?? ''), e?.msg);
+  expect('点明「等于用省略换掉一道门」',
+    /省略换掉一道门/.test(e?.msg ?? ''), e?.msg);
+}
+
+console.log('case 37: FIX + wave4 + 只有 final_report_path → 通过');
+{
+  const r = run(base({
+    path_mode: 'FIX', phase: 'wave4', status: 'RUNNING',
+    fix_contracts: [fc()], current_plan: donePlan('wave4'),
+    report: { dir_ready: true, dir_path: null, final_report_path: '/x/artifacts/r.md' },
+  }));
+  expect('不报 report_dir_required',
+    !(r.r?.errors ?? []).some(x => x.rule === 'report_dir_required'),
+    JSON.stringify(r.r?.errors));
+  expect('无错误', (r.r?.errors ?? []).length === 0, JSON.stringify(r.r?.errors));
+}
+
+console.log('case 38: FIX + wave4 + 两个都有 → 通过');
+{
+  const r = run(base({
+    path_mode: 'FIX', phase: 'wave4', status: 'RUNNING',
+    fix_contracts: [fc()], current_plan: donePlan('wave4'),
+    report: { dir_ready: true, dir_path: '/x/artifacts',
+      final_report_path: '/x/artifacts/r.md' },
+  }));
+  expect('无错误', (r.r?.errors ?? []).length === 0, JSON.stringify(r.r?.errors));
+}
+
+console.log('case 39: AUDIT_ONLY + wave4 + 无 report → 通过（不误伤审计路径）');
+{
+  const r = run(base({
+    path_mode: 'AUDIT_ONLY', phase: 'wave4', status: 'RUNNING',
+    current_plan: donePlan('wave4'),
+  }));
+  expect('不报 report_dir_required',
+    !(r.r?.errors ?? []).some(x => x.rule === 'report_dir_required'),
+    JSON.stringify(r.r?.errors));
+  expect('无错误', (r.r?.errors ?? []).length === 0, JSON.stringify(r.r?.errors));
+}
+
+console.log('case 40: FIX + wave1（未到修复相位）+ 无 report → 通过');
+{
+  const r = run(base({
+    path_mode: 'FIX', phase: 'wave1', status: 'RUNNING',
+  }));
+  expect('不报 report_dir_required',
+    !(r.r?.errors ?? []).some(x => x.rule === 'report_dir_required'),
+    JSON.stringify(r.r?.errors));
+}
+
+console.log('case 41: FIX + wave4 + fix_contracts 为空 → 报 fix_contracts_required，不报 report_dir_required');
+{
+  // 没有可验收的修复时，产物目录对信封检查也没有意义——两条规则不得同时开火，
+  // 否则报错清单会指向一个此时修不修都无所谓的字段。
+  const r = run(base({
+    path_mode: 'FIX', phase: 'wave4', status: 'RUNNING',
+    fix_contracts: [], current_plan: donePlan('wave4'),
+  }));
+  expect('报 fix_contracts_required',
+    (r.r?.errors ?? []).some(x => x.rule === 'fix_contracts_required'),
+    JSON.stringify(r.r?.errors));
+  expect('不报 report_dir_required',
+    !(r.r?.errors ?? []).some(x => x.rule === 'report_dir_required'),
+    JSON.stringify(r.r?.errors));
 }
 
 console.log(`

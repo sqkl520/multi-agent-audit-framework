@@ -138,8 +138,8 @@ source: 续写（2026-11-01）。解决 round31「跑不完、断了接不上、
   ],
   "report": {
     "dir_ready": false,
-    "dir_path": "path|null",
-    "final_report_path": "path|null",
+    "dir_path": "path|null — FIX 路径进入 wave4/wave5 且 fix_contracts 非空时必填（缺则 report_dir_required，见 2.6.2）",
+    "final_report_path": "path|null — 同上；与 dir_path 至少一个非空。AUDIT_ONLY 路径下 report 整个字段可以缺席",
     "written_at": "ISO8601|null",
     "is_complete": false
   },
@@ -187,6 +187,7 @@ source: 续写（2026-11-01）。解决 round31「跑不完、断了接不上、
 |---|---|
 | `dir_ready` | 为 `false` 时**不得派发任何子 Agent**。建目录成功后置 `true`，同时写 `dir_path` |
 | `dir_path` | 本轮产物目录的绝对路径，供子 Agent 拼 `artifact_path` |
+| `dir_path` / `final_report_path`（FIX 路径） | `path_mode = FIX` 且 `phase ∈ {wave4, wave5}` 且 `fix_contracts` 非空时，两者**不能都为空** —— 条件必填，缺则 `check-state.mjs` 报 `report_dir_required` 且 `stop-hook.mjs` 拒绝闭合。见第 2.6.2 节 |
 
 > **为什么它是一个硬闸而不是一句提醒**：目录缺失会让**每一个**子 Agent 的写入失败，且重派不会好转——这正是 `protocol.md` §4.1 定义的「系统性契约缺陷」。放在派发前检查，一次就拦住；不检查则要等所有 Agent 失败一遍才发现。
 
@@ -215,7 +216,7 @@ source: 续写（2026-11-01）。解决 round31「跑不完、断了接不上、
 | **相位内允许的动作** | 按 `finding_id` **逐条派发独立修复实例**（`templates/wave4-fix.md`）；每个实例在**第一次 Edit 之前**把五个前置字段登记进 `fix_contracts` |
 | **闭合条件** | `fix_contracts` **非空**（每条被派发的缺陷都有登记）+ 所有修复实例到终态 + `budget.spawned_fix_agents` 已按实际派发数更新 |
 | **交付物** | `fix_contracts[]`（账本条目）+ 各修复实例的产物文件 |
-| **机械校验** | `check-state.mjs`：`path_mode=FIX` 且 `phase ∈ {wave4, wave5}` 时 `fix_contracts` 必须存在且非空（`fix_contracts_required`）。`stop-hook.mjs`：`wave4` 无 `current_plan` 或 `fix_contracts` 为空时拒绝结束回合 |
+| **机械校验** | `check-state.mjs`：`path_mode=FIX` 且 `phase ∈ {wave4, wave5}` 时 `fix_contracts` 必须存在且非空（`fix_contracts_required`），且 `report.dir_path` / `report.final_report_path` 不能都为空（`report_dir_required`，2026-11-15 / R14 新增）。`stop-hook.mjs`：`wave4` 无 `current_plan` 或 `fix_contracts` 为空时拒绝结束回合 |
 
 **并行下限（比 `wave2a` 更严的一条）**：如果 `fix_contracts` 里有 **≥2 条不同的 `finding_id`**，而 `budget.spawned_fix_agents` **≤ 1**，`stop-hook.mjs` 拒绝闭合该相位，理由写「多条独立缺陷在单个实例里串行完成，违反 `triage.md` 的面板下限」。
 
@@ -251,7 +252,9 @@ source: 续写（2026-11-01）。解决 round31「跑不完、断了接不上、
 两条硬约束保证这一点：
 
 1. `fix_contracts_required` 的检查同时要求 `path_mode === 'FIX'`，`AUDIT_ONLY` 下缺 `fix_contracts` 仍然合法；
-2. `stop-hook.mjs` 的 `wave4`/`wave5` 分支只在 `state.phase` 字面等于这两个值时进入，审计路径永远不会落到它们上面。
+2. `report_dir_required`（R14 新增）同样要求 `path_mode === 'FIX'` **且** `fix_contracts` 非空，
+   `AUDIT_ONLY` 下 `report` 整个缺席仍然合法（回归用例 `check-state.test.mjs` case 39 / 40）；
+3. `stop-hook.mjs` 的 `wave4`/`wave5` 分支只在 `state.phase` 字面等于这两个值时进入，审计路径永远不会落到它们上面。
 
 **唯一的跨界改动是相位白名单本身**（`['wave2a','wave2b','wave3']` → 加上 `wave4`/`wave5`）。它是**加**不是**改**：`wave2a/wave2b/wave3` 的行为逐字不变，回归用例 `stop-hook.test.mjs` case 11 专门锁这一点。
 
@@ -273,7 +276,7 @@ R12《`experiments/hilltop-dsh/FIX-R12-report.md`》§八·洞 B 逐字写下了
 `stop-hook.mjs` §3.7 现在会在 `phase ∈ {wave4, wave5}` 且 `path_mode == 'FIX'` 时，
 调用 `check-fix-artifacts-envelope.mjs --dir <产物目录>`，把它的 FAIL 提升为拒绝闭合的理由。
 
-### 2.6.2 产物目录从哪里来（不新增必填字段）
+### 2.6.2 产物目录从哪里来（FIX 路径下条件必填）
 
 **用已有的 `report.dir_path`**，不新增字段。理由：
 
@@ -282,18 +285,47 @@ R12《`experiments/hilltop-dsh/FIX-R12-report.md`》§八·洞 B 逐字写下了
 - 新增一个必填的顶层字段会让**所有存量 `state.json` 一夜之间变不合规**
   （`check-state.mjs` 的 `TOP_REQUIRED` 有 7 项，加一项就是一次全量迁移）。
 
-推断顺序（失败即降级）：
+**但「不新增顶层必填字段」不等于「可以一直不写」。**（2026-11-15 / R14 修订）
+
+R13 把「目录推断不出来」整档降级成了 WARN，结果 `FIX-R13-report.md` §7.2 自己把它列为
+「本轮最大的残留口子」：**不写 `report.dir_path` 就能把整道信封闸门换成一条 WARN**——
+不用伪造产物、不用改账本数字，只消省略一个字段。它把「检查不通过」和「检查没跑」混成了同一种结局。
+
+所以现在改为**条件必填**，条件是「这一相位有没有已登记的修复」：
+
+| `path_mode` | `phase` | `fix_contracts` | 目录字段 | 判定 |
+|---|---|---|---|---|
+| `FIX` | `wave4` / `wave5` | 非空 | `dir_path` 或 `final_report_path` 至少一个非空 | ✅ 通过 |
+| `FIX` | `wave4` / `wave5` | 非空 | 两个都为空 | ❌ `check-state.mjs` 报 `report_dir_required`；`stop-hook.mjs` **拒绝闭合**（exit 2） |
+| `FIX` | `wave4` / `wave5` | 空 | 两个都为空 | ⚠️ WARN 降级（此时没有待检产物，目录对信封检查没有意义；「wave4 却无登记」由 `fix_contracts_required` 与 `stop-hook` §3 的交付物判据拦） |
+| `AUDIT_ONLY` | 任意 | 任意 | 任意 | 不检查（审计路径的相位序列里没有 `wave4/wave5`） |
+| `FIX` | `init` ~ `wave3` | 任意 | 任意 | 不检查（未到修复相位） |
+
+推断顺序（前三行都只是**输入**，第四行已不再是「一律降级」）：
 
 | 序 | 来源 | 说明 |
 |---|---|---|
 | 1 | `report.dir_path` | 首选，约定字段 |
 | 2 | `dirname(report.final_report_path)` | 兜底。`report-naming.md` §4：一轮一个目录、所有产物平铺 |
 | 3 | `dirname(fix_contracts[].test_path)` | 最后兜底；测试文件常在仓库里而非产物目录，容易推错 |
-| — | 三条都推不出 | **WARN，不 FAIL**（降级纪律，与 R8/R10/R11 同一条） |
+| — | 三条都推不出 + `fix_contracts` 非空 | **FAIL**（`stop-hook` exit 2）：账本缺字段，不是环境问题 |
+| — | 三条都推不出 + `fix_contracts` 为空 | **WARN，不 FAIL**（降级纪律，与 R8/R10/R11 同一条） |
 
-> **降级纪律的理由**：一个「需要外部信息」的判据缺输入时不能把整条流程卡死，
-> 否则所有既有项目一夜之间全红——那会让框架被绕过，而不是被遵守。
-> 但降级**必须留痕**：`stop-hook` 在 exit 0 时仍会往 stderr 写「本次没有执行产物信封检查」。
+> **降级纪律的边界（R14 修订）**：降级只适用于「拿不到**外部**信息」的判据缺输入
+> （sessions root 不存在、目录存在但读不了、检查器执行失败）。
+> 而 `report.dir_path` 是**账本自己的字段**——主 Agent 手上有这个路径（它派发时用过），
+> 写一行就能让闸门跑起来。省略不是受环境所限，是选择。
+> **能自己修的事不能算降级理由。** 这与 R10 点名的「降级路径本身就是一条明面上的后门」是同一条纪律。
+
+> **降级必须留痕**：`stop-hook` 在 exit 0 时仍会往 stderr 写「本次没有执行产物信封检查」。
+
+**这条改动之后仍然存在的绕过（R14 诚实标注，不要把它读成「口子堵完了」）**：
+把 `report.dir_path` 写成一个**真实存在但空**的目录（或一个没有 `done-*.md` / `*-fix-*.md` 的目录），
+`stop-hook` §3.7 会判定「没有对象可查」并降级为 WARN，`exit 0`。
+它比 R14 之前的绕过难一点（要写一个存在的路径，且这个路径会出现在 WARN 里），
+但仍然是「用一条 WARN 换掉闸门」，同一类问题。是否把「有 2 条以上 `fix_contract` 而产物目录 0 份产物」
+也升为 FAIL，是下一轮的决定——升它需要先回答「修复相位允许不允许『产物还没写完』这个中间态」，
+而 R13 的答案是允许，所以本轮没有擅自改。
 
 ### 2.6.3 `legacy_artifacts`：可声明豁免
 

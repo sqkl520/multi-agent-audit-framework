@@ -272,7 +272,7 @@ const mergedRecord = (mergedFindingIds, sharedTargetFiles) => ({
  * 「相位尚未闭合」判据不触发——这样场景 A 里它唯一的拦阻理由就是
  * 「多缺陷单实例串行」，断言才能精确指到那道门。
  */
-function stateOf({ contracts, spawned, discipline = [] }) {
+function stateOf({ contracts, spawned, discipline = [], reportDir = null }) {
   return {
     schema_version: 'run-state-v1',
     trace_id: 'trace-hilltop-replay',
@@ -296,6 +296,14 @@ function stateOf({ contracts, spawned, discipline = [] }) {
       current_step: 3,
     },
     in_flight: [],
+    // 2026-11-15（R14）：wave4 + fix_contracts 非空时，report.dir_path /
+    // final_report_path 不能都为空（report_dir_required）——stop-hook §3.7 要靠它
+    // 推断修复产物目录，才能跑「产物必须带 JSON 信封」那道闸门。
+    // 场景 B 是「修好之后应该全绿」，所以它必须有个真实可用的产物目录。
+    // reportDir 为 null 时省略 report 字段——场景 A 要的正是「缺字段」那条路径。
+    ...(reportDir
+      ? { report: { dir_ready: true, dir_path: reportDir, final_report_path: join(reportDir, 'round1-final-report.md') } }
+      : {}),
   };
 }
 
@@ -480,7 +488,7 @@ console.log('    红测日志放到 experiments/ 下。四道门必须全部放�
     }));
     const literalDiscipline = [mergedRecord(['round3-A::A-01', 'round3-A::A-04'], MERGE_FILES)];
     writeFileSync(ws.statePath,
-      JSON.stringify(stateOf({ contracts: literalContracts, spawned: 8, discipline: literalDiscipline }), null, 2));
+      JSON.stringify(stateOf({ contracts: literalContracts, spawned: 8, discipline: literalDiscipline, reportDir: ws.fixOut }), null, 2));
     writeFileSync(ws.reportPath, finalReportMd(HIGH_IDS.map((id) => [id, 'UPHELD', 'HIGH'])));
 
     // 去向表：8 条 HIGH 标 FIXED，其余 30 条 DEFERRED（依据 ≥10 字）

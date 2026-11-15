@@ -359,10 +359,33 @@ if (state.phase === 'wave4' || state.phase === 'wave5') {
 //                                                    报告与波次产物同目录
 //   3. dirname(state.fix_contracts[].test_path)    ← 最后兜底；测试文件常在仓库里，
 //                                                    不常在产物目录里，容易推错
-// 三条都推不出来 → **WARN，不 FAIL**。这是降级纪律（与 R8 的 unsupported_harness、
-// R10 的 --artifacts-dir 缺失、R11 的 evidence_existence_unchecked 同一条）：
-// 一个「需要外部信息」的判据缺输入时不能把整条流程卡死，
-// 否则所有既有项目一夜之间全红——那会让框架被绕过，而不是被遵守。
+// 三条都推不出来 → 见下方「推断失败时的判据」。
+//
+// ── 推断失败时的判据（2026-11-15 R14 改）──
+//
+// 原文是「三条都推不出 → **WARN，不 FAIL**」。R13 自己在
+// `FIX-R13-report.md` §7.2 把它标为「本轮最大的残留口子」，理由是：
+//
+//   它把「检查不通过」和「检查没跑」混成了同一种结局。
+//   而「不写 report.dir_path」是**最省力的绕过**——不用伪造产物、不用改账本数字，
+//   只消省略一个字段，整道信封闸门就变成一条 WARN。
+//   这与 R10 点名的「降级路径本身就是一条明面上的后门」是同一类问题。
+//
+// 所以现在分两种情况，判据是「这一相位有没有已登记的修复」：
+//
+//   - `fix_contracts` **非空** → 目录推断不出 = **账本缺字段** → 拒绝闭合（进 problems）。
+//     理由：修复已经登记了，就必然有产物要交、有信封要查；
+//     「推断不出目录」在这里不是环境问题——主 Agent 手上有这个路径（它派发时用过），
+//     写一行就能让闸门跑起来。省略不是受环境所限，是选择。
+//
+//   - `fix_contracts` **为空** → 仍降级 WARN。
+//     理由：这一相位本来就没有待检产物，目录对信封检查没有意义；
+//     而「wave4 但契约为空」另有 §3 的交付物判据去拦，不需要这里重复开火。
+//
+// 降级纪律仍然适用于**真正的环境问题**：sessions root 不存在（§3.6）、
+// 目录可推断但读不了、检查器执行失败——那些是拿不到外部信息，不是账本没写。
+// 两者的区别是「谁有能力让它变成可查」：环境不行时主 Agent 无能为力，
+// 缺字段时它只要写一行。**能自己修的事不能算降级理由。**
 //
 // ── 存量无信封产物怎么办：可声明豁免 ──
 // 硬 FAIL 一个历史产物目录会让所有老项目无法闭合。所以 state.json 可以声明
@@ -412,20 +435,62 @@ if (state.phase === 'wave4' || state.phase === 'wave5') {
 
     const inferred = inferArtifactDir(state);
     if (!inferred) {
-      warnings.push(
-        `WARN · 产物目录无法确定：state.json 里既没有可用的 report.dir_path，`
-        + `也没有 report.final_report_path / fix_contracts[].test_path 可供推断。\n`
-        + `因此本次**没有执行**产物信封检查（check-fix-artifacts-envelope.mjs）——`
-        + `「修复产物有没有信封」这一项在本回合未验证。\n`
-        + `按 report-naming.md §5.1，主 Agent 应在波次一启动前把产物目录写进 report.dir_path；`
-        + `补上它之后这个检查会自动生效。`
-      );
+      if (fixContracts.length > 0) {
+        // R14：账本缺字段不能降级。见本段上方的「推断失败时的判据」。
+        //
+        // 报错必须区分两种成因，否则回灌给模型的方向是错的：
+        //   (a) 两个字段根本没写      → 这是本案的主要目标（最省力的绕过）
+        //   (b) 写了但指向不存在的目录 → 不是省略，是「写错了」，补法与 (a) 不同
+        // 两者都是账本问题、都该拦，但混成一句话会让模型去补一个它已经写过的字段。
+        const rawDir = state.report?.dir_path;
+        const rawFinal = state.report?.final_report_path;
+        const wroteSomething =
+          (typeof rawDir === 'string' && rawDir.trim() !== '') ||
+          (typeof rawFinal === 'string' && rawFinal.trim() !== '');
+        const diagnosis = wroteSomething
+          ? `state.json 里写了目录线索（report.dir_path=${JSON.stringify(rawDir)}，`
+            + `report.final_report_path=${JSON.stringify(rawFinal)}），`
+            + `但按它解析出的目录都不存在，fix_contracts[].test_path 也定位不到。\n`
+            + `**这仍然是账本问题，不是环境问题**：路径写错了，而「写错」不能当成「没写」的降级通道。`
+            + `环境问题（例如 sessions root 不存在）可以降级，账本写错了不行。`
+          : `state.json 里既没有 report.dir_path，也没有 report.final_report_path，`
+            + `fix_contracts[].test_path 也不足以定位产物目录。`;
+        problems.push(
+          `产物目录推断不出来，而 phase=${state.phase} 已经登记了 ${fixContracts.length} 条修复契约。\n`
+          + `${diagnosis}\n\n`
+          + `**在这条判据上，「推断不出目录」不是环境问题，是账本缺字段。** 修复已经登记了，`
+          + `就必然有产物要交、有「产物必须带 JSON 信封」这道闸门要跑；而闸门需要一个目录作为输入。\n`
+          + `所以不能像 R13 那样用一条 WARN 放行——那样等于把「检查没跑」记成「检查通过」，`
+          + `而绕过它只需要省略一个字段（FIX-R13-report.md §7.2 口子 1，R13 自己标为「最大的残留口子」）。\n\n`
+          + `环境问题（例如 sessions root 不存在）可以降级，账本缺字段不行——`
+          + `区别在于「谁有能力让它变成可查」：环境不行时你无能为力，缺字段时你只要写一行。\n`
+          + `补法：把本轮产物目录的**绝对路径**写进 report.dir_path（report-naming.md §5.1：`
+          + `波次一启动前就该有它），或至少写 report.final_report_path（与产物同目录），`
+          + `并确认该目录真实存在。`
+        );
+      } else {
+        warnings.push(
+          `WARN · 产物目录无法确定：state.json 里既没有可用的 report.dir_path，`
+          + `也没有 report.final_report_path / fix_contracts[].test_path 可供推断。\n`
+          + `因此本次**没有执行**产物信封检查（check-fix-artifacts-envelope.mjs）——`
+          + `「修复产物有没有信封」这一项在本回合未验证。\n`
+          + `这一档之所以仍可降级，是因为 fix_contracts 为空：这个相位还没有任何待检产物，`
+          + `目录对信封检查也就没有意义（「wave4 却没有任何修复登记」由 §3 的交付物判据拦）。\n`
+          + `按 report-naming.md §5.1，主 Agent 应在波次一启动前把产物目录写进 report.dir_path；`
+          + `补上它之后这个检查会自动生效。`
+        );
+      }
     } else {
       // 3.7.2 读目录、算分母
       //
       // 待检产物口径必须与 check-fix-artifacts-envelope.mjs 的默认 pattern 一致
       // （done-*.md 与 *-fix-*.md），否则两套工具会对同一目录给出不同分母。
-      const patternRes = [/^done-.*\.md$/i, /^.*-fix-.*\.md$/i];
+      //
+      // 2026-11-15（R15）：补上 `fix-*.md`。R7 的 e2e fixture 用的就是 `fix-1.md`
+      // 这种最朴素的名字，而 `*-fix-*.md` 要求 fix 前面还有一段（`round1-04-fix-1.md`）。
+      // 两者都是合法的修复产物命名，漏掉一个会让「目录里明明有产物」被误判成空目录——
+      // 而空目录在 R15 之后是拒绝闭合的。分母口径必须宽到覆盖真实命名习惯。
+      const patternRes = [/^done-.*\.md$/i, /^.*-fix-.*\.md$/i, /^fix-.*\.md$/i];
       let files = [];
       let subdirs = [];
       let totalFiles = 0;
@@ -462,12 +527,40 @@ if (state.phase === 'wave4' || state.phase === 'wave5') {
       if (dirReadable && files.length === 0) {
         // 0 份产物在逻辑上「每份都有信封」，但那不是通过，是「没什么可检查」。
         // check-fix-artifacts-envelope.mjs 对空目录报 exit 2（配置错误），
-        // 在集成层这里降为 WARN：修复相位允许「产物还没写完」这个中间态，
-        // 真正的「这个相位做完了」由 3 的交付物判据（fix_contracts）负责。
-        warnings.push(
-          `WARN · 产物目录 ${inferred.dir}（来自 ${inferred.from}）下没有任何 done-*.md / *-fix-*.md，`
-          + `产物信封检查没有对象可查。若修复产物应已落盘，检查 pattern 或目录是否指错。`
-        );
+        // 在集成层这里降为 WARN —— 但**只在「本回合确实还有活没干完」时降级**。
+        //
+        // 2026-11-15（R15）：R14 发现这里仍是一条「用空目录换掉闸门」的路——
+        // 把 report.dir_path 写成一个真实存在但没有产物的目录，仍然 exit 0。
+        // R14 当时没有升 FAIL，理由是「修复相位允许『产物还没写完』这个中间态」。
+        // 那个理由只在**还有修复实例在跑**的时候成立。
+        //
+        // 所以判据不能用「有没有产物」，要问「**该不该有产物了**」。
+        // 能机械回答这件事的信号只有一个：`in_flight` 里还有没有活着的修复实例。
+        //   - `in_flight` 非空 → 确实还在跑 → 降级 WARN（本回合结束不代表相位结束）
+        //   - `in_flight` 为空（或缺失）→ 活都干完了却一份产物都没有 → **拒绝闭合**
+        // 这不是新增判据，是把 R13/R14 那条降级的适用条件写准。
+        const inFlight = Array.isArray(state.in_flight) ? state.in_flight : [];
+        const stillRunning = inFlight.length > 0;
+        const emptyMsg =
+          `产物目录 ${inferred.dir}（来自 ${inferred.from}）下没有任何 done-*.md / *-fix-*.md。`;
+        if (stillRunning) {
+          warnings.push(
+            `WARN · ${emptyMsg}`
+            + `账本里还有 ${inFlight.length} 个实例在 in_flight 中，说明本回合确实处在`
+            + `「产物还没写完」的中间态，本轮不阻断。`
+          );
+        } else {
+          problems.push(
+            `${emptyMsg}\n`
+            + `而账本的 in_flight 是空的——也就是说没有任何修复实例还在跑，`
+            + `但那个目录里一份产物都没有。\n`
+            + `这不是「还没写完」，是「写完了却什么都没交」。\n`
+            + `空目录在逻辑上「每份都有信封」，但那不是通过，是**没什么可检查**——`
+            + `把 report.dir_path 指向一个空目录就能让这道闸门失效，`
+            + `这正是 R13 §7.2 口子 1 换个写法后的样子。\n`
+            + `请把产物写到该目录下，或修正 report.dir_path 指到真正的产物目录。`
+          );
+        }
       } else if (dirReadable) {
         // 3.7.3 legacy_artifacts 豁免（可选字段，不是必填）
         const rawLegacy = state.legacy_artifacts;
