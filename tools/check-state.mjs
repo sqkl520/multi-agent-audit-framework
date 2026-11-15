@@ -52,7 +52,11 @@ const warn = (field, rule, msg) => warnings.push({ field, rule, msg });
 const ENUM = {
   schema_version: ['run-state-v1'],
   path_mode: ['AUDIT_ONLY', 'FIX'],
-  phase: ['init', 'wave1', 'wave2a', 'wave2b', 'wave3', 'report', 'closed'],
+  // 2026-11-15（R1）：补 wave4 / wave5。
+  // `path_mode` 早有 FIX 这个取值，`phase` 却没有任何修复/验收相位——
+  // 于是「框架知道存在 FIX 路径，却没给它分配相位值」：stop-hook 的白名单
+  // 只能按相位匹配，修复阶段直接落在门控之外。加值不是加功能，是补上原有的空洞。
+  phase: ['init', 'wave1', 'wave2a', 'wave2b', 'wave3', 'wave4', 'wave5', 'report', 'closed'],
   status: ['RUNNING', 'PARTIALLY_CLOSED', 'CLOSED', 'BLOCKED'],
   slice_state: ['DONE', 'RUNNING', 'PENDING', 'FAILED', 'DEFERRED'],
   // 2026-11-10（蓝队 A2/A3）：补 ENTRY 与 GENERATED。
@@ -200,9 +204,35 @@ if (state.status === 'RUNNING' && state.report?.is_complete === true) {
 // ────────────────────────────────────────────────────────────────────
 // 4.5 · fix_contracts：修复前置登记必须完整（2026-11-09 新增）
 // ────────────────────────────────────────────────────────────────────
+// 2026-11-15（R1）新增：FIX 路径进入 wave4/wave5 时，`fix_contracts` 必须存在且非空。
+//
+// 为什么这一条必须从「存在才校验」升级为「必须有」：
+//   原文是 `if (Array.isArray(state.fix_contracts))`，整个校验段是一个存在性守卫——
+//   字段不存在就整段跳过，逐条校验的内容再严也没有被施加到任何东西上。
+//   这正好是诊断报告里点名的失效形态：「门控在，但没有一个门控真的拦住东西」。
+//   一个跑到 wave4 却没有登记任何修复契约的账本，与「一次修复都没开始」无法区分，
+//   而它会被判完全合规——因为跳过不等于失败。
+const FIX_CONTRACT_PHASES = ['wave4', 'wave5'];
+const fixContractsRequired =
+  state.path_mode === 'FIX' && FIX_CONTRACT_PHASES.includes(state.phase);
+
+if (fixContractsRequired) {
+  if (!Array.isArray(state.fix_contracts)) {
+    err('fix_contracts', 'fix_contracts_required',
+      `path_mode=FIX 且 phase=${state.phase}，但账本里没有 fix_contracts 数组。` +
+      `wave4 的交付物就是这份登记（wave4-fix.md §2：编辑前必须登记五个字段）；` +
+      `没有它，验收波无对象可验，rollback_command 也无人可用`);
+  } else if (state.fix_contracts.length === 0) {
+    err('fix_contracts', 'fix_contracts_required',
+      `path_mode=FIX 且 phase=${state.phase}，但 fix_contracts 是空数组。` +
+      `空数组与「字段缺失」在语义上是同一件事：这个相位还没有任何可验收的修复`);
+  }
+}
+
 if (Array.isArray(state.fix_contracts)) {
   const required = ['finding_id', 'fix_agent_id', 'registered_at',
     'defect_statement', 'disproof_condition', 'rollback_command', 'test_path'];
+  const VERDICTS = ['PASS', 'FAIL'];
   state.fix_contracts.forEach((fc, i) => {
     for (const k of required) {
       if (fc?.[k] === undefined || fc?.[k] === null || fc?.[k] === '') {
@@ -221,6 +251,20 @@ if (Array.isArray(state.fix_contracts)) {
       warn(`fix_contracts[${i}].baseline_unverified`, 'baseline_conflicting',
         '同时给了 baseline_result 又标了 baseline_unverified=true，语义冲突');
     }
+    // 2026-11-15（R1）：裁决值拼错必须报错，不能静默当成「验过了」。
+    // 验收结论是闭集 PASS | FAIL（output-contract verify 分支）；
+    // 写成 "PASSED" / "passed" 时，任何按字符串精确比较的下游都会把它当未知值跳过。
+    if (fc?.verdict !== undefined && fc?.verdict !== null) {
+      if (!VERDICTS.includes(fc.verdict)) {
+        err(`fix_contracts[${i}].verdict`, 'invalid_verify_verdict',
+          `verdict 必须是 ${VERDICTS.join(' | ')} 之一，实际是 "${fc.verdict}"。` +
+          `带保留通过写成 PASS + escalation_required:true，不是新的枚举值（wave5-verify.md §5.2）`);
+      } else if (fc?.verified_at === undefined || fc?.verified_at === null || fc?.verified_at === '') {
+        // 有裁决就必须有执行时间：无法判断「何时验的」的裁决无法与修复的 mtime 对账
+        warn(`fix_contracts[${i}].verified_at`, 'verdict_without_timestamp',
+          '有 verdict 但没有 verified_at —— 无法与 files_touched 的 mtime 对账');
+      }
+    }
   });
 }
 
@@ -230,7 +274,12 @@ if (Array.isArray(state.fix_contracts)) {
 // 实测问题：主 Agent 每做完一小步就停下来交付、问「要不要继续」，
 // 而所有静态检查都判合规——因为框架从未定义「一次交付」的粒度。
 // protocol.md §0.8 现在要求：进入执行相位前必须把计划写进 state.json。
-if (['wave2a', 'wave2b', 'wave3'].includes(state.phase)) {
+// 2026-11-15（R1）：同一份相位清单在本文件里有第二处硬编码（:277），
+// 与 ENUM.phase 是两份副本。只改枚举不改这里，会得到「wave4 是合法相位但不要求计划」——
+// 而 stop-hook.mjs 对 wave4 要求 current_plan。两个校验器对同一相位给出相反要求，
+// 主 Agent 无论照哪一份做都会被另一份判违规。
+const EXECUTION_PHASES = ['wave2a', 'wave2b', 'wave3', 'wave4', 'wave5'];
+if (EXECUTION_PHASES.includes(state.phase)) {
   const plan = state.current_plan;
   if (!plan || typeof plan !== 'object') {
     err('current_plan', 'missing_plan_in_execution_phase',

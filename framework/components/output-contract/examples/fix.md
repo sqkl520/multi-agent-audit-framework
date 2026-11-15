@@ -17,6 +17,10 @@
   "contract_valid": true,
   "artifact_path": "<OUTDIR>/round1-02-audit-S1-logic.md",
   "payload": {
+    "finding_id": "F1",
+    "disposition": "FIXED",
+    "test_path": "test/persist.test.js",
+    "red_log_path": "experiments/round1/red-F1.log",
     "files_touched": [
       {
         "path": "src/store.js",

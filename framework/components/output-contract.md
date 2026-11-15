@@ -539,6 +539,11 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role <你�
 {
   "payload": {
     "finding_id": "string",
+    "disposition": "FIXED | WONT_FIX | DEFERRED | NEW_FINDING",
+    "disposition_reason": "string — WONT_FIX / DEFERRED 时必填（≥20 字）",
+    "test_path": "string — FIXED 时必填",
+    "red_log_path": "string — FIXED 时必填，且必须落在 target/ 之外",
+    "next_round": "string|null — DEFERRED 时必填",
     "files_touched": [
       { "path": "string", "change_summary": "string" }
     ],
@@ -551,7 +556,46 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role <你�
 }
 ```
 
+**`disposition` 是每条发现的去向登记，四值闭集，缺一即 `CONTRACT_VIOLATION`。**
+
+| `disposition` | 语义 | 附加必填 | 缺失时校验器规则 |
+|---|---|---|---|
+| `FIXED` | 代码已改，**有证明修复前是红的测试** | `test_path`、`red_log_path` | `fixed_without_test` / `fixed_without_red_log` |
+| `WONT_FIX` | 判定为设计意图或不该修 | `disposition_reason`（≥20 字） | `wont_fix_without_reason` |
+| `DEFERRED` | 已知但本轮不修 | `disposition_reason`（≥20 字）、`next_round`（什么条件下重新处置） | `deferred_without_reason` / `deferred_without_trigger` |
+| `NEW_FINDING` | 修复过程中新发现、不在原清单里的缺陷，必须显式标记 | 无（建议给 `disposition_reason`） | — |
+
+- 缺 `disposition` → `missing_disposition`
+- 值不在四值内 → `invalid_disposition`
+
+**多发现形态**：当一次派发携带多条发现时，`payload.dispositions[]` 逐条列出，
+每条是一个完整的 `{finding_id, disposition, …}` 条目；并配合派发时传入的
+`target_finding_ids` 做覆盖校验。`dispositions` 非空时它就是权威清单，
+`payload` 顶层不再被当作额外条目。
+
+**覆盖校验（与锐评的 `verdict_missing_for_target` 同构）**：若 `payload.target_finding_ids`
+非空，则每一条都必须有对应的 `disposition`，否则报 `disposition_missing_for_target`。
+
+> **为什么必须有这一条**：修复角色此前的全部契约只有 `files_touched`。框架要求
+> 「每条 finding 必须被锐评攻击一次」，却**不要求每条 finding 被修复或明确暂缓一次**。
+> 实测后果：38 条发现只修了 6 条，**31 条从未进入任何任务书**，没有任何工具报错。
+> 另有一例：一条发现含 3 个子主张，任务书只覆盖 1 个，另外 2 个静默消失
+> （其中 1 个后来靠巧合才被捞回来）。**漏处置一条等于让它静默蒸发。**
+
+**`red_log_path` 必须落在 `target/` 之外**（2026-11-15 真实教训）：
+
+> 诊断阶段的红测日志当时就放在 `target/` 下，被 `mvn clean` 整个删掉，
+> 验收时再也无法复核「修复前确实是红的」。**证据一旦可被构建清理，等于没有证据。**
+> 校验器对含 `target/` 的路径报 `red_log_in_target`（相对路径、`./target/`、
+> Windows 反斜杠、绝对路径里的 `/target/` 一律命中）。请写到
+> `experiments/<round>/red-<finding>.log` 之类构建不碰的位置。
+
 **`affected_issues` 的语义**：修复Agent必须显式列出“这个修改**可能**影响到的其他已发现缺陷”，而不是只报告自己修的那一个。如果修复Agent无法判断影响范围，必须在 `residual_risks` 中写明“影响范围未验证”，并且主Agent据此在验收波中为该修复追加一个回归扫描。
+
+**`finding_id` 不得在同一产物内重复**（对所有角色生效，规则名 `duplicate_finding_id`）：
+下游锐评、验收、修复回填全部按 `finding_id` 挂接。id 重复时这些条目**在结构上无法被单独处置**，
+但它们仍出现在账本里，看起来像是被覆盖了——这是「发现静默蒸发」最隐蔽的一种。
+实测把 7 条发现的 id 改成完全相同，校验器曾报「✅ 契约合规」。
 
 #### 2.5 验收角色（`role: "verify"`）
 

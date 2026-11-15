@@ -167,6 +167,13 @@ const EXAMPLES = {
     ],
   },
   fix: {
+    // 2026-11-15：fix 的契约新增 disposition（防止「发现静默蒸发」）。
+    // 示例必须同步，否则 agent 照抄示例就会被校验器拒绝——
+    // 「按文档写的却被拒」是这个仓库里最坏的一类缺陷。
+    finding_id: 'F1',
+    disposition: 'FIXED',
+    test_path: 'test/persist.test.js',
+    red_log_path: 'experiments/round1/red-F1.log',
     files_touched: [
       { path: 'src/store.js', lines_added: 6, lines_removed: 1 },
     ],

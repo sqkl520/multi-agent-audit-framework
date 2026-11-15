@@ -36,6 +36,107 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 12 轮)
 **写权限的硬边界**：修复Agent是唯一允许修改源代码文件的角色。它的写入范围**仅限**派发时指定的 `target_files` 列表中的文件，以及与之对应的**测试文件**（如果该缺陷的验收标准要求新增或修改测试）。修复Agent**不得**创建新文件、删除文件、修改依赖清单（`package.json` / `requirements.txt` / `go.mod` 等）、修改构建配置或修改 `target_files` 之外的生产代码。callsphere 的原则在这里直接适用：爆炸半径由授予的权限决定，而不是由修复Agent的意图决定[^ref5]。如果修复需要触及范围外的文件，修复Agent**必须**停止修改，返回 `RETRYABLE_FAILURE` 或 `CONTRACT_VIOLATION`，并在 `residual_risks` 中明确写出“修复需要触及 `<path>`，超出授权范围”，而不是自行扩大权限。
 
 
+## 第 0 节：派发规则（主Agent执行，先于第 1 节）
+
+> 本节读者是**主Agent**，不是修复Agent。放在最前面，因为「派几个实例」是在任何修复行为发生**之前**就定死的事。
+
+### 0.1 派发数量的算术
+
+```
+planned_fix_agents = len(UPHELD 发现列表)        # 减掉 §0.3 显式申报的合并
+```
+
+**这不是 K，不是「按需」，不是「看工作量」**。没有系数、没有上限裁量、没有「简单缺陷可以合并」。
+
+- `K` 是锐评面板成员数，与本波无关；
+- 「按需」在这个框架里等价于「可以不派」——实测就是这样塌掉的：5 条 UPHELD、5 条编号缺陷任务书，主Agent用**单个 session、196 个 step、303 次工具调用**全部串行做完，`subagent` 调用 **0 次**；
+- 「看工作量」更糟：它把「修得快」奖励给串行。
+
+这与 `orchestrator/triage.md` 第 3 节的取向同构——那里取消了 T0 的「降级到 2 个」路径，并明写「**没有『降级到 2 个』这条路**」。修复波沿用同一条原则：**实例数由 `UPHELD` 的基数决定，不由任何人的手感决定。**
+
+> **为什么不设上限**：上限会变成默认值。真实约束是 `concurrency_window`（同时运行数），它管的是**并行度**，不是**实例总数**——超出窗口的实例排队，不是消失。
+>
+> **分母的准确口径**：`fix-worker.md` §2 的「前置状态」是「`UPHELD` **或** `DOWNGRADED`」，两者都要修。若本轮也派发 `DOWNGRADED`，则 `planned_fix_agents` 的分母是 `UPHELD + DOWNGRADED`——**但绝不是「挑几条重要的」**。这里写 `UPHELD` 是因为它是默认路径上的主集合；任何筛选都要按 `discipline_log` 申报，否则就是未申报的裁量。
+
+### 0.2 文件级依赖分析（派发前必做，机械可复核）
+
+对全部 `UPHELD` finding 的 `target_files[]` 做**两两集合求交**：
+
+```
+for (a, b) in pairs(findings):
+    if target_files[a] ∩ target_files[b] ≠ ∅:
+        union(a, b)                       # 编入同一串行组
+```
+
+| 求交结果 | 编组 | 调度 |
+|---|---|---|
+| 交集为空 | 各自独立成组 | **可并行**（受 `concurrency_window` 限制） |
+| 交集非空 | **同一串行组** | 组内**串行**，顺序按 `finding_id` 升序（确定性，零裁量） |
+
+**为什么必须做这一步**：这样做的目的是**知道哪些能并行**，而不是「把一切串起来」。若不做分析就串行，等于用最贵的调度方式处理最便宜的情形；若不做分析就并行，两个实例会用同一个文件的同一段上下文互相覆盖——这是 `minimal-safe-diff` 与三层范围守卫要防的那类灾难[^ref1]。
+
+**禁止的编组依据**：按文件名字母序、按目录名、按「看起来复杂」、按缺陷严重性。`target_files` 的**交集关系**是结构特征，可以用；内容判断不可以。
+
+**串行组的组内顺序是唯一允许的排序**：`finding_id` 升序（或 FIFO）。主Agent在任何地方都**不是**「排序者」——它的职责是**编组并派发**，排序只在串行组内部出现，且由 id 决定而非裁量。
+
+### 0.3 唯一允许的合并，以及必须留的痕
+
+**默认：一条 finding 一个实例。** 允许合并的唯一情形同时满足两条：
+
+1. 多条 finding 的 `target_files` **完全重叠**（集合**相等**，不是「有交集」）；
+2. **同源**：同一 `slice_id`、同一根因、同一处代码。
+
+合并在派发记录里**必须**留下：
+
+```json
+{
+  "kind": "FIX_INSTANCE_MERGED",
+  "merged_finding_ids": ["finding-012", "finding-013"],
+  "reason": "target_files 完全相等（src/dispatch/pipeline.ts），同一函数同一根因；分开派发会产生两次对同一段代码的竞争写入",
+  "shared_target_files": ["src/dispatch/pipeline.ts"],
+  "mechanically_checkable": "两条 finding 的 target_files 排序后逐元素相等"
+}
+```
+
+写进 `state.json` 的 `discipline_log`。**没有这条记录 = `CONTRACT_VIOLATION`**，该实例的全部输出作废并回滚。
+
+> **为什么合并必须留痕而不是禁止**：完全重叠 + 同源的 finding 分开派发会互相踩。禁止合并会制造一个物理上无法执行的规则，而无法执行的规则会让人连其他规则一起不遵守。但「合并」必须是**可被机械复核的申报**，不是口袋条款。
+
+> **⚠ 与 `output-contract/fix.md` §2.4 的「多发现形态」并存时的优先顺序**：契约允许一次派发携带多条发现（`payload.dispositions[]` + `target_finding_ids`），那是为了服务**上一条**申报合并的情形，以及为了不丢处置（每条发现至少得到一个 `disposition`）。**它是容纳合并的容器，不是绕过实例唯一性的通道。** 判据：一个实例的多条 `disposition` 若不在 `discipline_log` 里有对应的 `FIX_INSTANCE_MERGED` 记录，**照样判 `CONTRACT_VIOLATION`**——契约能装下多条，规则不允许无申报的多条。**不要去用契约层的「合法」抵消派发层的违规。**
+
+### 0.4 派发前必须就绪的三件事
+
+| # | 前置 | 判定 | 失败处理 |
+|---|---|---|---|
+| 1 | 产物目录已建 | `state.json` 的 `report.dir_ready: true`，且路径无空格 / 无中文（`artifacts/report-naming.md` §5.1–5.2） | **不得开始派发**，`PERMANENT_FAILURE` / `ToolError` |
+| 2 | `fix_contracts` 数组已就位 | `state.json` 有该字段（`artifacts/run-state.md`），可被逐条追加 | 先补账本结构，否则 §2 的前置登记无处可写 |
+| 3 | 编号已冻结 | 每个实例拿到**唯一** `finding_id`；同一 `(round, stage, discriminator)` 只对应一个实例（产物名 `round{N}-04-fix-{finding序号}.md`） | 重派**覆盖**同名文件，不追加 `-v2` |
+
+### 0.5 派发后的机械对账（主Agent自己跑）
+
+```
+应派实例数 = len(UPHELD) - Σ(已申报合并的 finding 数)
+实派实例数 = budget.spawned_fix_agents      # 实际计数，每次派发后 +1
+交叉验证   = distinct(fix_contracts[].fix_agent_id)
+三者必须一致。不等 → 差额部分没有被派发，记为 discipline_violation
+```
+
+**`spawned_fix_agents` 是这条对账的强制力所在**：`stop-hook.mjs` 在 `phase == "wave4"` 时会比较 `distinct(fix_contracts[].finding_id)` 与 `budget.spawned_fix_agents`，**≥2 条独立缺陷却 ≤1 个实例就拒绝闭合该相位**。字段缺失按 **0** 处理——账本没记录等于没发生，不按 1（理由见 `artifacts/run-state.md` 第 2 节）。
+
+**这条对账是本节唯一有强制力的部分**——它不依赖任何人读文档时是否被说服。
+
+### 0.6 失败模式
+
+| 失败模式 | 表现 | 判定 |
+|---|---|---|
+| **一个实例修多条 finding** | `fix_contracts` 里多条 `finding_id` 共享同一个 `fix_agent_id`，且 `discipline_log` 无 `FIX_INSTANCE_MERGED` 记录 | **`CONTRACT_VIOLATION`** |
+| 一个实例修多条（已申报合并） | 同上，但 `target_files` 排序后逐元素相等且有 `reason` | 合规 |
+| 实例数少于 `UPHELD` 数，且无合并申报 | 差额部分无 `fix_agent_id` | **`CONTRACT_VIOLATION`**（未派发） |
+| 同一 `finding_id` 派了两个**并行**实例 | 两个实例的 `target_files` 有交集且同时在跑 | **`CONTRACT_VIOLATION`**（串行组被并行执行） |
+| 主Agent自己动手改代码 | 出现非 `fix_agent_id` 的写入 | **`CONTRACT_VIOLATION`**——主Agent没有写权限 |
+
+---
+
 ## 第 1 节：修复Agent的职责边界——四做四不做
 
 **做**：

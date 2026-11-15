@@ -164,6 +164,21 @@ const CHECKS = [
     script: 'check-pattern-coverage.test.mjs',
     desc: '用例：pattern 悬空 / none 无理由 / none 关键词须搜不到 / 引用不存在的模式 / 两个 fixture 都要查',
   },
+  {
+    name: '发现去向对账（每条发现是否都被表态过一次）',
+    // 注意：这里注册的是 **.test.mjs 自测**，不是对真实交付物跑对账。
+    //
+    // check-all 是「框架自检」——它验证校验器本身在合成 fixture 上行为正确；
+    // 它不知道也不该知道某次审计的产物在哪、去向表叫什么。
+    //
+    // 真正校验交付物要在收口时手动跑，并把它当作 close 门的必过项：
+    //   node tools/check-disposition-coverage.mjs \
+    //     --artifacts <审计产物目录> --ledger <发现去向表.md> [--strict-high]
+    // 加 --strict-high 会把「HIGH 被 DEFERRED」从 WARN 升级为 FAIL，
+    // 交付闸门应当开启，否则「全填 DEFERRED」即可判绿。
+    script: 'check-disposition-coverage.test.mjs',
+    desc: '用例：漏 1 条点名 / 产物内 id 重复 / 去向表杜撰 / 少理由 / HIGH 被 DEFERRED 警告 / 去向表缺失 exit 2',
+  },
 ];
 
 let failed = 0;

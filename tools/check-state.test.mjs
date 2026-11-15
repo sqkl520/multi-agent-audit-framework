@@ -271,6 +271,96 @@ console.log('case 28: 计划 5 步 → 无过细警告');
     !r.r?.warnings?.some(x => x.rule === 'plan_too_granular'));
 }
 
+// ── wave4 / wave5：FIX 路径此前没有相位值（2026-11-15 R1 新增）──
+// 诊断证据（experiments/hilltop-dsh/DIAG-FINAL.md 三·4）：
+//   `path_mode` 枚举有 FIX，`phase` 枚举没有对应值 → 修复相位不被任何门控覆盖。
+// 下面这些用例在改代码之前应当全部失败（wave4/wave5 被判 invalid_enum）。
+const fc = (over = {}) => ({
+  finding_id: 'F1', fix_agent_id: 'fx1', registered_at: '2026-11-15T10:00:00Z',
+  defect_statement: '当 X 时 Y 发生，预期 Z',
+  disproof_condition: 'node t.mjs 应红',
+  baseline_result: 'exit 1: assertion failed',
+  rollback_command: 'git checkout -- a.js',
+  test_path: 't.mjs',
+  ...over,
+});
+const donePlan = (phase) => ({
+  phase, steps: [{ action: '修 F1', done_when: 'F1 的 disproof_condition 转绿' }],
+  exit_condition: '全部契约都有终态', current_step: 2,
+});
+
+console.log('case 29: phase=wave4 / wave5 不再被判 invalid_enum');
+{
+  for (const ph of ['wave4', 'wave5']) {
+    const r = run(base({
+      path_mode: 'FIX', phase: ph, status: 'RUNNING',
+      fix_contracts: [fc()], current_plan: donePlan(ph),
+    }));
+    expect(`${ph} 不报 phase invalid_enum`,
+      !(r.r?.errors ?? []).some(x => x.rule === 'invalid_enum' && x.field === 'phase'),
+      JSON.stringify(r.r?.errors));
+    expect(`${ph} 整体无错误`, (r.r?.errors ?? []).length === 0, JSON.stringify(r.r?.errors));
+  }
+}
+
+console.log('case 30: path_mode=FIX + phase=wave4 但完全没有 fix_contracts → 报错');
+{
+  const r = run(base({ path_mode: 'FIX', phase: 'wave4', status: 'RUNNING',
+    current_plan: donePlan('wave4') }));
+  expect('报 fix_contracts_required',
+    (r.r?.errors ?? []).some(x => x.rule === 'fix_contracts_required'),
+    JSON.stringify(r.r?.errors));
+}
+
+console.log('case 31: path_mode=FIX + phase=wave4 但 fix_contracts 为空数组 → 报错');
+{
+  const r = run(base({ path_mode: 'FIX', phase: 'wave4', status: 'RUNNING',
+    fix_contracts: [], current_plan: donePlan('wave4') }));
+  expect('报 fix_contracts_required',
+    (r.r?.errors ?? []).some(x => x.rule === 'fix_contracts_required'),
+    JSON.stringify(r.r?.errors));
+}
+
+console.log('case 32: path_mode=FIX + phase=wave5 且契约齐备 → 合规');
+{
+  const r = run(base({ path_mode: 'FIX', phase: 'wave5', status: 'RUNNING',
+    fix_contracts: [fc({ verdict: 'PASS', verified_at: '2026-11-15T12:00:00Z' })],
+    current_plan: donePlan('wave5') }));
+  expect('无错误', (r.r?.errors ?? []).length === 0, JSON.stringify(r.r?.errors));
+}
+
+console.log('case 33: 非 FIX 路径（AUDIT_ONLY）缺 fix_contracts 仍然合法');
+{
+  const r = run(base({ path_mode: 'AUDIT_ONLY', phase: 'wave4', status: 'RUNNING',
+    current_plan: donePlan('wave4') }));
+  expect('不报 fix_contracts_required',
+    !(r.r?.errors ?? []).some(x => x.rule === 'fix_contracts_required'),
+    JSON.stringify(r.r?.errors));
+  expect('无错误', (r.r?.errors ?? []).length === 0, JSON.stringify(r.r?.errors));
+}
+
+console.log('case 34: wave5 的 verdict 拼错（PASSED）→ 报错而非静默放行');
+{
+  const r = run(base({ path_mode: 'FIX', phase: 'wave5', status: 'RUNNING',
+    fix_contracts: [fc({ verdict: 'PASSED', verified_at: '2026-11-15T12:00:00Z' })],
+    current_plan: donePlan('wave5') }));
+  expect('报 invalid_verify_verdict',
+    (r.r?.errors ?? []).some(x => x.rule === 'invalid_verify_verdict'),
+    JSON.stringify(r.r?.errors));
+}
+
+console.log('case 35: wave4/wave5 与 wave2a 一样要求 current_plan（两份相位清单必须同步）');
+{
+  for (const ph of ['wave4', 'wave5']) {
+    const r = run(base({
+      path_mode: 'FIX', phase: ph, status: 'RUNNING', fix_contracts: [fc()],
+    }));
+    expect(`${ph} 缺 current_plan → 报 missing_plan_in_execution_phase`,
+      (r.r?.errors ?? []).some(x => x.rule === 'missing_plan_in_execution_phase'),
+      JSON.stringify(r.r?.errors));
+  }
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

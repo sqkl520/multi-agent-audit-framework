@@ -155,6 +155,107 @@ console.log('case 10: in_flight 里的 agent 产物不存在 → 仍然判「还
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
+// ── wave4 / wave5：修复与验收相位必须被门控（2026-11-15 R1 新增）──
+// 诊断证据（experiments/hilltop-dsh/DIAG-FINAL.md 三·4）：
+//   相位白名单只有 wave2a/wave2b/wave3 → 修复阶段 stop-hook 完全不触发，
+//   框架唯一的强制手段失效，只剩它自己判为「弱」的提示词那一层。
+const fixContract = (over = {}) => ({
+  finding_id: 'F1', fix_agent_id: 'fx1', registered_at: '2026-11-15T10:00:00Z',
+  defect_statement: '当 X 时 Y 发生，预期 Z',
+  disproof_condition: 'node t.mjs 应红',
+  baseline_result: 'exit 1',
+  rollback_command: 'git checkout -- a.js',
+  test_path: 't.mjs',
+  ...over,
+});
+const wavePlan = (phase) => ({
+  phase, steps: [{ action: '修 F1', done_when: 'disproof_condition 转绿' }],
+  exit_condition: '全部契约有终态', current_step: 2,
+});
+
+console.log('case 11: 回归 — wave2a 相位闭合 → 退出码 0（白名单改动不得误伤）');
+{
+  const r = runHook({
+    phase: 'wave2a', status: 'RUNNING', in_flight: [],
+    wave2_completed: [{ agent_id: 'a1', final_status: 'SUCCESS' }],
+    current_plan: wavePlan('wave2a'),
+  });
+  expect('退出码 0', r.code === 0, `实际 ${r.code}，stderr：${r.err.slice(0, 200)}`);
+}
+
+console.log('case 12: phase=wave4 无 current_plan → 拒绝结束（exit 2）');
+{
+  const r = runHook({
+    phase: 'wave4', status: 'RUNNING', in_flight: [],
+    fix_contracts: [fixContract()], spawned_fix_agents: 1,
+  });
+  expect('退出码 2', r.code === 2, `实际 ${r.code}`);
+  expect('提到 current_plan', /current_plan/.test(r.err), r.err.slice(0, 200));
+}
+
+console.log('case 13: phase=wave4 多条 finding 但只派 1 个实例 → 拒绝结束（串行即违规）');
+{
+  const r = runHook({
+    phase: 'wave4', status: 'RUNNING', in_flight: [],
+    fix_contracts: [fixContract({ finding_id: 'F1' }), fixContract({ finding_id: 'F2' })],
+    spawned_fix_agents: 1,
+    current_plan: wavePlan('wave4'),
+  });
+  expect('退出码 2', r.code === 2, `实际 ${r.code}`);
+  expect('理由提到面板下限', /面板下限/.test(r.err), r.err.slice(0, 300));
+  expect('理由提到串行', /串行/.test(r.err), r.err.slice(0, 300));
+}
+
+console.log('case 14: phase=wave4 多条 finding 且按条派发 → 不得误拦（exit 0）');
+{
+  const r = runHook({
+    phase: 'wave4', status: 'RUNNING', in_flight: [],
+    fix_contracts: [fixContract({ finding_id: 'F1' }), fixContract({ finding_id: 'F2' })],
+    spawned_fix_agents: 2,
+    current_plan: wavePlan('wave4'),
+  });
+  expect('退出码 0', r.code === 0, `实际 ${r.code}，stderr：${r.err.slice(0, 300)}`);
+}
+
+console.log('case 15: phase=wave4 无 fix_contracts → 拒绝结束（交付物缺失）');
+{
+  const r = runHook({
+    phase: 'wave4', status: 'RUNNING', in_flight: [], spawned_fix_agents: 0,
+    current_plan: wavePlan('wave4'),
+  });
+  expect('退出码 2', r.code === 2, `实际 ${r.code}`);
+  expect('提到交付物', /交付物/.test(r.err), r.err.slice(0, 200));
+}
+
+console.log('case 16: phase=wave5 每条契约都有裁决 → 允许结束（exit 0）');
+{
+  const r = runHook({
+    phase: 'wave5', status: 'RUNNING', in_flight: [],
+    fix_contracts: [
+      fixContract({ finding_id: 'F1', verdict: 'PASS', verified_at: '2026-11-15T12:00:00Z' }),
+      fixContract({ finding_id: 'F2', verdict: 'FAIL', verified_at: '2026-11-15T12:05:00Z' }),
+    ],
+    spawned_fix_agents: 2,
+    current_plan: wavePlan('wave5'),
+  });
+  expect('退出码 0', r.code === 0, `实际 ${r.code}，stderr：${r.err.slice(0, 300)}`);
+}
+
+console.log('case 17: phase=wave5 有契约没有裁决 → 拒绝结束（exit 2）');
+{
+  const r = runHook({
+    phase: 'wave5', status: 'RUNNING', in_flight: [],
+    fix_contracts: [
+      fixContract({ finding_id: 'F1', verdict: 'PASS', verified_at: '2026-11-15T12:00:00Z' }),
+      fixContract({ finding_id: 'F2' }),
+    ],
+    spawned_fix_agents: 2,
+    current_plan: wavePlan('wave5'),
+  });
+  expect('退出码 2', r.code === 2, `实际 ${r.code}`);
+  expect('提到验收裁决', /裁决|verdict/.test(r.err), r.err.slice(0, 300));
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

@@ -50,6 +50,7 @@ node <FRAMEWORK_ROOT>/tools/detect-harness.mjs
    所有产物写 <OUTDIR>。报告末尾附 git status 的真实输出。
 2. 默认只读：跑完 侦察 → 宽扫 → 深挖 → 锐评 → 报告 就结束。
    修复是另一件事，等我明确说"修复 round{N}"才启动。
+   启动修复时读 `START-FIX.md`（修复相位的入口，含加载清单与派发模板）。
 3. 任何终止路径都必须出一份报告，哪怕不完整。禁止"跑完了但没有报告"。
 
 【绝不主动杀 agent】

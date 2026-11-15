@@ -63,6 +63,118 @@ function isVacuous(s) {
 }
 
 // ────────────────────────────────────────────────────────────────────
+// 0 · disposition 契约的公共部分（2026-11-15 新增）
+// ────────────────────────────────────────────────────────────────────
+// 背景（有实测证据）：fix 角色此前的全部契约只有 `files_touched`。
+// 框架要求「每条 finding 必须被锐评攻击一次」（critique 的
+// `verdict_missing_for_target`），但**不要求每条 finding 被修复或明确暂缓一次**。
+// 实测后果：38 条发现只修了 6 条，31 条从未进入任何任务书，没有任何工具报错。
+// 另一例：一条 finding 含 3 个子主张，任务书只覆盖 1 个，另外 2 个静默消失
+// （其中 1 个后来靠巧合才被捞回来）。
+//
+// 所以 fix 的产物必须对每条发现表态，四个值构成闭集。缺省即违规——
+// 「省略最省事」正是静默蒸发的机制。
+const DISPOSITIONS = ['FIXED', 'WONT_FIX', 'DEFERRED', 'NEW_FINDING'];
+
+// 红测日志路径不得落在构建产物目录里。
+// 2026-11-15 真实教训：诊断用的红测日志放在 `target/` 下，被 `mvn clean`
+// 整个删掉，验收时就再也无法复核「修复前确实是红的」。
+// 证据一旦可被构建清理，等于没有证据。
+const RED_LOG_IN_TARGET = /(^|\/)target\//i;
+
+function validateDispositionEntry(entry, prefix) {
+  const out = [];
+  const d = entry?.disposition;
+
+  if (d === undefined || d === null || d === '') {
+    out.push({
+      field: `${prefix}.disposition`, rule: 'missing_disposition',
+      msg: `缺少 disposition。fix 产物必须对每条发现表态：${DISPOSITIONS.join(' | ')}。`
+        + '不表态 = 这条发现静默蒸发——实测 38 条发现里 31 条从未进入任何任务书，而没有任何工具报错',
+    });
+    return out;
+  }
+  if (!DISPOSITIONS.includes(d)) {
+    out.push({
+      field: `${prefix}.disposition`, rule: 'invalid_disposition',
+      msg: `disposition 只能取 ${DISPOSITIONS.join(' | ')}，实际是 ${JSON.stringify(d)}。`
+        + '枚举不闭合时「暂缓 / 不修 / 新发现」三者无法区分，下游统计会失真',
+    });
+    return out;
+  }
+
+  // 只要给了红测日志路径就检查，不论 disposition 是哪个值——
+  // 一条放在 target/ 下的日志在任何档位下都不是可复核的证据。
+  const rlp = entry?.red_log_path;
+  if (typeof rlp === 'string' && rlp.trim() !== '') {
+    const normalized = rlp.replace(/\\/g, '/');
+    if (RED_LOG_IN_TARGET.test(normalized)) {
+      out.push({
+        field: `${prefix}.red_log_path`, rule: 'red_log_in_target',
+        msg: `red_log_path 指向构建产物目录（${rlp}），会被构建清理（如 mvn clean / gradle clean / rm -rf target）删掉，`
+          + '验收时无法复核「修复前是红的」。2026-11-15 真实教训：红测日志就放在 target/ 下，被整个删光，'
+          + '导致本次修复的证据不可复核。请写到 target/ 之外（例如 experiments/<round>/red-<finding>.log）',
+      });
+    }
+  }
+
+  if (d === 'FIXED') {
+    const tp = entry?.test_path;
+    if (typeof tp !== 'string' || tp.trim() === '') {
+      out.push({
+        field: `${prefix}.test_path`, rule: 'fixed_without_test',
+        msg: 'disposition=FIXED 时必须给出 test_path——「改了代码」不等于「修好了」，'
+          + '没有测试就没有可复核的判据',
+      });
+    }
+    if (typeof rlp !== 'string' || rlp.trim() === '') {
+      out.push({
+        field: `${prefix}.red_log_path`, rule: 'fixed_without_red_log',
+        msg: 'disposition=FIXED 时必须给出 red_log_path（修复前测试为红的日志）。'
+          + '没有红测日志，无法区分「修复生效」和「测试本来就是绿的」',
+      });
+    }
+  }
+
+  // 契约 §2.4 把 disposition_reason 列为 WONT_FIX / DEFERRED 的条件必填（≥20 字）。
+  // 两个分支分开报规则名，好让「不修」与「暂缓」两种缺理由在统计上可区分。
+  const reason = String(entry?.disposition_reason ?? '');
+  const reasonTooThin = substanceLength(reason) < 20 || isVacuous(reason);
+  const reasonDetail = `（去空白与零宽字符后 ${substanceLength(reason)} 字，要求 ≥20 字`
+    + `${isVacuous(reason) ? '，或命中占位词' : ''}）`;
+
+  if (d === 'WONT_FIX' && reasonTooThin) {
+    out.push({
+      field: `${prefix}.disposition_reason`, rule: 'wont_fix_without_reason',
+      msg: `disposition=WONT_FIX 但 disposition_reason 没有实质内容${reasonDetail}。`
+        + '「不修」是一个需要论证的判断，不是省略号——否则它只是把静默蒸发换了个名字',
+    });
+  }
+
+  if (d === 'DEFERRED') {
+    if (reasonTooThin) {
+      out.push({
+        field: `${prefix}.disposition_reason`, rule: 'deferred_without_reason',
+        msg: `disposition=DEFERRED 但 disposition_reason 没有实质内容${reasonDetail}。`
+          + '「本轮不修」必须说明为什么不能在本轮修，否则与「忘了」无法区分',
+      });
+    }
+    const nr = entry?.next_round;
+    if (typeof nr !== 'string' || nr.trim() === '' || isVacuous(nr)) {
+      out.push({
+        field: `${prefix}.next_round`, rule: 'deferred_without_trigger',
+        msg: 'disposition=DEFERRED 时必须给出 next_round（什么条件满足时重新处置）。'
+          + '没有触发条件的「暂缓」等于永久丢弃——它永远不会被任何后续波次重新捡起',
+      });
+    }
+  }
+
+  // NEW_FINDING 只要求显式标记（disposition 本身即是标记），
+  // 但建议给 disposition_reason 说明「新发现在哪里、为什么不在原清单里」。
+  return out;
+}
+
+// ────────────────────────────────────────────────────────────────────
 // 1 · 必须有一个可解析的 JSON 信封
 // ────────────────────────────────────────────────────────────────────
 const blocks = [...text.matchAll(/```json\s*\n([\s\S]*?)```/g)];
@@ -940,6 +1052,49 @@ if (envelope && envelope.payload && envelope.role) {
       }
     }
   }
+  if (envelope.role === 'fix') {
+    // 2026-11-15：fix 的 disposition 契约（见文件顶部 §0 的注释）。
+    // 支持两种形态：
+    //   单发现   payload 本身是一个 disposition 条目（finding_id + disposition + …）
+    //   多发现   payload.dispositions[] 逐条列出，配合派发时传入的 target_finding_ids
+    // 两种都必须经同一套校验，否则「换个写法就能绕开」。
+    //
+    // 判定顺序：dispositions 非空时它就是权威清单，不再把 payload 顶层
+    // 当成一条额外条目——否则顶层那个 finding_id（多发现形态里往往是
+    // 派发的主发现）会被要求写一个它本来不该有的 disposition。
+    const entries = [];
+    if (Array.isArray(p.dispositions) && p.dispositions.length > 0) {
+      p.dispositions.forEach((d, i) => entries.push({ entry: d, prefix: `payload.dispositions[${i}]` }));
+    } else {
+      // 单发现形态；也包括「什么都没写」的情况——那需要一个 missing_disposition
+      // 指向 payload.disposition，而不是静默跳过。
+      entries.push({ entry: p, prefix: 'payload' });
+    }
+
+    for (const { entry, prefix } of entries) {
+      errors.push(...validateDispositionEntry(entry, prefix));
+    }
+
+    // 覆盖校验：与 critique 的 verdict_missing_for_target 同构。
+    // critique 那边管「每条发现被攻击过一次」，这里管「每条发现被处置过一次」。
+    // 少了这一条，修复波可以只做 1/38 而完全合规——实测就是这样发生的。
+    const targets = Array.isArray(p.target_finding_ids) ? p.target_finding_ids : [];
+    if (targets.length > 0) {
+      const covered = new Set(
+        entries.map(({ entry }) => entry?.finding_id).filter((x) => typeof x === 'string' && x !== ''),
+      );
+      const missing = targets.filter((t) => !covered.has(t));
+      if (missing.length > 0) {
+        errors.push({
+          field: Array.isArray(p.dispositions) ? 'payload.dispositions' : 'payload.disposition',
+          rule: 'disposition_missing_for_target',
+          msg: `以下 target_finding_ids 没有任何 disposition: ${missing.join(', ')}。` +
+               `漏处置一条等于让它静默蒸发——实测 38 条发现只修了 6 条，31 条从未进入任何任务书，` +
+               `而框架里没有任何工具报错。锐评波要求「每条都被攻击过」，修复波必须要求「每条都被处置过」`,
+        });
+      }
+    }
+  }
   if (envelope.role === 'planner') {
     const sum = Object.values(p.score_breakdown ?? {}).reduce((a, b) => a + b, 0);
     if (typeof p.score === 'number' && sum > 0 && p.score !== sum) {
@@ -984,12 +1139,42 @@ if (envelope && envelope.payload && envelope.role) {
       });
     }
   }
+
+  // ── duplicate_finding_id：对所有角色生效（2026-11-15 新增）──
+  // 实测：把 7 条 finding 的 finding_id 改成完全相同，校验器仍报「✅ 契约合规」。
+  // 后果不是「格式不整齐」：下游的锐评裁决、验收结论、修复回填全部按 finding_id
+  // 挂接，id 重复意味着 7 条发现里只有 1 条能被引用，其余 6 条**在结构上无法被处置**——
+  // 而它们仍然出现在账本里，看起来像是被覆盖了。这是「发现静默蒸发」最隐蔽的一种。
+  for (const arrKey of ['findings', 'verdicts', 'dispositions', 'target_finding_ids']) {
+    const arr = p[arrKey];
+    if (!Array.isArray(arr)) continue;
+    // target_finding_ids 是字符串数组，其余是对象数组
+    const ids = arr
+      .map((x) => (typeof x === 'string' ? x : x?.finding_id))
+      .filter((x) => typeof x === 'string' && x.trim() !== '');
+    const seen = new Map();
+    const dupes = new Map();
+    ids.forEach((id, i) => {
+      if (seen.has(id)) {
+        if (!dupes.has(id)) dupes.set(id, [seen.get(id)]);
+        dupes.get(id).push(i);
+      } else seen.set(id, i);
+    });
+    for (const [id, idxs] of dupes) {
+      errors.push({
+        field: `payload.${arrKey}`,
+        rule: 'duplicate_finding_id',
+        msg: `${arrKey} 里 finding_id "${id}" 重复 ${idxs.length} 次（下标 ${idxs.join(', ')}）。`
+          + '下游锐评/验收/修复回填全部按 finding_id 挂接，重复 id 会让这些条目'
+          + '**在结构上无法被单独处置**，但它们仍出现在账本里，看起来像是被覆盖了',
+      });
+    }
+  }
 }
 
 // ────────────────────────────────────────────────────────────────────
 // 4 · 验收角色：FAIL 时必须给出归因与可复现触发条件
-// ────────────────────────────────────────────────────────────────────
-// 2026-11-14 补：契约 §2.5 白纸黑字写了两条条件必填——
+// ────────────────────────────────────────────────────────────────────// 2026-11-14 补：契约 §2.5 白纸黑字写了两条条件必填——
 //   `failure_category`  `verdict: FAIL` 时必填（决定回波次四还是判 REVOKED）
 //   `failure_trigger`   `verdict: FAIL` 时必填（可复现的触发条件）
 // 但校验器此前**完全不检查**。实测一个 `verdict: "FAIL"`、没有任何归因的

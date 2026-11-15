@@ -16,6 +16,64 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 12 轮给出的�
 
 ---
 
+## 第 0 节：派发规则（主Agent执行，先于第 1 节）
+
+> 本节读者是**主Agent**，不是验收Agent。放在最前面，因为「派几个验收实例」在任何验收行为发生**之前**就定死。
+
+### 0.1 派发数量的算术
+
+```
+planned_verify_agents = 返回 SUCCESS 且契约合规的 fix_agent_id 数
+```
+
+**不是 K，不是「按需」，不是「一条验收实例可以顺带看看别的」**。
+
+- 分母是**修复实例**，不是发现数：若两条 finding 依 `wave4-fix.md` §0.3 合法合并成一个修复实例，则对应**一个**验收实例；
+- 一条修复失败（`RETRYABLE_FAILURE` / `PERMANENT_FAILURE`）**不产生**验收实例，差额记进 `open_items`；
+- 实例数不得因为「改动很小」「就一行」「逻辑上显然」而压缩。它们是 `evidence` 里的理由，不是派发数的理由。
+
+### 0.2 一一对应（双射）
+
+| 关系 | 要求 |
+|---|---|
+| 每个 `fix_agent_id` | **恰好一个**验收实例 |
+| 每个验收实例 | 只对一个 `fix_agent_id` 负责，只判一个 `finding_id` |
+| 同一 `finding_id` 的两个并行验收实例 | **禁止**——它们会读同一份代码、写同名产物（`round{N}-05-verify-{finding序号}.md`），后写的静默覆盖先写的 |
+
+**为什么不能合并验收**：验收的产出是 `verdict`，而 `verdict` 的直接来源必须是**本回合的独立观察**（第 3 节）。一个实例验收 N 条修复时，它对第 2 条起的检查必然受第 1 条的上下文污染——这与「读到修复者说已通过就倾向复述」（第 2 节）是同一个失效机制，只是污染源从修复者换成了自己。**一个实例修多条 finding 是 `CONTRACT_VIOLATION`，一个实例验收多条修复同样是。**
+
+### 0.3 派发参数：必须传什么、必须不传什么
+
+```
+✓ 传: trace_id, round_id, finding_id, fix_agent_id, target_files[],
+      acceptance_criteria, affected_issues[], residual_risk_flags[]
+✗ 不传: verification_commands, output_snippet, artifact_path（作为必读项）
+```
+
+**`fix_agent_id` 必须传**——它不是给验收Agent看的背景信息，而是主Agent做 §0.1 算术与 §0.4 对账的唯一键。
+
+### 0.4 派发前必须就绪 / 派发后必须对账
+
+| 时机 | 动作 | 判定 |
+|---|---|---|
+| 派发前 | 产物目录已建且路径无空格 / 无中文（`artifacts/report-naming.md` §5.1–5.2） | `report.dir_ready != true` → **不得派发**，`PERMANENT_FAILURE` / `ToolError` |
+| 派发前 | `state.json` 的 `fix_contracts[]` 已记满全部 `(finding_id, fix_agent_id)` 对 | 缺失 → 先补齐账本（`closed_waves` 只记摘要，不记 id 清单），否则对账无基准 |
+| 派发后 | 对账：`distinct(验收实例的 fix_agent_id) == distinct(SUCCESS 修复的 fix_agent_id)` | 不等 → 差额部分未验收，记 `discipline_violation`，本轮 **不得** `CLOSED` |
+
+**这条对账是本节唯一有强制力的部分**——它不依赖任何人读文档时是否被说服。
+
+### 0.5 失败模式
+
+| 失败模式 | 表现 | 判定 |
+|---|---|---|
+| **一个验收实例验多条修复** | 一份 `05-verify` 产物里出现多个 `finding_id` / `fix_agent_id` | **`CONTRACT_VIOLATION`** |
+| 验收实例数少于成功修复数 | 对账差额非空 | **`CONTRACT_VIOLATION`**（未验收即放行） |
+| 验收Agent拿到了修复者的自述 | 派发参数含 `verification_commands`，或 `evidence` 出现「根据修复报告」 | **`CONTRACT_VIOLATION`**（第 2 节的硬约束） |
+| 同一 `finding_id` 并行两个验收实例 | 同名产物互相覆盖 | 作废两者，重派一个 |
+| 主Agent自己给出 `verdict` | 出现非验收实例产出的验收结论 | **`CONTRACT_VIOLATION`**——`verdict` 的唯一来源是验收实例 |
+
+---
+
 ## 第 1 节：验收Agent的职责边界——四做四不做
 
 **做**：

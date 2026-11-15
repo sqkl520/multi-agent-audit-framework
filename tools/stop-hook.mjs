@@ -67,7 +67,11 @@ try {
 const problems = [];
 
 // 1. 执行相位必须有计划
-if (['wave2a', 'wave2b', 'wave3'].includes(state.phase)) {
+// 2026-11-15（R1）：白名单补 wave4 / wave5。
+// 此前只有 wave2a/wave2b/wave3 —— 修复与验收阶段 stop-hook **完全不触发**，
+// 而 harness 强制的 hook 是本框架唯一的硬手段（见文件头对手段强弱的排序）。
+// 缺口存在时，修复阶段只剩提示词那一层，也就是框架自己判为「最弱」的那一层。
+if (['wave2a', 'wave2b', 'wave3', 'wave4', 'wave5'].includes(state.phase)) {
   const plan = state.current_plan;
   if (!plan) {
     problems.push(
@@ -147,17 +151,79 @@ if (Array.isArray(state.in_flight) && state.in_flight.length > 0) {
 }
 
 // 3. 相位声明完成但交付物缺失
+// 2026-11-15（R1）：补 wave4 / wave5 两个键。
+// 此前这两个相位根本不在映射表里，`check` 取到 undefined → 整段跳过。
+// 交付物的判据都只读账本里已有的字段，不新增必填项。
+const VERDICT_VALUES = ['PASS', 'FAIL'];
+const fixContracts = Array.isArray(state.fix_contracts) ? state.fix_contracts : [];
 const PHASE_DELIVERABLES = {
   wave1: () => state.slices && Object.keys(state.slices).length > 0,
   wave2a: () => Array.isArray(state.wave2_completed) && state.wave2_completed.length > 0,
+  // wave4（修复相位）的交付物 = 账本里有修复登记。
+  // 判据是 `fix_contracts` 非空，不是「主 Agent 说修完了」——
+  // wave4-fix.md §2 要求每个缺陷在**第一次 Edit 之前**登记五字段，
+  // 所以「有登记」等价于「确实进入过修复」，而「无登记」等价于「这个相位什么都没发生」。
+  wave4: () => fixContracts.length > 0,
+  // wave5（验收相位）的交付物 = 每一条 fix_contract 都有裁决。
+  // 判据取 `verdict ∈ {PASS, FAIL}`（output-contract 的 verify 闭集）。
+  // 为什么不是「有一条 PASS」：验收相位做完的标志是**没有未裁决的修复**，
+  // 而不是「修好了几个」。FAIL 也是合法的终态——它意味着回波次四重修，
+  // 但那个决定必须已经被做出来。缺 verdict 的那条是「没人看过」，
+  // 它与「看过后判不通过」在账本上必须可区分，否则未验收会被混进已验收。
+  wave5: () => fixContracts.length > 0 &&
+    fixContracts.every((fc) => VERDICT_VALUES.includes(fc?.verdict)),
   report: () => state.report?.final_report_path && existsSync(state.report.final_report_path),
 };
 const check = PHASE_DELIVERABLES[state.phase];
 if (check && !check()) {
+  // wave4/wave5 缺席的是账本里的具体条目，泛泛说「交付物没落盘」等于没说——
+  // 回灌给模型的信息必须指出缺的是哪一条，否则它只会再汇报一遍进度。
+  const specific = {
+    wave4:
+      `wave4（修复相位）的 fix_contracts 为空。这个相位的交付物就是修复登记本身：\n` +
+      `每个缺陷在**第一次 Edit 之前**登记 finding_id / fix_agent_id / registered_at / ` +
+      `defect_statement / disproof_condition / rollback_command / test_path（wave4-fix.md §2）。\n` +
+      `没有登记的修复无法被验收波消费，rollback_command 也无人可用。`,
+    wave5:
+      `wave5（验收相位）还有没被裁决的 fix_contract：每一条都必须有 verdict ∈ PASS | FAIL。\n` +
+      `验收结论只有这两种取值（output-contract verify 闭集）；「带保留通过」写成 ` +
+      `PASS + escalation_required:true，不是新的枚举值（wave5-verify.md §5.2）。\n` +
+      `缺 verdict 意味着这条修复**没人验过**，它与「验过但没通过」在账本上必须可区分。`,
+  }[state.phase];
   problems.push(
+    specific ??
     `phase=${state.phase} 的交付物还没落盘（见 protocol.md §0.8.2 的相位交付物表）。\n` +
     `相位交付物是「这个相位做完了」的客观证据——没有它，就还不能交付。`
   );
+}
+
+// 3.5 · wave4：多条缺陷必须多实例，不得在单个实例里串行
+// 2026-11-15（R1）新增。比 wave2a 更严，理由是修复相位缺了 wave3 的 Skeptic：
+// `critique-panel.md` 的 Skeptic 只在锐评相位执法，修复相位没有对应的批判角色，
+// 所以「一条一条串着修」在修复相位没有任何东西会反对它（见 DIAG-FINAL 的 S2-4）。
+//
+// 第二个诱因在 `final-report.md:25`：它要求 FIX 路径「每条发现结束」出报告，
+// 于是每条发现天然生成一个停点，而停点就是串行的入口。
+// 这两条合起来把「极限多 agent」在修复阶段折成了单实例。
+//
+// 判据用 `spawned_fix_agents`（实际派发的修复实例数，写在 budget 下）：
+// 它必须是**实际计数**，与 budget.spent 同一条纪律（run-state.md 第 2 节）。
+// 字段缺失按 0 处理——账本没有记录就等于没有发生过，不能默认它派过。
+if (state.phase === 'wave4') {
+  const findingIds = new Set(
+    fixContracts.map((fc) => fc?.finding_id).filter((x) => typeof x === 'string' && x !== '')
+  );
+  const spawned = Number(state.budget?.spawned_fix_agents ?? state.spawned_fix_agents ?? 0);
+  if (findingIds.size > 1 && spawned <= 1) {
+    problems.push(
+      `wave4 里有 ${findingIds.size} 条独立缺陷（${[...findingIds].slice(0, 5).join(', ')}` +
+      `${findingIds.size > 5 ? '…' : ''}），但账本记录的修复派发实例数是 ${spawned}。\n` +
+      `多条独立缺陷在单个实例里串行完成，违反 triage.md 的面板下限` +
+      `（T0≥3 / T1≥5 / T2≥9，triage.md §3「取消降级路径」）。\n` +
+      `修复相位没有 Skeptic 执法（Skeptic 只在 wave3），所以这条只能由本 hook 拦。\n` +
+      `请按缺陷逐条派发独立实例，并把实际派发数写进 budget.spawned_fix_agents（实际计数，不得估算）。`
+    );
+  }
 }
 
 if (problems.length > 0) {

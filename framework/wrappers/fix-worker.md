@@ -30,7 +30,15 @@ write_scoped: true
 | 事件 | `FINDING_UPHELD` |
 | 前置状态 | Arbiter 裁决为 `UPHELD` 或 `DOWNGRADED`；`wave` 置为 `4` |
 | 派发参数 | `trace_id`、`round_id`、`finding_id`、`verdict`、`target_files[]`、`acceptance_criteria`（即 `disproof_condition`）、`shared_dependencies[]` |
-| 并发约束 | 不同 `target_files` 的修复可并行；**共享同一文件的修复必须串行**，由主Agent排序 |
+| 并发约束 | **每条 `UPHELD` 的 finding 一个修复实例**（义务，不是许可：`planned_fix_agents = UPHELD 发现数`）。共享同一 `target_files` 的实例**必须串行**——这是「必须做文件级依赖分析」的理由，**不是串行的默认理由**。由主Agent做文件级依赖分析后**编组派发**，主Agent不是排序者 |
+
+**实例唯一性**：**一条 `UPHELD` 的 finding 一个实例**，且一个实例只承担一条 finding。**不得**让一个实例承担多条 finding——「5 条缺陷交给 1 个 session 一次修完」是 `CONTRACT_VIOLATION`，不是「效率」。
+
+> **唯一允许合并的情形**：多条 finding 的 `target_files` **完全重叠**（集合相等，不是「有交集」）**且同源**（同一切片、同一根因），才可编入同一实例；且**必须**把合并理由与参与合并的 `finding_id` 列表显式写进主Agent的派发记录（`state.json` 的 `discipline_log`）。**没有这条记录 = `CONTRACT_VIOLATION`。**
+
+> **产物里出现多条 `disposition` 不等于被允许多条**：`components/output-contract/fix.md` §2.4 的 `dispositions[]` 是容纳**已申报合并**的容器。没有 `FIX_INSTANCE_MERGED` 记录的多条 `disposition`，判 `CONTRACT_VIOLATION`——契约装得下，规则不允许。
+
+**「共享同一文件必须串行」的准确含义**：它只约束**已经决定分开派发**的实例之间的调度顺序。它要求在派发**之前**对全部 finding 的 `target_files[]` 做集合求交、把交集非空的编入同一**串行组**，组内串行、组间并行。**做这个分析是为了知道哪些能并行，不是把一切串起来。** 串行组是唯一能合法压低实例数的理由，压缩必须留痕。
 
 **写权限范围**：仅限派发参数中的 `target_files` 及其对应测试文件。超出范围的写入一律 `CONTRACT_VIOLATION`。
 

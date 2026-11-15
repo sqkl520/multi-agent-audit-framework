@@ -30,7 +30,12 @@ read_only: true
 | 事件 | `FIX_COMPLETED` |
 | 前置状态 | 某修复Agent返回 `SUCCESS` 且契约合规；`wave` 置为 `5` |
 | 派发参数 | `trace_id`、`round_id`、`finding_id`、`fix_agent_id`、`target_files[]`、`acceptance_criteria`、`affected_issues[]`、`residual_risk_flags[]` |
+| 并发约束 | **每个 `fix_agent_id` 一个验收实例**，与修复实例**一一对应**（`planned_verify_agents = 派发成功的修复实例数`）。不得让一个实例验收多条修复，也不得让两个实例验收同一条修复 |
 | **禁止传入** | 修复Agent的 `verification_commands`、`output_snippet`、`artifact_path` 作为必读项 |
+
+**实例唯一性**：`fix_agent_id` 与验收实例之间是**双射**。一条修复返回 `SUCCESS` 就产生一个验收实例；一个验收实例只对一个 `fix_agent_id` 负责。「5 条修复交给 1 个验收实例依次看一遍」判 `CONTRACT_VIOLATION`——它会退化成复述修复者的说法，而这正是第 2 节要防的事。
+
+> 与 `sweep-scout` / `audit-specialist` 的同构关系：宽扫是「一个切片一个实例」，深挖是「一个 `(slice_id, dimension)` 一个实例」，验收是「一个 `fix_agent_id` 一个实例」。**三者都是实例唯一性硬规则，不是并发许可。** 并发上限仍由 `scale_decision.concurrency_window` 管，那是并行度，不是实例总数。
 
 **独立性硬约束**：验收Agent与修复Agent必须是不同实例，且验收Agent的上下文不得包含修复Agent的任何自述。
 

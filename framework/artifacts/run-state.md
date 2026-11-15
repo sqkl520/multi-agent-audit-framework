@@ -34,7 +34,7 @@ source: 续写（2026-11-01）。解决 round31「跑不完、断了接不上、
 
 **路径**：`docs/reports/round{N}/state.json`（与轮次产物同目录，随仓库一起留存）
 
-**`budget` 中四个计数字段的用途**（2026-11-03 新增。`protocol.md` 第 3.1 节要用它们算失败率阈值，此前 `state.json` 里没有对应字段——阈值规则写着却没有分母）：
+**`budget` 中五个计数字段的用途**（2026-11-03 新增前四个；2026-11-15 新增 `spawned_fix_agents`。`protocol.md` 第 3.1 节要用它们算失败率阈值，此前 `state.json` 里没有对应字段——阈值规则写着却没有分母）：
 
 | 字段 | 含义 | 何时写入 | 为什么不能用别的字段替代 |
 |---|---|---|---|
@@ -42,8 +42,11 @@ source: 续写（2026-11-01）。解决 round31「跑不完、断了接不上、
 | `spawned_deep_dive` | 波次二B **实际**派发的深挖实例数 | 每次派发后 +1 | 是**事实**。2b 失败率必须用它当分母，用 `discovery_budget`（计划）会在「预算没用完就停了」时把失败率算小，从而错误放行覆盖不足的一轮 |
 | `failed_sweep` | 宽扫中 `PERMANENT_FAILURE` 的实例数 | 每次判定终态时 +1 | 2a 失败率的分子 |
 | `failed_deep_dive` | 深挖中 `PERMANENT_FAILURE` 的实例数 | 每次判定终态时 +1 | 2b 失败率的分子 |
+| `spawned_fix_agents` | 波次四（`wave4`）**实际**派发的修复实例数 | 每次派发后 +1 | 与 `fix_contracts` 的 `finding_id` 去重数对账：多条独立缺陷却只有 1 个实例，说明是单实例串行，`stop-hook.mjs` 会拒绝闭合该相位 |
 
-**硬规则：四个字段都只能由实际计数写入，不得估算。** 与 `budget.spent` 同一条纪律（见第 4 节规则 3）——round31 的 `spent=22` vs 实际 ≥47 就是估算的后果。估算出来的失败率会让阈值判定失去意义。
+**硬规则：五个字段都只能由实际计数写入，不得估算。** 与 `budget.spent` 同一条纪律（见第 4 节规则 3）——round31 的 `spent=22` vs 实际 ≥47 就是估算的后果。估算出来的失败率会让阈值判定失去意义。
+
+> **`spawned_fix_agents` 为什么必须是「实际计数」**（2026-11-15 新增）：它是 `wave4` 唯一能识别「多缺陷单实例串行」的字段。若由主 Agent 估算（比如「我大概修了 3 个」），这个对账立刻失效——它记录的就不再是派发事实，而是主 Agent 对自己工作的印象，和被审计的对象是同一个人。字段缺失时一律按 0 处理：**账本没记录等于没发生**。
 
 ```json
 {
@@ -51,7 +54,7 @@ source: 续写（2026-11-01）。解决 round31「跑不完、断了接不上、
   "trace_id": "trace-r31-20261101-a7f3c9",
   "round_id": "round31",
   "path_mode": "AUDIT_ONLY | FIX",
-  "phase": "init | wave1 | wave2a | wave2b | wave3 | report | closed",
+  "phase": "init | wave1 | wave2a | wave2b | wave3 | wave4 | wave5 | report | closed",
   "status": "RUNNING | PARTIALLY_CLOSED | CLOSED | BLOCKED",
 
   "budget": {
@@ -61,7 +64,8 @@ source: 续写（2026-11-01）。解决 round31「跑不完、断了接不上、
     "planned_sweep_agents": 40,
     "spawned_deep_dive": 12,
     "failed_sweep": 2,
-    "failed_deep_dive": 1
+    "failed_deep_dive": 1,
+    "spawned_fix_agents": 0
   },
 
   "slices": {
@@ -97,7 +101,7 @@ source: 续写（2026-11-01）。解决 round31「跑不完、断了接不上、
   ],
 
   "current_plan": {
-    "phase": "wave2a",
+    "phase": "wave2a — 必须与 state.phase 逐字相同；FIX 路径取 wave4 / wave5",
     "written_at": "ISO8601",
     "steps": [
       { "id": 1, "action": "派 16 个宽扫 agent", "done_when": "16 个全部到终态" }
@@ -150,11 +154,17 @@ source: 续写（2026-11-01）。解决 round31「跑不完、断了接不上、
       "baseline_result": "string|null — 修改前运行 disproof_condition 的实际输出与退出码",
       "baseline_unverified": false,
       "rollback_command": "string",
-      "test_path": "string — 不存在则写 需新建"
+      "test_path": "string — 不存在则写 需新建",
+
+      "verdict": "PASS | FAIL — wave5 写入。带保留通过写 PASS + escalation_required:true",
+      "escalation_required": false,
+      "verified_at": "ISO8601 — 有 verdict 时必填，供与 files_touched 的 mtime 对账"
     }
   ]
 }
 ```
+
+> **`verdict` 只由 `wave5`（验收相位）写入，`wave4` 期间必须缺席**（2026-11-15 新增）：一端是「登记了但没人验」，另一端是「验过且给出结论」，两者不能混。修复实例**不得**自己填 `verdict`——`wave4-fix.md` §1「不做自我验收」的依据是 NeurIPS 的对照数据：修复者自证既不能提高解决率，也不能降低回归率。`check-state.mjs` 只校验已写出的 `verdict` 是否为闭集内的值，不强制它存在；**强制它存在的是 `stop-hook.mjs` 的 `wave5` 交付物检查**——因为「可以暂时没有」和「相位可以闭合」是两个问题，前者由 schema 回答，后者由相位门回答。
 
 **`fix_contracts` 为什么必须进账本**（2026-11-09 新增）：`templates/wave4-fix.md` §2 要求修复 Agent 在**第一次编辑之前**登记五个前置字段，原文写的是「在内部（或账本的 `fix_contract` 字段中）」。但 `state.json` 里此前**没有这个字段**——和 `wave2_completed` 当初的情况一模一样：规则要求往一个不存在的地方写。
 
@@ -175,6 +185,71 @@ source: 续写（2026-11-01）。解决 round31「跑不完、断了接不上、
 | `dir_path` | 本轮产物目录的绝对路径，供子 Agent 拼 `artifact_path` |
 
 > **为什么它是一个硬闸而不是一句提醒**：目录缺失会让**每一个**子 Agent 的写入失败，且重派不会好转——这正是 `protocol.md` §4.1 定义的「系统性契约缺陷」。放在派发前检查，一次就拦住；不检查则要等所有 Agent 失败一遍才发现。
+
+---
+
+## 第 2.5 节：修复相位（`wave4`）与验收相位（`wave5`）（2026-11-15 新增）
+
+### 2.5.1 为什么这两个相位此前不存在
+
+`path_mode` 的枚举一直有 `FIX` 这个取值，但 `phase` 的枚举里没有任何一个值对应「正在修复」或「正在验收」。这不是笔误，是一处**结构性空洞**，后果是连锁的：
+
+| 事实 | 后果 |
+|---|---|
+| `stop-hook.mjs` 的相位白名单按 `phase` 匹配，只有 `wave2a/wave2b/wave3` | **修复与验收阶段 hook 完全不触发**，框架唯一的硬手段（harness 强制）失效 |
+| 框架自己认定「提示词是最弱的手段，Stop hook 是最强的」（`protocol.md` §0.8 与 `stop-hook.mjs` 文件头的强弱排序） | 修复阶段只剩最弱那一层——**规则能被「判定为不适用」** |
+| `final-report.md` 要求 FIX 路径「每条发现结束」出报告 | 每条发现天然产生一个停点，而每个停点都是串行的入口 |
+| Skeptic 只在锐评相位执法（`critique-panel.md` 注明 `wave: 3`） | **修复相位是 L0 的执法真空**：没有批判角色会反对「一条一条串着修」 |
+
+**所以这两个相位值不是新功能，是把原有一条路径接进门控。** 补齐之后，`stop-hook.mjs` 与 `check-state.mjs` 对修复路径的约束力，与它们对审计路径的约束力相同。
+
+### 2.5.2 `wave4`：修复相位
+
+| 项 | 定义 |
+|---|---|
+| **进入条件** | `path_mode = FIX`；锐评相位已闭合（`wave3` 的裁决记录落盘）；本轮 `UPHELD` 的发现清单已冻结 |
+| **相位内允许的动作** | 按 `finding_id` **逐条派发独立修复实例**（`templates/wave4-fix.md`）；每个实例在**第一次 Edit 之前**把五个前置字段登记进 `fix_contracts` |
+| **闭合条件** | `fix_contracts` **非空**（每条被派发的缺陷都有登记）+ 所有修复实例到终态 + `budget.spawned_fix_agents` 已按实际派发数更新 |
+| **交付物** | `fix_contracts[]`（账本条目）+ 各修复实例的产物文件 |
+| **机械校验** | `check-state.mjs`：`path_mode=FIX` 且 `phase ∈ {wave4, wave5}` 时 `fix_contracts` 必须存在且非空（`fix_contracts_required`）。`stop-hook.mjs`：`wave4` 无 `current_plan` 或 `fix_contracts` 为空时拒绝结束回合 |
+
+**并行下限（比 `wave2a` 更严的一条）**：如果 `fix_contracts` 里有 **≥2 条不同的 `finding_id`**，而 `budget.spawned_fix_agents` **≤ 1**，`stop-hook.mjs` 拒绝闭合该相位，理由写「多条独立缺陷在单个实例里串行完成，违反 `triage.md` 的面板下限」。
+
+> **为什么这条要写死在 hook 里，而不是写进提示词**：修复相位没有 Skeptic。锐评相位有一个专门角色攻击「这条结论对不对」，而修复相位连这个都没有——它的全部约束都来自主 Agent 自己的自律。上文第 4.4.4 节的那句话在这里正好适用：**「门控在，但没有一个门控真的拦住东西」。** 这条判据之所以可机械执行，是因为它只比较两个数字（`finding_id` 去重数 vs `spawned_fix_agents`），不需要理解修复内容——而 `protocol.md` §1.2 明令禁止主 Agent 去做需要理解内容的判断。
+>
+> **`spawned_fix_agents` 缺失按 0 处理**，不是按 1。账本没记录等于没发生；按 1 处理等于给「忘了记账」一条免罚通道，而记账遗漏恰恰是 round31「账本记 22、产物 ≥47」的成因。
+
+### 2.5.3 `wave5`：验收相位
+
+| 项 | 定义 |
+|---|---|
+| **进入条件** | `wave4` 已闭合；每条 `fix_contract` 都有对应的 `fix_agent_id` 与产物 |
+| **相位内允许的动作** | 按 `finding_id` 逐条派发**只读**验收实例（`templates/wave5-verify.md`）；验收必须**独立构造**能瞄准缺陷的检查，**不得**读取修复实例的 `verification_commands` 作为验收依据 |
+| **闭合条件** | **每一条** `fix_contract` 都有 `verdict ∈ {PASS, FAIL}`；带保留通过的写成 `PASS` + `escalation_required: true`（不是新增枚举值，见 `wave5-verify.md` §5.2） |
+| **交付物** | 每条契约上的 `verdict` + `verified_at`，以及验收实例的产物文件 |
+| **机械校验** | `check-state.mjs`：`verdict` 取值非法时判 `invalid_verify_verdict`（拼成 `PASSED` 不会被当成通过）。`stop-hook.mjs`：`wave5` 存在无 `verdict` 的契约时拒绝结束回合 |
+
+**为什么闭合条件是「无未裁决」而不是「有 PASS」**：验收相位做完的标志是**没有没人看过的修复**，不是「修好了几条」。`FAIL` 同样是合法终态——它意味着回波次四重修，但那个决定已经被做出来了。缺 `verdict` 的那条是「没人看过」，它与「看过后判不通过」在账本上必须可区分，否则**未验收会被统计进已验收**。
+
+**去向**（详细规则见 `wave5-verify.md` §5 与 §8）：
+
+| 结论 | 去向 |
+|---|---|
+| `PASS`（无保留） | 该缺陷关闭，计入「已修复」 |
+| `PASS` + `escalation_required: true` | 生成 `HUMAN_DECISION_REQUIRED` 开放项；本轮以 `PARTIALLY_CLOSED` 收尾，该缺陷**不记为已修复** |
+| `FAIL` + `FIX_INCOMPLETE` / `FIX_INCORRECT` | **回 `wave4`**（不回 `wave2a`），派新修复实例 |
+| `FAIL` + `BASELINE_INVALID` | 原发现是误报，标 `REVOKED`，不回修复波 |
+
+### 2.5.4 与审计路径的关系（不破坏原有路径）
+
+`wave4` / `wave5` **只在 `path_mode = FIX` 时有意义**。`AUDIT_ONLY` 路径的相位序列仍是 `init → wave1 → wave2a → wave2b → wave3 → report → closed`，一个值都没变。
+
+两条硬约束保证这一点：
+
+1. `fix_contracts_required` 的检查同时要求 `path_mode === 'FIX'`，`AUDIT_ONLY` 下缺 `fix_contracts` 仍然合法；
+2. `stop-hook.mjs` 的 `wave4`/`wave5` 分支只在 `state.phase` 字面等于这两个值时进入，审计路径永远不会落到它们上面。
+
+**唯一的跨界改动是相位白名单本身**（`['wave2a','wave2b','wave3']` → 加上 `wave4`/`wave5`）。它是**加**不是**改**：`wave2a/wave2b/wave3` 的行为逐字不变，回归用例 `stop-hook.test.mjs` case 11 专门锁这一点。
 
 ---
 
@@ -244,6 +319,16 @@ read_result 之后：
    > **2026-11-04 修订**：原文只有 `CLOSED` 与 `BLOCKED` 两条分支，`PARTIALLY_CLOSED` 与 `RUNNING` **没有定义**。而 `PARTIALLY_CLOSED` 恰恰是「预算耗尽」这个最常见终止方式的落点（第 360 行）。落到这条分支的轮次，续跑 Agent **无从判断该干什么**——实际表现就是要么重复续跑一个已收口的轮次，要么停下来问用户。
    >
    > 同时删掉了原文第 183 行的「等用户决定」。**续跑的目标就是不让用户值守**，在已知 `BLOCKED` 原因时停下来问，等于把这个目标取消掉。正确做法是出报告 + 自动开新轮（失败切片记入新轮的 `unverified`），让用户回来时看到的是结果，不是问题。
+
+   **`phase` 不改变上面四条分支的判定，只决定「从哪里继续」**（2026-11-15 补充）：
+
+   | `phase` | `status = RUNNING` 时从哪里继续 |
+   |---|---|
+   | `init` ~ `wave3` | 按上表从 `in_flight` 与 `DEFERRED` 继续（审计路径，行为不变） |
+   | `wave4` | 逐条检查 `fix_contracts`：有 `fix_agent_id` 且产物完整 → 该缺陷已修完；没有登记但发现是 `UPHELD` → 补派修复实例。**不得**因为上次是在单实例里串着修的，就在本次续跑里继续串着修——并行下限在续跑时同样成立 |
+   | `wave5` | 逐条检查 `fix_contracts` 的 `verdict`：无 `verdict` 的补派验收实例。已 `FAIL` 的按 `failure_category` 决定回 `wave4` 还是标 `REVOKED`，**不得**在续跑里把 `FAIL` 当通过记账 |
+
+   > **为什么这条必须补**：`phase` 与 `status` 是两个正交的信号，但原文只按 `status` 分支。修复路径续跑时，`status=RUNNING` 给的指令是「从 `in_flight` 与 `DEFERRED` 继续」——而 FIX 路径的进度**不在 `in_flight` 里，在 `fix_contracts` 里**。照原文续跑，续跑 Agent 会去一个空数组里找进度，然后得出「没有未完成项」的结论。这正是 round31「账本记 22、产物 ≥47」那类错误的同一形态：**判据指向了不记录该事实的字段。**
 3. **处理 `in_flight`**（这是最容易出错的一步）：
 
    | `in_flight` 中的项 | 处理 |

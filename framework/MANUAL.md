@@ -334,10 +334,27 @@ scale_decision = {
 
 > **默认路径到此结束。** 以下内容只有用户发出「修复 round{N}」指令时才执行。它消费报告里 `UPHELD` 的发现，**不重新侦察、不重新切片**。
 
-每条 `UPHELD` 的发现派一个修复实例。不同 `target_files` 可并行，**共享同一文件的必须串行**。
+**每条 `UPHELD` 的发现都必须派一个自己的修复实例。这是义务，不是选项。**
 
 ```
-主Agent → 派 M 个 fix-worker
+planned_fix_agents = UPHELD 的发现数（减去已申报合并的条数）
+```
+
+**先做文件级依赖分析，再编组派发**：把所有 `UPHELD` 的 `target_files[]` 两两求交。
+
+| 交集 | 怎么派 |
+|---|---|
+| 空 | 独立一组，**并行**派（同时运行数受 `concurrency_window` 限制） |
+| 非空 | 编入**同一串行组**，组内按 `finding_id` 升序依次派 |
+
+**「共享同一文件的必须串行」说的是这个**：它要求你在**派发前**做上面的求交，把冲突的编进同一串行组——不是让你把所有修复排成一队一个个做。**串行组是唯一能合法减少实例数的理由，且必须按上面的规则编组，不能凭手感。**
+
+**不要这样做**：拿一个 session、把 N 条缺陷列成 N 个编号、从头到尾一次做完。这在框架里不是「高效」，是 `CONTRACT_VIOLATION`——实测出现过：5 条 UPHELD、196 个 step、303 次工具调用、`subagent` 调用 **0 次**。
+
+**唯一允许的合并**：多条发现的 `target_files` **完全相等**且同源（同切片、同根因）。且必须往 `state.json` 的 `discipline_log` 写一条 `kind: "FIX_INSTANCE_MERGED"`，列出 `merged_finding_ids` 与理由。**没写这条记录就合并 = `CONTRACT_VIOLATION`。**
+
+```
+主Agent → 先求交编组 → 每组派 1 个 fix-worker（一条 finding 一个实例）
          加载: output-contract + handoff-schema + wave4-fix
          参数: finding_id, verdict=UPHELD, target_files[], 
                acceptance_criteria, shared_dependencies[]
@@ -345,10 +362,13 @@ scale_decision = {
                             affected_issues, residual_risks }
 ```
 
+**派发前必须就绪**：产物目录已建（`report.dir_ready: true`）、路径无空格无中文、`fix_contracts` 数组已就位。
+
 **门控**：
 
 - 每条 `UPHELD` 都有对应修复返回 `SUCCESS`
 - 每条修复都带了 `affected_issues`（空数组必须配 `AFFECTED_ISSUES_EMPTY_CONFIRMED`）
+- 对账：`budget.spawned_fix_agents`（实际派发数）== `distinct(fix_contracts[].fix_agent_id)` == `UPHELD 数 - 已申报合并数`，三者不等就是有发现没被派发。`stop-hook.mjs` 在 `phase == "wave4"` 时机械拦这一条
 
 **每条发现独立记账**：一条失败（回滚、需人工、环境不可用）只影响该条，不阻塞其他条，也不影响已产出的报告。
 
@@ -356,8 +376,10 @@ scale_decision = {
 
 **派发时注意**：不要把修复 Agent 的 `verification_commands` 传进去。
 
+**一个修复实例对应一个验收实例**（`planned_verify_agents = 返回 SUCCESS 的修复实例数`）。「一个验收实例顺带看几条修复」是 `CONTRACT_VIOLATION`——它会把独立的验收退化成复述修复者的说法。派发后对账：`distinct(验收实例的 fix_agent_id)` 必须等于成功修复的实例数。
+
 ```
-主Agent → 派 K 个 verifier
+主Agent → 派 K 个 verifier      # K = 返回 SUCCESS 的修复实例数，一条修复一个验收实例
          加载: evidence-policy + output-contract + wave5-verify
          参数: finding_id, fix_agent_id, target_files[], 
                acceptance_criteria, affected_issues[], residual_risk_flags[]
@@ -423,8 +445,12 @@ docs/reports/round{N}/round{N}-final-report.md
 | 4 报告 | `status` 不是 `IN_PROGRESS` | 视为未收尾，必须出报告 |
 | 4 报告 | 每条结论都有 `artifact_ref` | 无出处的条目**删掉** |
 | 5 修复 | `files_touched` 都在 `target_files` 内 | 回滚 + `CONTRACT_VIOLATION` |
+| 5 修复 | **实例数对账**：`budget.spawned_fix_agents` == `distinct(fix_contracts[].fix_agent_id)` == `UPHELD 数 - 已申报合并数` | 差额未派发 → `CONTRACT_VIOLATION` + `discipline_violation`；`stop-hook.mjs` 会拒绝闭合 `wave4` |
+| 5 修复 | 一个 `fix_agent_id` 只对应一个 `finding_id`，或合并已申报 | 一人多条且无 `FIX_INSTANCE_MERGED` 记录 → `CONTRACT_VIOLATION` |
 | 5 修复 | 返回中无"已修复""验收通过" | 视为自我验收，打回 |
 | 5 修复 | 空 `affected_issues` 有 `AFFECTED_ISSUES_EMPTY_CONFIRMED` | 打回补标记 |
+| 6 验收 | **实例数对账**：`distinct(验收实例的 fix_agent_id)` == 成功修复实例数 | 差额未验收即放行 → `CONTRACT_VIOLATION`，本轮不得 `CLOSED` |
+| 6 验收 | 一份 `05-verify` 产物只含一个 `finding_id` / `fix_agent_id` | 一实例验多条 → `CONTRACT_VIOLATION`，作废重派 |
 | 6 验收 | `mutation_check = performed`（除两种例外） | `CONTRACT_VIOLATION`；跳过理由不接受"时间不够" |
 | 6 验收 | 「返回值决定用户可见行为」的修复，`mutation_scope = implementation_and_callsite` | 补调用点变异，或报告显式声明未做 |
 | 6 验收 | `residual_risk_disposition` 覆盖所有 `residual_risks` | `CONTRACT_VIOLATION` |

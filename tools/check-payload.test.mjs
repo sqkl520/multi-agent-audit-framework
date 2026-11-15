@@ -1334,6 +1334,245 @@ console.log('case 100: artifact_path 是合法字符串路径 → 不得误报 w
     JSON.stringify(r.r?.errors?.map((x) => x.rule)));
 }
 
+// ── 2026-11-15：fix 的 disposition 契约（防止「发现静默蒸发」）──
+// 实测背景：38 条发现只修了 6 条，31 条从未进入任何任务书，没有任何工具报错。
+// 还有一条 finding 含 3 个子主张，任务书只覆盖 1 个，另外 2 个静默消失
+// （其中 1 个后来靠巧合才被捞回来）。
+// 根因：fix 的契约只有 files_touched，框架要求「每条发现被锐评攻击一次」，
+// 却不要求「每条发现被修复或明确暂缓一次」。
+const fixEnv = (over = {}) => JSON.stringify({
+  schema_version: 'output-contract-v1',
+  agent_id: 'fix-1', role: 'fix', status: 'SUCCESS', contract_valid: true,
+  artifact_path: '<OUTDIR>/fix.md',
+  payload: {
+    finding_id: 'F1',
+    disposition: 'FIXED',
+    test_path: 'test/persist.test.js',
+    red_log_path: 'experiments/round1/red-F1.log',
+    files_touched: [{ path: 'src/store.js', change_summary: '捕获 renameSync 异常并上抛' }],
+    verification_commands: [{ command: 'node --test test/persist.test.js', result: 'passed' }],
+    affected_issues: [],
+    residual_risks: [],
+    ...over,
+  },
+  error: null,
+}, null, 2);
+
+console.log('case 101: 完整合规的 fix 产物（FIXED + test_path + target/ 外的红测日志）→ 通过');
+{
+  const r = run(wrap(fixEnv()));
+  expect('无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
+}
+
+console.log('case 102: fix 缺 disposition → 必须报 missing_disposition');
+{
+  const e = JSON.parse(fixEnv());
+  delete e.payload.disposition;
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('报 missing_disposition',
+    r.r?.errors?.some(x => x.rule === 'missing_disposition'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 103: FIXED 但没有 test_path → 必须报 fixed_without_test');
+{
+  const e = JSON.parse(fixEnv());
+  delete e.payload.test_path;
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('报 fixed_without_test',
+    r.r?.errors?.some(x => x.rule === 'fixed_without_test'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 104: FIXED 但没有 red_log_path → 必须报 fixed_without_red_log');
+{
+  const e = JSON.parse(fixEnv());
+  delete e.payload.red_log_path;
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('报 fixed_without_red_log',
+    r.r?.errors?.some(x => x.rule === 'fixed_without_red_log'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 105: red_log_path 指向 target/ → 必须报 red_log_in_target（真实教训：被 mvn clean 删光）');
+{
+  // 实测：红测日志放在 target/ 下，被 mvn clean 整个删掉，验收证据不可复核。
+  // 三种写法都要抓：相对、带 ./ 前缀、Windows 反斜杠。
+  const paths = ['target/red-F1.log', './target/logs/red.log', 'D:/proj/myapp/target/red.log', 'target\\red.log'];
+  const missed = [];
+  for (const p of paths) {
+    const r = run(wrap(fixEnv({ red_log_path: p })));
+    if (!r.r?.errors?.some(x => x.rule === 'red_log_in_target')) missed.push(p);
+  }
+  expect('四种 target/ 写法全部被抓', missed.length === 0, `绕过: ${missed.join(' / ')}`);
+}
+
+console.log('case 106: WONT_FIX 但 disposition_reason 太短 → 必须报 wont_fix_without_reason');
+{
+  // JSON.stringify 会丢掉值为 undefined 的键，所以这里传 undefined 即等于「不写」。
+  const r = run(wrap(fixEnv({
+    disposition: 'WONT_FIX', disposition_reason: '不修',
+    test_path: undefined, red_log_path: undefined,
+  })));
+  expect('报 wont_fix_without_reason',
+    r.r?.errors?.some(x => x.rule === 'wont_fix_without_reason'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 107: WONT_FIX 且理由充分（≥20 字）→ 通过');
+{
+  const r = run(wrap(fixEnv({
+    disposition: 'WONT_FIX',
+    disposition_reason: '该分支是协议规定的 fail-closed 设计：拒写优于写坏，重试由上层调度器负责，不应在此处吞异常',
+    test_path: undefined, red_log_path: undefined,
+  })));
+  expect('无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
+}
+
+console.log('case 108: DEFERRED 但没有 next_round → 必须报 deferred_without_trigger');
+{
+  const r = run(wrap(fixEnv({
+    disposition: 'DEFERRED',
+    disposition_reason: '该修复需要先改造存储层的重试协议，本轮不具备前置条件',
+    next_round: undefined, test_path: undefined, red_log_path: undefined,
+  })));
+  expect('报 deferred_without_trigger',
+    r.r?.errors?.some(x => x.rule === 'deferred_without_trigger'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 109: DEFERRED 且给出 next_round → 通过');
+{
+  const r = run(wrap(fixEnv({
+    disposition: 'DEFERRED',
+    disposition_reason: '该修复需要先改造存储层的重试协议，本轮不具备前置条件',
+    next_round: 'round2-存储层重试协议落地后',
+    test_path: undefined, red_log_path: undefined,
+  })));
+  expect('无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
+}
+
+console.log('case 110: NEW_FINDING 显式标记 → 通过（不算未处置）');
+{
+  const r = run(wrap(fixEnv({
+    disposition: 'NEW_FINDING',
+    disposition_reason: '修复过程中发现同文件内还有一处在 catch 里吞掉异常，不在原清单里',
+    test_path: undefined, red_log_path: undefined,
+  })));
+  expect('无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
+}
+
+console.log('case 110b: DEFERRED 但没写 disposition_reason → 必须报 deferred_without_reason');
+{
+  // 契约 §2.4 把 disposition_reason 列为 WONT_FIX / DEFERRED 的条件必填。
+  // 只对 WONT_FIX 强制等于「文档写了、校验器没执行」——本仓库反复出现的那类缺陷。
+  const r = run(wrap(fixEnv({
+    disposition: 'DEFERRED',
+    next_round: 'round2 存储层重试协议落地后',
+    test_path: undefined, red_log_path: undefined,
+  })));
+  expect('报 deferred_without_reason',
+    r.r?.errors?.some(x => x.rule === 'deferred_without_reason'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 111: disposition 用了枚举外的值 → 必须报 invalid_disposition');
+{
+  const r = run(wrap(fixEnv({ disposition: 'MAYBE_FIXED' })));
+  expect('报 invalid_disposition',
+    r.r?.errors?.some(x => x.rule === 'invalid_disposition'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 112: 同一产物里 finding_id 重复 → 必须报 duplicate_finding_id');
+{
+  // 实测：把 7 条 finding 的 id 改成完全相同，校验器仍报「✅ 契约合规」。
+  // id 重复意味着下游锐评/验收/回填全部挂错条目——7 条发现只剩 1 条能被引用。
+  const e = JSON.parse(auditEnv({
+    identifier_reconcile: { status: 'DONE' },
+    self_check_audit: { status: 'DONE' },
+    runtime_validation: { status: 'DONE' },
+  }));
+  e.payload.findings = Array.from({ length: 7 }, () => ({
+    finding_id: 'F1',
+    status: 'NO_EVIDENCE_FOUND',
+    evidence: { file: null, line: null, quote: null },
+    inference: {
+      claim: '本切片未发现满足门 0 的问题',
+      basis: '已读取全部切片文件，检查了条件分支与循环边界，未发现可用证据',
+      alternatives: [],
+    },
+  }));
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('报 duplicate_finding_id',
+    r.r?.errors?.some(x => x.rule === 'duplicate_finding_id'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 113: finding_id 不重复 → 不报 duplicate_finding_id');
+{
+  const e = JSON.parse(auditEnv({
+    identifier_reconcile: { status: 'DONE' },
+    self_check_audit: { status: 'DONE' },
+    runtime_validation: { status: 'DONE' },
+  }));
+  e.payload.findings = ['F1', 'F2', 'F3'].map((id) => ({
+    finding_id: id,
+    status: 'NO_EVIDENCE_FOUND',
+    evidence: { file: null, line: null, quote: null },
+    inference: {
+      claim: '本切片未发现满足门 0 的问题',
+      basis: '已读取全部切片文件，检查了条件分支与循环边界，未发现可用证据',
+      alternatives: [],
+    },
+  }));
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('不报 duplicate_finding_id',
+    !r.r?.errors?.some(x => x.rule === 'duplicate_finding_id'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 114: 派发清单里有 3 条，只处置了 1 条 → 必须报 disposition_missing_for_target');
+{
+  const e = JSON.parse(fixEnv());
+  e.payload.target_finding_ids = ['F1', 'F2', 'F3'];
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('报 disposition_missing_for_target',
+    r.r?.errors?.some(x => x.rule === 'disposition_missing_for_target'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 115: dispositions[] 逐条覆盖全部 target → 通过（多发现形态）');
+{
+  const e = JSON.parse(fixEnv());
+  delete e.payload.disposition;
+  delete e.payload.test_path;
+  delete e.payload.red_log_path;
+  e.payload.target_finding_ids = ['F1', 'F2'];
+  e.payload.dispositions = [
+    { finding_id: 'F1', disposition: 'FIXED', test_path: 'test/p1.test.js', red_log_path: 'experiments/round1/red-F1.log' },
+    { finding_id: 'F2', disposition: 'DEFERRED', disposition_reason: '依赖 F1 的存储层改造先落地，本轮无法独立验证', next_round: 'round2' },
+  ];
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
+}
+
+console.log('case 116: 非 fix 角色不得被要求 disposition（不能过度执法）');
+{
+  const r = run(wrap(auditEnv({
+    identifier_reconcile: { status: 'DONE' },
+    self_check_audit: { status: 'DONE' },
+    runtime_validation: { status: 'DONE' },
+  })));
+  expect('audit 产物不报 missing_disposition',
+    !r.r?.errors?.some(x => x.rule === 'missing_disposition'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+  const s = run(wrap(env()));
+  expect('sweep 产物不报 missing_disposition',
+    !s.r?.errors?.some(x => x.rule === 'missing_disposition'),
+    JSON.stringify(s.r?.errors?.map(x => x.rule)));
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);
