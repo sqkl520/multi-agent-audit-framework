@@ -23,9 +23,14 @@
  *                  取 `payload.findings[]`（也接受顶层 `findings[]`）。
  *   --ledger       发现去向表（markdown 表格）。
  *   --json         输出机器可读 JSON。
- *   --strict-high  把 `high_severity_unaccounted` 从 WARN 升级为 FAIL。
+ *   --strict-high  把「HIGH 未闭合」类规则从 WARN 升级为 FAIL，共三条：
+ *                    high_severity_unaccounted   HIGH 被 DEFERRED / 无去向
+ *                    high_severity_wont_fix      HIGH 被判 WONT_FIX
+ *                    high_wont_fix_reason_thin   HIGH 的 WONT_FIX 理由撑不住
  *                  默认是 WARN，因为 DEFERRED 有时确实是正确决定；
  *                  但「全填 DEFERRED」能骗过默认模式，交付闸门应当开这个开关。
+ *                  （R9：WONT_FIX 原本完全不在判据里，全填 WONT_FIX 连
+ *                    --strict-high 都无感——因为规则根本没被触发。）
  *   --help / -h    打印本说明，退出 0。
  *
  * ── 去向表格式 ───────────────────────────────────────────────────────
@@ -47,7 +52,17 @@
  *               基础 id（A-04）归属，后缀只用于人读与将来更细的核对。
  *   disposition 闭集：FIXED | WONT_FIX | DEFERRED | NEW_FINDING
  *   「依据」    WONT_FIX / DEFERRED 必填，去空白后 ≥ 10 字；
+ *               **HIGH 的 WONT_FIX 另外要求 ≥ 40 字**（见下）；
  *               FIXED 建议写修复编号或 commit；NEW_FINDING 必须能用它追溯到来源。
+ *
+ *   为什么 HIGH 的 WONT_FIX 要比 MEDIUM/LOW 更严：
+ *     DEFERRED 承认「这是缺陷，只是这轮不修」，它自带一个未来的检查点；
+ *     WONT_FIX 主张「这不是缺陷」，一旦写下就再没有任何后续动作会回头看它。
+ *     对 HIGH 而言，这是整条流程里唯一「关闭一个高风险项且不产生遗留工作」的写法，
+ *     也正是绕开 high_severity_unaccounted 最省事的路径（R7 洞 2 实测）。
+ *     一条「本案不成立」的判断，若没有可复核的落点（文件 / 行号 / 规则ID），
+ *     读者只能选择相信或不信——那不是论证，是断言。所以：HIGH 的 WONT_FIX
+ *     理由需 ≥ 40 字，且须含一个可复核指涉（路径 / 行号 / 反引号标识符 / #编号）。
  *
  * ── 它断言什么（每条规则独立命名）────────────────────────────────────
  *   ledger_missing                     去向表文件不存在                       exit 2
@@ -65,6 +80,10 @@
  *   invalid_disposition                不在四枚举内                           FAIL
  *   disposition_missing_reason         WONT_FIX/DEFERRED 的依据 < 10 字       FAIL
  *   high_severity_unaccounted          HIGH 被 DEFERRED 或无 disposition      WARN
+ *   high_severity_wont_fix             HIGH 被判 WONT_FIX（逐条列 id+理由）   WARN
+ *   high_wont_fix_reason_thin          HIGH 的 WONT_FIX 理由 < 40 字或无可复核指涉  WARN
+ *
+ *   后三条在 --strict-high 下全部升级为 FAIL。
  *
  * 退出码：0 = 全部表态（允许 WARN） / 1 = 有覆盖率问题 / 2 = 配置错误
  *
@@ -79,6 +98,20 @@ import { join, basename, extname } from 'node:path';
 const DISPOSITIONS = ['FIXED', 'WONT_FIX', 'DEFERRED', 'NEW_FINDING'];
 const REASON_REQUIRED = new Set(['WONT_FIX', 'DEFERRED']);
 const MIN_REASON_CHARS = 10;
+
+// R9 · 洞 2（experiments/hilltop-dsh/FIX-R7-report.md §4）：
+//   `high_severity_unaccounted` 的原判据是「HIGH 处于 DEFERRED 或无去向」。
+//   把 8 条 HIGH 全填 WONT_FIX（理由写够 20 字），警告完全消失——
+//   连 --strict-high 也救不回来，因为规则根本没被触发。
+//   WONT_FIX 比 DEFERRED 更省事（不需要 next_round、不需要重处置条件），
+//   所以它是绕开这条防线的更优路径。这里为它单开一条规则。
+const MIN_HIGH_WONT_FIX_CHARS = 40;
+
+// 「可复核指涉」：读者能顺着它去查，而不是只能相信写的人。
+//   路径/行号（src/a/B.java、main.rs:42）、反引号标识符、#编号、
+//   以及惯例写法的 文件名.扩展名。刻意不放宽到「任意英文单词」——
+//   否则「设计如此 by design」这种空话也能命中。
+const HIGH_WONT_FIX_ANCHOR = /(?:[\w.-]+\/[\w./-]+|[\w.-]+\.(?:java|kt|ts|js|mjs|py|go|rs|c|cpp|h|json|ya?ml|md|xml|gradle|properties))(?::\d+)?|`[^`]+`|#\d+/;
 
 // ────────────────────────────────────────────────────────────────────
 // 参数
@@ -107,7 +140,10 @@ check-disposition-coverage.mjs — 每条发现是否都被表态过一次
   --artifacts    审计产物目录（解析每个 .md 末尾的 \`\`\`json 信封，取 payload.findings[]）
   --ledger       发现去向表（markdown 表格）
   --json         输出机器可读 JSON
-  --strict-high  把 high_severity_unaccounted 从 WARN 升级为 FAIL（交付闸门应开启）
+  --strict-high  把「HIGH 未闭合」类规则从 WARN 升级为 FAIL（交付闸门应开启）：
+                   high_severity_unaccounted  HIGH 被 DEFERRED / 无去向
+                   high_severity_wont_fix     HIGH 被判 WONT_FIX
+                   high_wont_fix_reason_thin  HIGH 的 WONT_FIX 理由撑不住
   --help, -h     显示本说明
 
 去向表格式（markdown 表格，列名大小写不敏感）:
@@ -128,6 +164,11 @@ check-disposition-coverage.mjs — 每条发现是否都被表态过一次
   disposition 枚举（四选一）:
     FIXED       已修（依据写修复编号 / commit / 测试）
     WONT_FIX    裁决不修（依据 ≥ ${MIN_REASON_CHARS} 字，必须写为什么）
+                **若该条是 HIGH**：依据 ≥ ${MIN_HIGH_WONT_FIX_CHARS} 字，且须含一个可复核指涉
+                （文件路径 / 行号 / 反引号标识符 / #编号）。
+                WONT_FIX 声称「这不是缺陷」，比 DEFERRED 的「下轮修」更强，
+                而 HIGH 的 WONT_FIX 是唯一「关掉高风险项且不留下任何后续工作」的写法，
+                因此 HIGH 的 WONT_FIX 会被单列为 high_severity_wont_fix 警告。
     DEFERRED    暂缓（依据 ≥ ${MIN_REASON_CHARS} 字，必须写等什么）
     NEW_FINDING 修复过程中新发现（允许 id 不在原产物里）
 
@@ -472,6 +513,7 @@ function resolveScope(name) {
 const ledgerSeen = new Map();   // 规范化 key → row（查重）
 const covered = new Set();      // 已被任何一行指向的 canonical key
 const deferredKeys = new Set(); // disposition 为 DEFERRED 的 canonical key
+const wontFixKeys = new Map();  // R9: disposition 为 WONT_FIX 的 canonical key → 理由原文
 let newFindingCount = 0;
 
 for (const row of ledgerRows) {
@@ -554,6 +596,8 @@ for (const row of ledgerRows) {
     }
     covered.add(key);
     if (row.disposition === 'DEFERRED') deferredKeys.add(key);
+    // R9: WONT_FIX 的理由要留到第 6 节做逐条呈现（读者要看得到理由才能判断）。
+    if (row.disposition === 'WONT_FIX') wontFixKeys.set(key, String(row.reason ?? ''));
     continue;
   }
 
@@ -626,6 +670,105 @@ if (highUnaccounted.length > 0) {
 }
 
 // ────────────────────────────────────────────────────────────────────
+// 6b · HIGH 被判 WONT_FIX —— R9 补的洞（R7 报告 §4 洞 2）
+//
+// 原判据只认「DEFERRED / 无去向」，于是把 8 条 HIGH 全填 WONT_FIX
+// （理由写够 20 字）就能让 high_severity_unaccounted 完全消失，
+// --strict-high 也无感——因为规则根本没被触发。
+//
+// 这里**不**把 WONT_FIX 并进 high_severity_unaccounted，因为两者性质不同：
+//   DEFERRED = 承认有缺陷，只是这轮不修（自带一个未来的检查点）
+//   WONT_FIX = 主张这不是缺陷（写下去之后，再没有任何动作会回头看它）
+// 后者更强，风险更高，所以它需要自己一条规则、自己的措辞，
+// 而不是被折叠进「暂缓」的计数里。
+//
+// 关键设计：逐条列出 finding_id + 理由摘录。只报「N 条」等于把人
+// 送回原问题——看见数字不等于看见内容，而判断「理由是否成立」
+// 必须读到理由本身。
+// ────────────────────────────────────────────────────────────────────
+const REASON_EXCERPT_CHARS = 30;
+
+/** 按显示宽度截断（CJK 记 2），让摘录在终端里大致等宽。 */
+function excerpt(text, maxChars) {
+  const s = String(text ?? '').replace(/\s+/g, ' ').trim();
+  if (!s) return '（理由为空）';
+  const chars = [...s];
+  let width = 0;
+  let out = '';
+  for (const ch of chars) {
+    const w = /[\u2E80-\uFFEF]/.test(ch) ? 2 : 1;
+    if (width + w > maxChars * 2 - 1) return `${out}…`;
+    width += w;
+    out += ch;
+  }
+  return out;
+}
+
+const highWontFix = [];
+for (const [key, f] of findingsByKey) {
+  if (f.severity !== 'HIGH') continue;
+  if (!wontFixKeys.has(key)) continue;
+  const reason = wontFixKeys.get(key) ?? '';
+  const reasonChars = [...reason.replace(/\s+/g, '')].length;
+  const hasAnchor = HIGH_WONT_FIX_ANCHOR.test(reason);
+  highWontFix.push({ key, finding_id: f.id, file: f.file, line: f.line, reason, reasonChars, hasAnchor });
+}
+
+// 6b-1 · HIGH 的 WONT_FIX 本身要看得见（逐条 + 理由摘录）
+if (highWontFix.length > 0) {
+  const lvl = ARGS.strictHigh ? 'FAIL' : 'WARN';
+  const lines = highWontFix.map((h) => `  · ${h.key} —— 「${excerpt(h.reason, REASON_EXCERPT_CHARS)}」`);
+  const msg = `${highWontFix.length} 条 HIGH 被判 WONT_FIX（声称不是缺陷）。`
+    + '这个判定比 DEFERRED 更强——DEFERRED 说「下轮修」，WONT_FIX 说「不用修」。'
+    + '对 HIGH 来说这是最需要第二个人看一眼的结论，而它只靠一段自由文字支撑；'
+    + 'DEFERRED 至少还留下一个「什么条件下重新处置」的钩子，WONT_FIX 什么都不留。'
+    + '以下几条请逐条确认理由是否成立：\n'
+    + lines.join('\n');
+  add(lvl, 'high_severity_wont_fix', msg, {
+    high_wont_fix: highWontFix.length,
+    details: highWontFix.map((h) => ({
+      key: h.key, finding_id: h.finding_id, file: h.file, line: h.line,
+      reason: h.reason, reason_chars: h.reasonChars, has_anchor: h.hasAnchor,
+    })),
+  });
+}
+
+// 6b-2 · HIGH 的 WONT_FIX 理由是否撑得住（≥40 字 + 一个可复核指涉）
+// 只对 HIGH 抬高门槛：MEDIUM/LOW 的 WONT_FIX 沿用 ≥10 字的既有要求。
+// 理由见文件头「为什么 HIGH 的 WONT_FIX 要比 MEDIUM/LOW 更严」。
+const thinHighWontFix = highWontFix.filter(
+  (h) => h.reasonChars < MIN_HIGH_WONT_FIX_CHARS || !h.hasAnchor,
+);
+
+if (thinHighWontFix.length > 0) {
+  const lvl = ARGS.strictHigh ? 'FAIL' : 'WARN';
+  const parts = thinHighWontFix.map((h) => {
+    const why = [];
+    if (h.reasonChars < MIN_HIGH_WONT_FIX_CHARS) {
+      why.push(`仅 ${h.reasonChars} 字（要求 ≥ ${MIN_HIGH_WONT_FIX_CHARS}）`);
+    }
+    if (!h.hasAnchor) why.push('没有一个可复核指涉（文件路径 / 行号 / 反引号标识符 / #编号）');
+    return `${h.key}（${why.join('；')}）`;
+  });
+  const msg = `${thinHighWontFix.length} 条 HIGH 的 WONT_FIX 理由撑不住：`
+    + parts.join('、')
+    + '——「这不是缺陷」是一个结论，不是一个解释。'
+    + `一条理由若既不到 ${MIN_HIGH_WONT_FIX_CHARS} 字、又指不出任何具体位置，`
+    + '读者只能选择相信写的人，无法自己复核；'
+    + '这正是「一段 20 字的设计意图可以覆盖任何东西」的形态。'
+    + '请补到能让人顺着去查的程度（例如 src/a/B.java:42 中该分支的调用方约定）。'
+    + '注意：本规则只提示理由质量，不否定 WONT_FIX 这个处置本身——'
+    + '该处置的可见性由 high_severity_wont_fix 单独负责。';
+  add(lvl, 'high_wont_fix_reason_thin', msg, {
+    high_wont_fix_reason_thin: thinHighWontFix.length,
+    details: thinHighWontFix.map((h) => ({
+      key: h.key, reason_chars: h.reasonChars, has_anchor: h.hasAnchor,
+      min_chars: MIN_HIGH_WONT_FIX_CHARS,
+    })),
+  });
+}
+
+// ────────────────────────────────────────────────────────────────────
 // 7 · 输出
 // ────────────────────────────────────────────────────────────────────
 const counts = problems.reduce((a, p) => { a[p.level] = (a[p.level] ?? 0) + 1; return a; }, {});
@@ -645,6 +788,9 @@ const totals = {
   newFindings: newFindingCount,
   high: sev.HIGH ?? 0,
   highUnaccounted: highUnaccounted.length,
+  // R9: 与 highUnaccounted 并列，不合并——两者性质不同（见第 6b 节说明）。
+  highWontFix: highWontFix.length,
+  highWontFixReasonThin: thinHighWontFix.length,
   severity: sev,
 };
 
@@ -683,15 +829,28 @@ console.log(`合计: ${counts.FAIL ?? 0} FAIL / ${counts.WARN ?? 0} WARN`
   + ` / ${totalFindings - unaccounted.length} PASS\n`);
 
 if (exitCode === 0) {
-  if (highUnaccounted.length > 0) {
-    console.log(`结论：全部 ${totalFindings} 条都已表态，但 ${highUnaccounted.length} 条 HIGH 仍未闭合（见上）。`);
-    console.log('这些是「已知且被记录」的风险，不再属于「静默丢失」——但收口前应逐条确认。\n');
+  // R9: 「没有 HIGH 悬空」这种话不能在有 HIGH 被判 WONT_FIX 时说出口——
+  // 那正是 R7 洞 2 的形状：报告全绿，最该看一眼的 8 条 HIGH 一句话被关掉。
+  if (highUnaccounted.length > 0 || highWontFix.length > 0) {
+    const bits = [];
+    if (highUnaccounted.length > 0) bits.push(`${highUnaccounted.length} 条 HIGH 仍未闭合（DEFERRED / 无去向）`);
+    if (highWontFix.length > 0) {
+      bits.push(`${highWontFix.length} 条 HIGH 被判 WONT_FIX（声称不是缺陷，理由见上）`);
+    }
+    console.log(`结论：全部 ${totalFindings} 条都已表态，但 ${bits.join('；另有 ')}。`);
+    console.log('这些是「已知且被记录」的风险，不再属于「静默丢失」——但收口前应逐条确认。');
+    if (highWontFix.length > 0) {
+      console.log(`WONT_FIX 的 HIGH 共 ${highWontFix.length} 条，其中 ${thinHighWontFix.length} 条理由撑不住；`
+        + '「不是缺陷」是唯一不产生后续工作的处置，请把上面列出的理由逐条读完再放行。\n');
+    } else {
+      console.log('');
+    }
   } else {
     console.log(`结论：全部 ${totalFindings} 条都已表态，且没有 HIGH 悬空。\n`);
   }
 } else if (unaccounted.length === 0) {
-  // 没有「未表态」，但仍有 FAIL——通常是 --strict-high 把 HIGH 悬空升级上来的。
-  console.log('结论：所有 finding 都表态了，但有 FAIL（见上，多半是 --strict-high 下的 HIGH 悬空）。');
+  // 没有「未表态」，但仍有 FAIL——通常是 --strict-high 把 HIGH 悬空类规则升级上来的。
+  console.log('结论：所有 finding 都表态了，但有 FAIL（见上，多半是 --strict-high 下的 HIGH 悬空 / HIGH WONT_FIX）。');
   console.log('覆盖率不是这里的瓶颈——需要处理的是上面点名的那些行。\n');
 } else {
   console.log(`结论：${unaccounted.length} 条 finding 从未被表态。`);

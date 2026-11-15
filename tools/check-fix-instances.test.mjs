@@ -25,7 +25,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -88,7 +88,14 @@ const mergedRecord = (findingIds, sharedTargetFiles) => ({
   mechanically_checkable: '两条 finding 的 target_files 排序后逐元素相等',
 });
 
-/** 最终报告的「A. 裁决索引表」。rows = [[finding_id, 裁决], ...] */
+/**
+ * 最终报告的「A. 裁决索引表」。
+ * rows = [[finding_id, 裁决], [finding_id, 裁决, 严重性], [finding_id, 裁决, 严重性, 出处], ...]
+ * 第四个元素是「出处」列的原文；不给则用默认的 `round1-03-critique-arbiter.md`。
+ * 传 '' 用来构造「出处为空」。
+ */
+const DEFAULT_REF = '`round1-03-critique-arbiter.md`';
+
 function reportMd(rows, opts = {}) {
   const heading = opts.heading ?? '## A. 裁决索引表（附加）';
   const header = opts.header ?? ['finding_id', '严重性', '维度', '位置', '裁决', '出处'];
@@ -106,14 +113,72 @@ function reportMd(rows, opts = {}) {
     lines.push(heading, '');
     if (header) {
       lines.push(`| ${header.join(' | ')} |`, `|${header.map(() => '---').join('|')}|`);
-      for (const [id, verdict, severity = 'HIGH'] of rows) {
-        lines.push(`| ${id} | ${severity} | logic | \`src/a.ts:10\` | ${verdict} | \`round1-03-critique-arbiter.md\` |`);
+      for (const row of rows) {
+        const [id, verdict, severity = 'HIGH', ref = DEFAULT_REF] = row;
+        lines.push(`| ${id} | ${severity} | logic | \`src/a.ts:10\` | ${verdict} | ${ref} |`);
       }
       lines.push('');
     }
   }
   lines.push('## 2. 覆盖说明', '', '正文。', '');
   return lines.join('\n');
+}
+
+/**
+ * 一份**合规的 Arbiter 锐评产物**：正文 + 末尾的 JSON 信封（output-contract §0）。
+ * critique 契约 2.3：`payload.critique_role = "arbiter"`，
+ * `payload.verdicts[] = [{ finding_id, verdict, reason }]`，
+ * verdict 取 UPHELD / DOWNGRADED / REVOKED。
+ *
+ * opts.table=false    不写正文里的裁决表（只剩 JSON 信封）
+ * opts.envelope=false 不写 JSON 信封（只剩正文裁决表）
+ * 两者都 false → 这份产物解析不出任何裁决，不算锐评产物
+ */
+function arbiterMd(verdicts, opts = {}) {
+  const lines = ['# round1 锐评产物 · arbiter', '', '裁决依据：证据包中的 evidence / inference 结构。'];
+  if (opts.table !== false) {
+    lines.push('', '| finding_id | 裁决 | 理由 |', '|---|---|---|',
+      ...verdicts.map(([id, v]) => `| ${id} | ${v} | 证据满足 evidence-policy 的最低结构要求 |`), '');
+  }
+  if (opts.envelope !== false) {
+    const env = {
+      schema_version: 'output-contract-v1',
+      agent_id: 'critique-arbiter-1',
+      role: 'critique',
+      status: 'SUCCESS',
+      contract_valid: true,
+      artifact_path: 'artifacts/round1-03-critique-arbiter.md',
+      payload: {
+        critique_role: 'arbiter',
+        target_finding_ids: verdicts.map(([id]) => id),
+        verdicts: verdicts.map(([id, v]) => ({
+          finding_id: id,
+          verdict: v,
+          reason: '证据满足 evidence-policy 的最低结构要求',
+        })),
+      },
+      error: null,
+    };
+    lines.push('```json', JSON.stringify(env, null, 2), '```', '');
+  }
+  return lines.join('\n');
+}
+
+/** 一份**审计**产物（role=audit）：有 JSON 信封，但里面是 `findings[]`，没有裁决。 */
+function auditMd(ids) {
+  const env = {
+    schema_version: 'output-contract-v1',
+    agent_id: 'audit-1',
+    role: 'audit',
+    status: 'SUCCESS',
+    contract_valid: true,
+    artifact_path: 'artifacts/round1-02-audit-slice-01-logic.md',
+    payload: {
+      findings: ids.map((id) => ({ finding_id: id, severity: 'HIGH', status: 'CONFIRMED' })),
+    },
+    error: null,
+  };
+  return ['# round1 审计产物', '', '正文。', '', '```json', JSON.stringify(env, null, 2), '```', ''].join('\n');
 }
 
 /**
@@ -142,6 +207,25 @@ function run(fx, extraArgs = [], opts = {}) {
     const out = e.stdout?.toString() ?? '';
     return { code: e.status, stdout: out, stderr: e.stderr?.toString() ?? '', data: tryJson(out) };
   }
+}
+
+/**
+ * 锐评产物工作区：report 同目录下多一个 artifacts/ 放锐评产物。
+ *   artifacts: { '文件名': 文本 }；传 {} 且 makeDir=false → 目录都不建
+ * 返回的对象带 artifactsDir，调用方自己拼 `--artifacts-dir`。
+ */
+function fixtureWithArtifacts(state, report, artifacts = {}, { makeDir = true } = {}) {
+  const fx = fixture(state, report);
+  const artifactsDir = join(fx.root, 'artifacts');
+  if (makeDir) {
+    mkdirSync(artifactsDir, { recursive: true });
+    for (const [name, text] of Object.entries(artifacts)) {
+      const p = join(artifactsDir, name);
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, text);
+    }
+  }
+  return { ...fx, artifactsDir, cleanup: () => rmSync(fx.root, { recursive: true, force: true }) };
 }
 
 function tryJson(s) {
@@ -732,6 +816,353 @@ console.log('case 27: upheld_without_fix_contract 在 --strict 与否都是 FAIL
     JSON.stringify(problemsWith(r2, 'upheld_without_fix_contract')));
   expect('--strict 模式：exit 1', r2.code === 1, `实际 ${r2.code}`);
   strict.cleanup();
+}
+
+// ══════════════════════════════════════════════════════════════════
+// R10 · 洞 3：裁决索引表由主 Agent 自己写，可以全填 DOWNGRADED
+//
+// R7 §4 的实测：
+//   HOLE-3 裁决表自填 DOWNGRADED + fix_contracts 空 -> R6 exit 0 | upheld 0 | rules []
+//
+// 根因：R6 把 final-report.md 当**外部基准**，但那份报告在流程上仍由主 Agent 落盘。
+// 修法：裁决索引表每一行都有「出处」列，指向锐评相位的 Arbiter 产物。
+// 不看裁决表说什么，看**出处的文件里说了什么**——那才是外部基准的外部基准。
+//
+// 以下用例先证明洞 3 会被抓，再证明降级路径不会把流程卡死。
+// ══════════════════════════════════════════════════════════════════
+
+// ── case 28（核心）：索引表说 DOWNGRADED，Arbiter 产物说 UPHELD ────
+// 这就是洞 3 的复现：8 条 HIGH 全改成 DOWNGRADED，upheld 集合变空，missing=0。
+// 若只验索引表内部一致性，这里会 exit 0 —— 那正是洞 3。
+console.log('case 28: 索引表填 DOWNGRADED 但 Arbiter 产物说 UPHELD → verdict_mismatch_with_source');
+{
+  const highs = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8'];
+  const fx = fixtureWithArtifacts(
+    stateOf({ contracts: [], spawned: 0 }),          // fix_contracts 空 = 洞 3 的另一半
+    reportMd(highs.map((id) => [id, 'DOWNGRADED'])), // 主 Agent 自填：全部降级
+    { 'round1-03-critique-arbiter.md': arbiterMd(highs.map((id) => [id, 'UPHELD'])) }, // 真相：全部维持
+  );
+  const r = run(fx, ['--artifacts-dir', fx.artifactsDir]);
+  expect('退出码 1（不能因为改裁决表就变绿）', r.code === 1, `实际 ${r.code} / ${r.stdout.slice(-500)}`);
+  expect('报 verdict_mismatch_with_source', hasRule(r, 'verdict_mismatch_with_source'),
+    JSON.stringify(rules(r)));
+  expect('级别是 FAIL', hasLevel(r, 'verdict_mismatch_with_source', 'FAIL'),
+    JSON.stringify(problemsWith(r, 'verdict_mismatch_with_source')));
+  const p = problemWith(r, 'verdict_mismatch_with_source');
+  expect('点名 F1（逐条，不是「有 N 条不一致」）', /\bF1\b/.test(p?.msg ?? ''), p?.msg?.slice(0, 400));
+  expect('消息写明索引表 DOWNGRADED / 出处 UPHELD',
+    /DOWNGRADED/.test(p?.msg ?? '') && /UPHELD/.test(p?.msg ?? ''), p?.msg?.slice(0, 400));
+  expect('8 条全部逐条报出', problemsWith(r, 'verdict_mismatch_with_source').length === 8,
+    String(problemsWith(r, 'verdict_mismatch_with_source').length));
+  expect('交叉校验处于 ENABLED（产物存在）', r.data?.totals?.crosscheck === 'ENABLED',
+    JSON.stringify(r.data?.totals));
+  expect('upheld 计数仍是 0（和 R7 实测一致）', r.data?.totals?.upheld === 0,
+    JSON.stringify(r.data?.totals));
+  fx.cleanup();
+}
+
+// ── case 29：索引表与 Arbiter 产物一致 → 通过 ────────────────────
+// 只加「会红」的判据会让人以为这套规则不可能满足。
+console.log('case 29: 索引表 UPHELD，Arbiter 产物也 UPHELD → exit 0');
+{
+  const fx = fixtureWithArtifacts(
+    stateOf({
+      contracts: [contract('F1', 'fix-1'), contract('F2', 'fix-2')],
+      spawned: 2,
+    }),
+    reportMd([['F1', 'UPHELD'], ['F2', 'UPHELD']]),
+    { 'round1-03-critique-arbiter.md': arbiterMd([['F1', 'UPHELD'], ['F2', 'UPHELD']]) },
+  );
+  const r = run(fx, ['--artifacts-dir', fx.artifactsDir]);
+  expect('退出码 0', r.code === 0, `实际 ${r.code} / ${r.stdout.slice(-500)}`);
+  expect('没有 FAIL', !(r.data?.problems ?? []).some((x) => x.level === 'FAIL'),
+    JSON.stringify(r.data?.problems));
+  expect('交叉校验处于 ENABLED', r.data?.totals?.crosscheck === 'ENABLED',
+    JSON.stringify(r.data?.totals));
+  expect('交叉校验行数 2', r.data?.totals?.verdictRefs === 2, JSON.stringify(r.data?.totals));
+  fx.cleanup();
+}
+
+// ── case 29b：DOWNGRADED 全填且 Arbiter 也判 DOWNGRADED → 合法 ───
+// 洞 3 的修法不能顺手把「真的全部降级」的轮次判死。
+console.log('case 29b: 索引表 DOWNGRADED，Arbiter 也 DOWNGRADED，fix_contracts 空 → exit 0（合法轮次）');
+{
+  const fx = fixtureWithArtifacts(
+    stateOf({ contracts: [], spawned: 0 }),
+    reportMd([['F1', 'DOWNGRADED'], ['F2', 'REVOKED']]),
+    { 'round1-03-critique-arbiter.md': arbiterMd([['F1', 'DOWNGRADED'], ['F2', 'REVOKED']]) },
+  );
+  const r = run(fx, ['--artifacts-dir', fx.artifactsDir]);
+  expect('退出码 0', r.code === 0, `实际 ${r.code} / ${r.stdout.slice(-500)}`);
+  expect('没有 verdict_mismatch_with_source', !hasRule(r, 'verdict_mismatch_with_source'),
+    JSON.stringify(rules(r)));
+  fx.cleanup();
+}
+
+// ── case 30：出处指向不存在的文件 → verdict_ref_not_found ─────────
+console.log('case 30: 出处指向 artifacts-dir 下不存在的文件 → verdict_ref_not_found（FAIL）');
+{
+  const fx = fixtureWithArtifacts(
+    stateOf({
+      contracts: [contract('F1', 'fix-1'), contract('F2', 'fix-2')],
+      spawned: 2,
+    }),
+    reportMd([
+      ['F1', 'UPHELD', 'HIGH', '`round1-03-critique-arbiter.md`'],   // 存在
+      ['F2', 'UPHELD', 'HIGH', '`round1-03-critique-nonexistent.md`'], // 不存在
+    ]),
+    { 'round1-03-critique-arbiter.md': arbiterMd([['F1', 'UPHELD'], ['F2', 'UPHELD']]) },
+  );
+  const r = run(fx, ['--artifacts-dir', fx.artifactsDir]);
+  expect('退出码 1', r.code === 1, `实际 ${r.code} / ${r.stdout.slice(-500)}`);
+  expect('报 verdict_ref_not_found', hasRule(r, 'verdict_ref_not_found'), JSON.stringify(rules(r)));
+  expect('级别是 FAIL', hasLevel(r, 'verdict_ref_not_found', 'FAIL'),
+    JSON.stringify(problemsWith(r, 'verdict_ref_not_found')));
+  const p = problemWith(r, 'verdict_ref_not_found');
+  expect('消息里带原样的出处路径', /round1-03-critique-nonexistent\.md/.test(p?.msg ?? ''),
+    p?.msg?.slice(0, 400));
+  expect('只点名 F2 一行', problemsWith(r, 'verdict_ref_not_found').length === 1,
+    String(problemsWith(r, 'verdict_ref_not_found').length));
+  fx.cleanup();
+}
+
+// ── case 31：出处为空 → verdict_ref_missing ──────────────────────
+console.log('case 31: 出处列为空 → verdict_ref_missing（FAIL，不受降级影响）');
+{
+  const fx = fixtureWithArtifacts(
+    stateOf({ contracts: [contract('F1', 'fix-1')], spawned: 1 }),
+    reportMd([['F1', 'UPHELD', 'HIGH', ''], ['F2', 'UPHELD', 'HIGH', '（见上文）']]),
+    { 'round1-03-critique-arbiter.md': arbiterMd([['F1', 'UPHELD'], ['F2', 'UPHELD']]) },
+  );
+  const r = run(fx, ['--artifacts-dir', fx.artifactsDir]);
+  expect('退出码 1', r.code === 1, `实际 ${r.code} / ${r.stdout.slice(-500)}`);
+  expect('报 verdict_ref_missing', hasRule(r, 'verdict_ref_missing'), JSON.stringify(rules(r)));
+  expect('两条都报（空 + 非路径占位符）',
+    problemsWith(r, 'verdict_ref_missing').length === 2,
+    String(problemsWith(r, 'verdict_ref_missing').length));
+  expect('级别是 FAIL', hasLevel(r, 'verdict_ref_missing', 'FAIL'),
+    JSON.stringify(problemsWith(r, 'verdict_ref_missing')));
+  fx.cleanup();
+}
+
+// ── case 31b：整列都没有「出处」→ verdict_ref_missing（不是 not_found）──
+// 病因不同：整列缺失是「报告结构不合铁律」，写了个不存在的文件是「出处悬空」。
+// 混报会让人去翻文件系统，而真正该改的是报告模板。
+console.log('case 31b: 裁决索引表整列没有「出处」→ verdict_ref_missing（FAIL）');
+{
+  const fx = fixtureWithArtifacts(
+    stateOf({ contracts: [], spawned: 0 }),
+    [
+      '# 报告', '',
+      '## A. 裁决索引表（附加）', '',
+      '| finding_id | 严重性 | 位置 | 裁决 |', '|---|---|---|---|',
+      '| F1 | HIGH | `src/a.ts:10` | DOWNGRADED |', '',
+    ].join('\n'),
+    {},
+  );
+  const r = run(fx, ['--artifacts-dir', fx.artifactsDir]);
+  expect('退出码 1', r.code === 1, `实际 ${r.code} / ${r.stdout.slice(-500)}`);
+  expect('报 verdict_ref_missing', hasRule(r, 'verdict_ref_missing'), JSON.stringify(rules(r)));
+  expect('不报 verdict_ref_not_found', !hasRule(r, 'verdict_ref_not_found'), JSON.stringify(rules(r)));
+  expect('totals 里记录 hasRefColumn=false', r.data?.totals?.hasRefColumn === false,
+    JSON.stringify(r.data?.totals));
+  fx.cleanup();
+}
+
+// ── case 32：出处文件在，但里面没有这条 finding → source_missing
+console.log('case 32: 出处文件存在但里面没有该 finding_id → verdict_source_missing_finding（FAIL）');
+{
+  const fx = fixtureWithArtifacts(
+    stateOf({
+      contracts: [contract('F1', 'fix-1'), contract('F2', 'fix-2')],
+      spawned: 2,
+    }),
+    reportMd([
+      ['F1', 'UPHELD', 'HIGH', '`round1-03-critique-arbiter.md`'],
+      ['F2', 'UPHELD', 'HIGH', '`round1-02-audit-slice-01-logic.md`'], // 审计产物：有 findings，无裁决
+    ]),
+    {
+      'round1-03-critique-arbiter.md': arbiterMd([['F1', 'UPHELD']]),
+      'round1-02-audit-slice-01-logic.md': auditMd(['F2']),
+    },
+  );
+  const r = run(fx, ['--artifacts-dir', fx.artifactsDir]);
+  expect('退出码 1', r.code === 1, `实际 ${r.code} / ${r.stdout.slice(-500)}`);
+  expect('报 verdict_source_missing_finding', hasRule(r, 'verdict_source_missing_finding'),
+    JSON.stringify(rules(r)));
+  const p = problemWith(r, 'verdict_source_missing_finding');
+  expect('级别是 FAIL', p?.level === 'FAIL', p?.level);
+  expect('点名 F2', /\bF2\b/.test(p?.msg ?? ''), p?.msg?.slice(0, 400));
+  fx.cleanup();
+}
+
+// ── case 33：--artifacts-dir 不存在 → 降级 WARN，exit 0 ──────────
+// 与 R8 的 unsupported_harness 同一纪律：不能因为产物目录缺失就把流程卡死。
+console.log('case 33: --artifacts-dir 不存在 → 交叉校验降级为 WARN，exit 0');
+{
+  const fx = fixtureWithArtifacts(
+    stateOf({ contracts: [], spawned: 0 }),
+    reportMd([['F1', 'DOWNGRADED']]),
+    {},
+    { makeDir: false },
+  );
+  const r = run(fx, ['--artifacts-dir', join(fx.root, 'no-such-dir')]);
+  expect('退出码 0', r.code === 0, `实际 ${r.code} / ${r.stdout.slice(-500)}`);
+  expect('交叉校验处于 DEGRADED', r.data?.totals?.crosscheck === 'DEGRADED',
+    JSON.stringify(r.data?.totals));
+  expect('报交叉校验降级规则（WARN）', hasLevel(r, 'verdict_crosscheck_degraded', 'WARN'),
+    JSON.stringify(problemsWith(r, 'verdict_crosscheck_degraded')));
+  expect('消息写明「退化为只验索引表内部一致性」',
+    /只验索引表内部一致性/.test(problemWith(r, 'verdict_crosscheck_degraded')?.msg ?? ''),
+    problemWith(r, 'verdict_crosscheck_degraded')?.msg?.slice(0, 400));
+  expect('不报 verdict_ref_not_found 的 FAIL', !hasLevel(r, 'verdict_ref_not_found', 'FAIL'),
+    JSON.stringify(problemsWith(r, 'verdict_ref_not_found')));
+  fx.cleanup();
+}
+
+// ── case 33b：--artifacts-dir 存在但为空 → 同样降级 ──────────────
+console.log('case 33b: --artifacts-dir 是空目录 → 交叉校验降级为 WARN，exit 0');
+{
+  const fx = fixtureWithArtifacts(
+    stateOf({ contracts: [], spawned: 0 }),
+    reportMd([['F1', 'DOWNGRADED']]),
+    {},
+  );
+  const r = run(fx, ['--artifacts-dir', fx.artifactsDir]);
+  expect('退出码 0', r.code === 0, `实际 ${r.code} / ${r.stdout.slice(-500)}`);
+  expect('交叉校验处于 DEGRADED', r.data?.totals?.crosscheck === 'DEGRADED',
+    JSON.stringify(r.data?.totals));
+  fx.cleanup();
+}
+
+// ── case 33c：出处为空在降级模式下**仍是 FAIL** ─────────────────
+// 降级只豁免「无法核实」，不豁免「根本没写要核实什么」。
+console.log('case 33c: 降级模式下「出处」为空仍是 FAIL（降级不豁免索引表自身的完整性）');
+{
+  const fx = fixtureWithArtifacts(
+    stateOf({ contracts: [], spawned: 0 }),
+    reportMd([['F1', 'DOWNGRADED', 'HIGH', '']]),
+    {},
+    { makeDir: false },
+  );
+  const r = run(fx, ['--artifacts-dir', join(fx.root, 'no-such-dir')]);
+  expect('退出码 1', r.code === 1, `实际 ${r.code} / ${r.stdout.slice(-500)}`);
+  expect('报 verdict_ref_missing', hasRule(r, 'verdict_ref_missing'), JSON.stringify(rules(r)));
+  expect('级别是 FAIL', hasLevel(r, 'verdict_ref_missing', 'FAIL'),
+    JSON.stringify(problemsWith(r, 'verdict_ref_missing')));
+  fx.cleanup();
+}
+
+// ── case 34：出处的解析容错（反引号 / ./ / round{N} 占位符）──────
+// final-report.md:87 的模板写的是 `round{N}-03-critique-arbiter.md`——
+// 带花括号占位符和反引号。若解析器只认字面路径，真实报告会全部报 not_found。
+console.log('case 34: 出处带反引号 / ./ 前缀 / round{N} 占位符 → 都能解析到同一个文件');
+{
+  const fx = fixtureWithArtifacts(
+    stateOf({
+      contracts: [contract('F1', 'fix-1'), contract('F2', 'fix-2'), contract('F3', 'fix-3')],
+      spawned: 3,
+    }),
+    reportMd([
+      ['F1', 'UPHELD', 'HIGH', '`round1-03-critique-arbiter.md`'],
+      ['F2', 'UPHELD', 'HIGH', './round1-03-critique-arbiter.md'],
+      ['F3', 'UPHELD', 'HIGH', '`round{N}-03-critique-arbiter.md`'],
+    ]),
+    { 'round1-03-critique-arbiter.md': arbiterMd([['F1', 'UPHELD'], ['F2', 'UPHELD'], ['F3', 'UPHELD']]) },
+  );
+  const r = run(fx, ['--artifacts-dir', fx.artifactsDir]);
+  expect('退出码 0', r.code === 0, `实际 ${r.code} / ${r.stdout.slice(-500)}`);
+  expect('三种写法都解析成功', r.data?.totals?.verdictRefs === 3, JSON.stringify(r.data?.totals));
+  expect('没有 verdict_ref_not_found', !hasRule(r, 'verdict_ref_not_found'), JSON.stringify(rules(r)));
+  fx.cleanup();
+}
+
+// ── case 35：Arbiter 产物只有正文裁决表（无 JSON 信封）也能读 ───
+// output-contract §0 要求 JSON 信封，但真实产物可能只有表。
+// 读不到就报 source_missing_finding 会把「格式退化」误判成「结论被篡改」。
+console.log('case 35: Arbiter 产物没有 JSON 信封、只有正文裁决表 → 仍能交叉校验');
+{
+  const fx = fixtureWithArtifacts(
+    stateOf({
+      contracts: [contract('F1', 'fix-1'), contract('F2', 'fix-2')],
+      spawned: 2,
+    }),
+    reportMd([['F1', 'UPHELD'], ['F2', 'DOWNGRADED']]),
+    { 'round1-03-critique-arbiter.md': arbiterMd([['F1', 'UPHELD'], ['F2', 'UPHELD']], { envelope: false }) },
+  );
+  const r = run(fx, ['--artifacts-dir', fx.artifactsDir]);
+  expect('退出码 1', r.code === 1, `实际 ${r.code} / ${r.stdout.slice(-500)}`);
+  expect('仍报 verdict_mismatch_with_source', hasRule(r, 'verdict_mismatch_with_source'),
+    JSON.stringify(rules(r)));
+  expect('点名 F2', /\bF2\b/.test(problemWith(r, 'verdict_mismatch_with_source')?.msg ?? ''),
+    problemWith(r, 'verdict_mismatch_with_source')?.msg?.slice(0, 400));
+  fx.cleanup();
+}
+
+// ── case 36：审计产物不得被当成裁决来源（role 不是 critique）──────
+// 拿一份审计产物当出处，等于「用自己的发现证明自己的裁决」——它没有裁决。
+// 关键：此时产物目录**不空**（有审计产物），所以交叉校验不能降级成 WARN。
+// 降级判据若写成「没有能读出裁决的产物」，这条绕法就成立——
+// 把出处全指向审计产物即可让整轮只报一条 WARN。
+console.log('case 36: 出处指向审计产物（无 verdicts）→ verdict_source_missing_finding');
+{
+  const fx = fixtureWithArtifacts(
+    stateOf({ contracts: [], spawned: 0 }),
+    reportMd([['F1', 'DOWNGRADED', 'HIGH', '`round1-02-audit-slice-01-logic.md`']]),
+    {
+      'round1-02-audit-slice-01-logic.md': auditMd(['F1']),
+      'round1-03-critique-arbiter.md': arbiterMd([['F1', 'UPHELD']]),
+    },
+  );
+  const r = run(fx, ['--artifacts-dir', fx.artifactsDir]);
+  expect('退出码 1', r.code === 1, `实际 ${r.code} / ${r.stdout.slice(-500)}`);
+  expect('报 verdict_source_missing_finding', hasRule(r, 'verdict_source_missing_finding'),
+    JSON.stringify(rules(r)));
+  expect('交叉校验仍是 ENABLED（产物目录非空）', r.data?.totals?.crosscheck === 'ENABLED',
+    JSON.stringify(r.data?.totals));
+  expect('没有降级成 WARN', !hasRule(r, 'verdict_crosscheck_degraded'), JSON.stringify(rules(r)));
+  fx.cleanup();
+}
+
+// ── case 36b：只有审计产物的目录也不得让整轮降级 ─────────────────
+// 这是 case 36 的整轮版：目录里 7 份审计产物，一行裁决都核对不到。
+// 若降级判据是「没有可读裁决的产物」，整个洞 3 就被「指错产物」绕过了。
+console.log('case 36b: 产物目录只有审计产物 → 不降级，逐行报 source_missing');
+{
+  const fx = fixtureWithArtifacts(
+    stateOf({ contracts: [], spawned: 0 }),
+    reportMd([
+      ['F1', 'DOWNGRADED', 'HIGH', '`round1-02-audit-slice-01-logic.md`'],
+      ['F2', 'DOWNGRADED', 'HIGH', '`round1-02-audit-slice-02-logic.md`'],
+    ]),
+    {
+      'round1-02-audit-slice-01-logic.md': auditMd(['F1']),
+      'round1-02-audit-slice-02-logic.md': auditMd(['F2']),
+    },
+  );
+  const r = run(fx, ['--artifacts-dir', fx.artifactsDir]);
+  expect('退出码 1', r.code === 1, `实际 ${r.code} / ${r.stdout.slice(-500)}`);
+  expect('交叉校验 ENABLED', r.data?.totals?.crosscheck === 'ENABLED', JSON.stringify(r.data?.totals));
+  expect('2 行都报 verdict_source_missing_finding',
+    problemsWith(r, 'verdict_source_missing_finding').length === 2,
+    String(problemsWith(r, 'verdict_source_missing_finding').length));
+  expect('不报降级 WARN', !hasRule(r, 'verdict_crosscheck_degraded'), JSON.stringify(rules(r)));
+  fx.cleanup();
+}
+
+// ── case 37：--help 必须自述新参数与新规则 ──────────────────────
+console.log('case 37: --help 说明 --artifacts-dir 与三条新规则');
+{
+  try {
+    const out = execFileSync(process.execPath, [TOOL, '--help'], { encoding: 'utf8' });
+    expect('含 --artifacts-dir', /--artifacts-dir/.test(out), out.slice(0, 400));
+    expect('含 verdict_ref_missing', /verdict_ref_missing/.test(out));
+    expect('含 verdict_ref_not_found', /verdict_ref_not_found/.test(out));
+    expect('含 verdict_mismatch_with_source', /verdict_mismatch_with_source/.test(out));
+    expect('含 verdict_source_missing_finding', /verdict_source_missing_finding/.test(out));
+  } catch (e) {
+    expect('--help exit 0', false, `实际 ${e.status}`);
+  }
 }
 
 console.log(`

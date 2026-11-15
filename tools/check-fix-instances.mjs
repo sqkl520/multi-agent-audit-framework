@@ -30,12 +30,14 @@
  *
  * ── 用法 ─────────────────────────────────────────────────────────────
  *   node check-fix-instances.mjs --state <state.json> --report <final-report.md>
- *                                [--json] [--strict]
+ *                                [--artifacts-dir <dir>] [--json] [--strict]
  *
  *   --state    `state.json`。读 `fix_contracts[]`、`discipline_log[]`、
  *              `budget.spawned_fix_agents`、`phase`、`path_mode`。
  *   --report   最终报告 markdown。解析「A. 裁决索引表」那张表，
- *              取 `finding_id` 与 `裁决` 两列。
+ *              取 `finding_id` / `裁决` / `出处` 三列。
+ *   --artifacts-dir  锐评产物所在目录（默认与 `--report` 同目录）。
+ *              用来交叉校验「出处」列：不看裁决表说什么，看出处的文件里说了什么。
  *   --json     输出机器可读 JSON。
  *   --strict   把 `fix_contract_not_upheld` 的 WARN 升级为 FAIL。
  *              默认 WARN 是因为极少数情况下「裁决表漏更新」比「多修一条」更常见；
@@ -56,7 +58,33 @@
  *   spawned_count_absent              spawned_fix_agents 缺失/非数字 → 按 0 处理 FAIL
  *   phase_not_wave4_or_wave5          FIX 路径但相位不在 wave4/wave5            WARN
  *
- * 退出码：0 = 通过（允许 WARN） / 1 = 有 FAIL / 2 = 配置错误
+ *   ── R10 新增：裁决表 × 出处文件的交叉校验（洞 3）──────────────────
+ *   verdict_ref_missing               裁决表某行「出处」为空/不是路径          FAIL（降级模式下也是）
+ *   verdict_ref_not_found             「出处」指向的文件在 --artifacts-dir 下不存在 FAIL（降级模式下降为 WARN）
+ *   verdict_mismatch_with_source      **核心**：出处文件里的裁决 ≠ 裁决表里的裁决 FAIL（降级模式下降为 WARN）
+ *   verdict_source_missing_finding    出处文件里找不到该 finding_id             FAIL（降级模式下降为 WARN）
+ *   verdict_crosscheck_degraded       没有锐评产物可供交叉校验 → 本检查退化为
+ *                                     只验索引表内部一致性                    WARN
+ *
+ *   为什么需要后四条（R7 §4「洞 3」的实测）：
+ *
+ *     HOLE-3 裁决表自填 DOWNGRADED + fix_contracts 空
+ *            -> R6 exit 0 | upheld 0 | rules []
+ *
+ *   `upheld_without_fix_contract` 把 `final-report.md` 当外部基准，但那份报告
+ *   在流程上仍由主 Agent 落盘——把 8 条 HIGH 全改成 DOWNGRADED，`upheld` 集合
+ *   变空，`missing = 0`，本脚本 exit 0。**外部基准也要有出处。**
+ *
+ *   `framework/artifacts/final-report.md:89` 已经写死了这条铁律：
+ *   「主 Agent 只做排序、加索引、加统计，不得改写任何子 Agent 的措辞、
+ *     严重性或裁决结论。每一行的「出处」必须是 `artifact_ref`，
+ *     指向能复核该结论的原始文件。」
+ *
+ *   所以交叉校验的判据不是「裁决表自洽」，而是「裁决表的每一行都能在
+ *   它自己声明的出处文件里找到同一个裁决」。裁决表与出处是两份独立文件，
+ *   改一份不改另一份就会红。
+ *
+ * ── 退出码：0 = 通过（允许 WARN） / 1 = 有 FAIL / 2 = 配置错误
  *
  * ── 两个必须回答的边界问题（写进代码，不只是写进报告）──────────────────
  *
@@ -78,19 +106,29 @@
  *   5 个 `fix_agent_id` 是否对应 5 个**真实**的 session（需要 harness 侧证据，
  *   账本里没有）；修复质量；`target_files` 是否真的覆盖了缺陷——
  *   那要读代码。本脚本只保证「登记集合」与「外部裁决」一致。
+ *
+ *   **R10 之后仍不检查**（必须写在代码里，否则下一个人会以为洞 3 已封死）：
+ *   裁决表与 Arbiter 产物**是否由同一个主 Agent 伪造**。交叉校验把「改一份」
+ *   变成「改两份且保持一致」，把洞 3 的成本从 1 处提高到 2 处，但两份文件
+ *   都落在主 Agent 可写的路径上。真正的封堵需要 Arbiter 产物由子会话直写、
+ *   主 Agent 只读（或 harness 侧的写入日志）。见 FIX-R10-report.md §5。
  */
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { dirname, resolve, isAbsolute, join, relative } from 'node:path';
 
 // ────────────────────────────────────────────────────────────────────
 // 参数
 // ────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
-  const out = { state: null, report: null, json: false, strict: false, help: false };
+  const out = {
+    state: null, report: null, artifactsDir: null, json: false, strict: false, help: false,
+  };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--state') out.state = argv[++i];
     else if (a === '--report') out.report = argv[++i];
+    else if (a === '--artifacts-dir') out.artifactsDir = argv[++i];
     else if (a === '--json') out.json = true;
     else if (a === '--strict') out.strict = true;
     else if (a === '--help' || a === '-h') out.help = true;
@@ -104,12 +142,14 @@ check-fix-instances.mjs — 修复实例与最终报告裁决索引表的交叉�
 
 用法:
   node check-fix-instances.mjs --state <state.json> --report <final-report.md>
-                               [--json] [--strict]
+                               [--artifacts-dir <dir>] [--json] [--strict]
 
 参数:
   --state    state.json（fix_contracts / discipline_log / budget.spawned_fix_agents /
              phase / path_mode）
-  --report   最终报告 markdown（解析「A. 裁决索引表」，取 finding_id 与 裁决 两列）
+  --report   最终报告 markdown（解析「A. 裁决索引表」，取 finding_id / 裁决 / 出处 三列）
+  --artifacts-dir  锐评产物所在目录（默认与 --report 同目录）。用于按「出处」列
+             交叉校验裁决：不看裁决表说什么，看出处的文件里说了什么。
   --json     输出机器可读 JSON
   --strict   把 fix_contract_not_upheld 的 WARN 升级为 FAIL（交付闸门应开启）
   --help, -h 显示本说明
@@ -128,6 +168,26 @@ check-fix-instances.mjs — 修复实例与最终报告裁决索引表的交叉�
   spawned_count_absent           spawned_fix_agents 缺失 → 按 0 处理并报错     FAIL
   phase_not_wave4_or_wave5       FIX 路径但相位不在 wave4/wave5              WARN
 
+裁决表 × 出处文件的交叉校验（R10 · 堵 R7 报告的「洞 3」）:
+  verdict_ref_missing            「出处」列为空 / 不是路径                  FAIL（降级时也是）
+  verdict_ref_not_found          「出处」指向的文件不存在                   FAIL（降级时 WARN）
+  verdict_mismatch_with_source   出处文件里的裁决 ≠ 裁决表里的裁决           FAIL（降级时 WARN）
+  verdict_source_missing_finding 出处文件里找不到该 finding_id              FAIL（降级时 WARN）
+  verdict_crosscheck_degraded    没有锐评产物 → 退化为只验索引表内部一致性    WARN
+
+  洞 3 的形态（R7 §4 实测）：裁决索引表 8 条 HIGH 全填 DOWNGRADED，
+  upheld 集合变空，missing = 0，exit 0——而那份裁决表就是主 Agent 自己写的。
+  修法：final-report.md:89 的铁律要求每一行的「出处」指向能复核该结论的原始产物。
+  于是判据变成「裁决表每一行的裁决，必须能在它自己声明的出处文件里找到同一个裁决」。
+  两份独立文件改一份不改另一份 → 必红。
+
+  降级纪律：--artifacts-dir 不存在或为空时，verdict_ref_not_found /
+  verdict_mismatch_with_source / verdict_source_missing_finding 降为 WARN，
+  并在输出中明示「没有锐评产物可供交叉校验，本检查退化为只验索引表内部一致性」。
+  理由与 R8 的 unsupported_harness 同一纪律：不能因为产物目录缺失就把流程卡死。
+  verdict_ref_missing 不降级——它不需要任何产物就能判，且「没写要核实什么」
+  本身就是索引表的完整性缺陷。
+
 裁决索引表（framework/artifacts/final-report.md:83）:
   ## A. 裁决索引表（附加）
 
@@ -135,9 +195,15 @@ check-fix-instances.mjs — 修复实例与最终报告裁决索引表的交叉�
   |---|---|---|---|---|---|
   | ... | HIGH | concurrency | \`path:line\` | UPHELD | \`round{N}-03-critique-arbiter.md\` |
 
-  表头必须同时含 finding_id 与 裁决（或 verdict）两列。
+  表头必须同时含 finding_id 与 裁决（或 verdict）两列；有「出处」列时启用交叉校验。
   这是 UPHELD 发现的**外部基准**：它与 state.json 由两条独立路径产生，
   所以「少登记一条」在这里才藏不住。没有它，一切对账都只是自述内部自洽。
+
+出处文件（锐评相位 Arbiter 产物）的两种合法形态，都会被读取：
+  1. 末尾的 JSON 信封（output-contract §0/§2.3）：
+     payload.critique_role = "arbiter"，
+     payload.verdicts[] = [{ finding_id, verdict: UPHELD|DOWNGRADED|REVOKED, reason }]
+  2. 正文里的 markdown 裁决表（表头含 finding_id 与 裁决/verdict 两列）
 
 合并申报（framework/templates/wave4-fix.md:86-98，写在 discipline_log）:
   {
@@ -252,6 +318,25 @@ if (!existsSync(ARGS.report)) {
 const reportText = readFileSync(ARGS.report, 'utf8');
 
 /**
+ * 裁决归一化。UPHELD 是唯一的「该修」结论。
+ *
+ * R10 提到模块作用域：交叉校验要用**同一个**归一化函数读出处文件，
+ * 否则「索引表的 DOWNGRADED」和「出处文件的 DOWNGRADED」会因为
+ * 写法差异（`**DOWNGRADED**` / `downgraded` / `DOWNGRADED（严重性高估）`）
+ * 被判成不一致——那是假阳性，会让人直接关掉这条检查。
+ */
+function normVerdict(raw) {
+  const v = String(raw ?? '').replace(/[`*]/g, '').trim().toUpperCase();
+  if (!v) return 'UNKNOWN';
+  if (v.includes('UPHELD')) return 'UPHELD';
+  if (v.includes('DOWNGRADED')) return 'DOWNGRADED';
+  if (v.includes('REJECTED')) return 'REJECTED';
+  if (v.includes('REVOKED')) return 'REVOKED';
+  if (v.includes('WONT_FIX') || v === '不修') return 'WONT_FIX';
+  return v;
+}
+
+/**
  * 解析裁决索引表。
  *
  * 识别条件（任务书规定）：表头必须同时含 `finding_id` 与 `裁决`（或 `verdict`）两列。
@@ -262,7 +347,10 @@ const reportText = readFileSync(ARGS.report, 'utf8');
  * （有的轮次把表放在别的位置），退化为「第一张表头合规的表」。
  * 两者都找不到 → report_unparsable（exit 2），而不是「0 条 UPHELD」。
  *
- * 返回 { rows: [{ id, verdict, raw, lineNo }], heading: string|null } 或 null。
+ * R10 起同时取「出处」列（若表头有），用于与锐评产物交叉校验。
+ *
+ * 返回 { rows: [{ id, verdict, raw, ref, refRaw, lineNo }], heading, hasRefColumn }
+ * 或 null。
  */
 function parseVerdictIndex(text) {
   const lines = text.split(/\r?\n/);
@@ -297,6 +385,13 @@ function parseVerdictIndex(text) {
 
   const ID_COLS = ['finding_id', 'finding id', 'findingid', 'finding', '发现', '编号', 'id'];
   const VERDICT_COLS = ['裁决', 'verdict'];
+  // 「出处」列。final-report.md:83 的模板列名是 `出处`；契约（handoff-schema）里
+  // 对应的字段名是 `artifact_ref`。两种写法都认。
+  //
+  // 注意候选词里**不能**放裸 `ref`：`arbiter_artifact_ref` 会命中，
+  // 但更危险的是任何含 "ref" 的列（如 `reference_count`）都会被误认成出处列，
+  // 于是整张表的「出处」解析全错。用带上界的长词。
+  const REF_COLS = ['出处', 'artifact_ref', 'artifactref', '来源', 'source_artifact', '证据来源'];
 
   // 第一遍：记录「A. 裁决索引表」标题的行号，用来做优先级。
   let headingLine = -1;
@@ -320,7 +415,10 @@ function parseVerdictIndex(text) {
         const idCol = findCol(cells, ID_COLS);
         const vCol = findCol(cells, VERDICT_COLS);
         // 两列都要命中，且不能是同一列——这是「裁决索引表」的机械定义。
-        if (idCol >= 0 && vCol >= 0 && idCol !== vCol) header = { id: idCol, verdict: vCol };
+        if (idCol >= 0 && vCol >= 0 && idCol !== vCol) {
+          const rCol = findCol(cells, REF_COLS);
+          header = { id: idCol, verdict: vCol, ref: rCol >= 0 && rCol !== idCol && rCol !== vCol ? rCol : -1 };
+        }
         continue;
       }
 
@@ -335,33 +433,171 @@ function parseVerdictIndex(text) {
       // 模板占位行：`| ... |`、`| — |`。它们不是 finding，
       // 当成数据行会报「杜撰了 id 叫 ... 的 finding」。
       if (/^(\.{2,}|…+|—+|-+|\.+)$/.test(rawId)) continue;
-      rows.push({ id: rawId, raw: rawVerdict, lineNo: li + 1 });
+      rows.push({
+        id: rawId,
+        raw: rawVerdict,
+        refRaw: header.ref >= 0 ? (cells[header.ref] ?? '') : null,
+        lineNo: li + 1,
+      });
     }
-    return header ? rows : null;
+    return header ? { rows, header } : null;
   };
 
   // 优先：标题之后那一段。没有标题则从头扫。
   const primaryFrom = headingLine >= 0 ? headingLine + 1 : 0;
-  let rows = scan(primaryFrom, lines.length);
-  if (rows === null && headingLine > 0) rows = scan(0, headingLine);
-  if (rows === null) return null;
-
-  /** 裁决归一化。UPHELD 是唯一的「该修」结论。 */
-  const normVerdict = (raw) => {
-    const v = String(raw).replace(/[`*]/g, '').trim().toUpperCase();
-    if (!v) return 'UNKNOWN';
-    if (v.includes('UPHELD')) return 'UPHELD';
-    if (v.includes('DOWNGRADED')) return 'DOWNGRADED';
-    if (v.includes('REJECTED')) return 'REJECTED';
-    if (v.includes('REVOKED')) return 'REVOKED';
-    if (v.includes('WONT_FIX') || v === '不修') return 'WONT_FIX';
-    return v;
-  };
+  let found = scan(primaryFrom, lines.length);
+  if (found === null && headingLine > 0) found = scan(0, headingLine);
+  if (found === null) return null;
 
   return {
     heading: headingLine >= 0 ? lines[headingLine].trim() : null,
-    rows: rows.map((r) => ({ ...r, verdict: normVerdict(r.raw) })),
+    hasRefColumn: found.header.ref >= 0,
+    rows: found.rows.map((r) => ({
+      ...r,
+      verdict: normVerdict(r.raw),
+      ref: r.refRaw === null ? null : normalizeRef(r.refRaw),
+    })),
   };
+}
+
+// ────────────────────────────────────────────────────────────────────
+// 3b · 出处解析的容错
+//
+// final-report.md:87 的模板写的是 `round{N}-03-critique-arbiter.md`：
+// 带反引号、带花括号占位符。真实报告里还会有 `./x.md`、相对 artifacts 目录的
+// 子路径、甚至带 `<OUTDIR>/` 前缀的写法。这些都必须能解析到同一个文件，
+// 否则这条检查在真实数据上会全量误报 not_found，然后被当成噪音关掉。
+// ────────────────────────────────────────────────────────────────────
+
+/** 去掉反引号/粗体/空白。`（见上文）` 这类散文指代留给 looksLikePath 判死。 */
+function normalizeRef(raw) {
+  return String(raw ?? '').replace(/[`*]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * 「出处」是否像一个文件路径。
+ *
+ * 这一条把 `（见上文）` / `同上` / `详见报告` 这类散文指代判成 missing，
+ * 而不是 not_found——它们的病因不同：前者是「没写要核实什么」，
+ * 后者是「写的那个东西不存在」。混在一起报会让人去错方向找文件。
+ */
+function looksLikePath(s) {
+  if (!s) return false;
+  if (/\s/.test(s)) return false;                       // 路径里不该有空白
+  if (/[　-〿一-鿿＀-￯]/.test(s)) return false; // 中文/全角标点
+  if (/^[<（(].*[>）)]$/.test(s)) return false;         // `<OUTDIR>`、`(见下)`
+  return /\.[A-Za-z0-9]{1,8}$/.test(s);                 // 需要有扩展名
+}
+
+/** 相对 artifacts 目录的路径清单（posix 分隔符），深度受限。 */
+function listFilesRecursive(dir, base = dir, depth = 0, out = []) {
+  if (depth > 6) return out;
+  let entries;
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return out; }
+  for (const e of entries) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) listFilesRecursive(p, base, depth + 1, out);
+    else if (e.isFile()) out.push(relative(base, p).replace(/\\/g, '/'));
+  }
+  return out;
+}
+
+/** `{N}` / `{round}` 这类占位符 → 任意非分隔符片段，用于在产物目录里找同名文件。 */
+function refGlobToRegExp(ref) {
+  const parts = ref.split(/(\{[^}]*\})/);
+  let body = '';
+  for (const part of parts) {
+    if (/^\{[^}]*\}$/.test(part)) body += '[^/]+';
+    else body += part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+  return new RegExp(`(^|/)${body}$`);
+}
+
+/**
+ * 把「出处」解析成实际文件路径。
+ * 返回 { path, how } 或 null（= not_found）。
+ *
+ * 三条路径都要试，因为真实报告里三种写法都出现过：
+ *   1. 相对 --artifacts-dir
+ *   2. 相对最终报告所在目录（--artifacts-dir 的默认值就是它）
+ *   3. 绝对路径（`handoff-schema` 允许 `artifact_ref` 是绝对路径）
+ * 都失败时，若出处里有 `{...}` 占位符，再按通配在产物目录里找一次。
+ */
+function resolveRefPath(ref, artifactsDir, reportDir) {
+  const candidates = [];
+  if (isAbsolute(ref)) candidates.push(ref);
+  if (artifactsDir) candidates.push(join(artifactsDir, ref));
+  if (reportDir) candidates.push(join(reportDir, ref));
+  for (const p of candidates) {
+    try { if (existsSync(p) && statSync(p).isFile()) return { path: p, how: 'direct' }; } catch { /* 忽略 */ }
+  }
+  if (artifactsDir && /[{}]/.test(ref)) {
+    let rx;
+    try { rx = refGlobToRegExp(ref); } catch { return null; }
+    const hit = listFilesRecursive(artifactsDir).find((rel) => rx.test(rel));
+    if (hit) return { path: join(artifactsDir, hit), how: 'glob' };
+  }
+  return null;
+}
+
+/**
+ * 从一份锐评产物里读出 `finding_id → 裁决`。
+ *
+ * 两种形态都要读，因为契约与模板各写了一半：
+ *   1. 末尾的 JSON 信封（output-contract §0 要求「最后一个代码块必须是 JSON 信封」
+ *      §2.3 定义 `payload.verdicts[] = [{ finding_id, verdict, reason }]`，
+ *      `critique_role: "arbiter"` 时 verdict 取 UPHELD / DOWNGRADED / REVOKED）
+ *   2. 正文里的 markdown 裁决表（表头含 finding_id 与 裁决/verdict）
+ *
+ * 只认信封会让「格式退化但结论完整」的产物被判成「结论被篡改」——
+ * 那是把格式问题误报成诚信问题。只认表格则会漏掉最权威的结构化字段。
+ * 所以两个都读，JSON 优先；两者对同一条给出不同裁决时单独 WARN。
+ *
+ * 返回 { verdicts: Map<id, verdict>, raw: Map<id, string>, sources: string[],
+ *        conflicts: [{ id, json, table }] }
+ */
+function readSourceVerdicts(filePath) {
+  let text;
+  try { text = readFileSync(filePath, 'utf8'); } catch { return null; }
+
+  const verdicts = new Map();
+  const raw = new Map();
+  const sources = [];
+  const conflicts = [];
+
+  const blocks = [...text.matchAll(/```json\s*\n([\s\S]*?)```/g)];
+  if (blocks.length > 0) {
+    try {
+      const env = JSON.parse(blocks[blocks.length - 1][1]);
+      const list = env?.payload?.verdicts;
+      if (Array.isArray(list)) {
+        for (const v of list) {
+          const id = typeof v?.finding_id === 'string' ? v.finding_id.trim() : '';
+          if (!id) continue;
+          verdicts.set(id, normVerdict(v.verdict));
+          raw.set(id, String(v.verdict ?? ''));
+        }
+        if (verdicts.size > 0) {
+          sources.push(env?.payload?.critique_role === 'arbiter' ? 'json_envelope(arbiter)' : 'json_envelope');
+        }
+      }
+    } catch { /* 信封坏了 → 退回正文表格 */ }
+  }
+
+  const idx = parseVerdictIndex(text);
+  if (idx && idx.rows.length > 0) {
+    for (const row of idx.rows) {
+      if (verdicts.has(row.id) && verdicts.get(row.id) !== row.verdict) {
+        conflicts.push({ id: row.id, json: verdicts.get(row.id), table: row.verdict });
+      } else if (!verdicts.has(row.id)) {
+        verdicts.set(row.id, row.verdict);
+        raw.set(row.id, row.raw);
+      }
+    }
+    sources.push('markdown_table');
+  }
+
+  return { verdicts, raw, sources, conflicts };
 }
 
 const index = parseVerdictIndex(reportText);
@@ -468,6 +704,173 @@ for (const fid of registeredIds) {
       + `或者凭空杜撰（那会让「修了几条」这个数字失去外部依据）。`
       + `表中现有 ${upheldIds.size} 条 UPHELD`,
       { finding_id: fid, reason: 'absent_from_report' });
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// 6b · 裁决表 × 出处文件：R7「洞 3」的补丁
+//
+// 上面的规则 5 把 `final-report.md` 当外部基准。但 R7 §4 实测：
+//
+//   HOLE-3 裁决表自填 DOWNGRADED + fix_contracts 空 -> exit 0 | upheld 0 | rules []
+//
+// 裁决表本身也是主 Agent 落盘的。把 8 条 HIGH 全改成 DOWNGRADED，
+// `upheldIds` 变空，`missing = 0`，本脚本一条规则都不触发。
+//
+// `final-report.md:89` 的铁律给了现成的解法：
+//   「每一行的「出处」必须是 artifact_ref，指向能复核该结论的原始文件。」
+// 于是判据从「裁决表自洽」升级为「裁决表的每一行都能在它自己声明的
+// 出处文件里找到同一个裁决」。裁决表与锐评产物是两份独立文件，
+// 改一份不改另一份必红——洞 3 的成本从 1 处提高到 2 处。
+//
+// 降级纪律（与 R8 的 unsupported_harness 同源）：
+//   没有锐评产物可比对时退化为「只验索引表内部一致性」，而不是把流程卡死。
+//   注意降级判据是「整个产物目录里没有任何一份能读出裁决的产物」，
+//   不是「某一行的出处解析失败」——后者是 verdict_ref_not_found，必须红。
+//   否则「把 arbiter 文件删掉」就成了新的绕法。
+// ────────────────────────────────────────────────────────────────────
+const reportDir = dirname(resolve(ARGS.report));
+const artifactsDir = ARGS.artifactsDir ? resolve(ARGS.artifactsDir) : reportDir;
+const reportAbs = resolve(ARGS.report);
+const stateAbs = resolve(ARGS.state);
+
+const sourceCache = new Map();   // 绝对路径 → readSourceVerdicts 结果
+let artifactFiles = 0;           // 产物目录里「确实是产物」的文件数（排除报告与账本本身）
+let critiqueArtifacts = 0;       // 其中能读出裁决的份数
+
+{
+  let isDir = false;
+  try { isDir = existsSync(artifactsDir) && statSync(artifactsDir).isDirectory(); } catch { isDir = false; }
+  if (isDir) {
+    for (const rel of listFilesRecursive(artifactsDir)) {
+      if (!/\.(md|markdown|txt|json)$/i.test(rel)) continue;
+      const p = resolve(join(artifactsDir, rel));
+      // 最终报告与 state.json 不是「产物」——它们是本次检查的两个输入。
+      // 不排除的话，默认路径（--report 同目录）下永远至少算 1 份产物，
+      // 于是「没有锐评产物」这一情况永远不会被识别为降级，
+      // 所有引用悬空的轮次都会红成一片。
+      if (p === reportAbs || p === stateAbs) continue;
+      artifactFiles++;
+      let parsed = null;
+      try { parsed = readSourceVerdicts(p); } catch { parsed = null; }
+      if (parsed) sourceCache.set(p, parsed);
+      if (parsed && parsed.verdicts.size > 0) critiqueArtifacts++;
+    }
+  }
+}
+
+// ── 降级的判据是「目录不存在或为空」，不是「里面没有可读的裁决」──
+//
+// 这个区别很要紧。若用后者，「把出处全指向审计产物」就成了新的绕法：
+// 审计产物存在（目录不空，按铁律理应被核对），但它们没有 verdicts 字段，
+// 于是整轮被判成「无法交叉校验」而只报 WARN——那正是要堵的洞。
+// 用前者：只要目录里有产物，逐行就必判；指错产物报 verdict_source_missing_finding
+// （「索引表说这条被裁决过，但出处文件里没有它」），这才是准确的病因。
+const crosscheck = artifactFiles > 0 ? 'ENABLED' : 'DEGRADED';
+const refLevel = crosscheck === 'ENABLED' ? 'FAIL' : 'WARN';
+
+let verdictRefs = 0;
+let refsMissing = 0;
+let refsNotFound = 0;
+let sourceMissing = 0;
+let mismatches = 0;
+
+if (!index.hasRefColumn) {
+  // 整列都没有。这不是「某一行忘了写」，是「这一轮的报告结构不合铁律」。
+  // 仍然 FAIL：降级只豁免「无法核实」，不豁免「没有可核实的东西」。
+  refsMissing++;
+  fail('verdict_ref_missing',
+    '裁决索引表**没有「出处」列**（表头需要含 出处 / artifact_ref）'
+    + '——framework/artifacts/final-report.md:89 的铁律要求每一行都指向能复核该结论的原始文件。'
+    + '没有这一列，裁决表就是一份无法被外部核对的自我声明，'
+    + '而这正是 R7「洞 3」的形态（裁决表说 DOWNGRADED，无人能查）',
+    { finding_id: null, reason: 'no_ref_column' });
+} else if (crosscheck === 'DEGRADED') {
+  warn('verdict_crosscheck_degraded',
+    `没有锐评产物可供交叉校验，本检查退化为只验索引表内部一致性。\n`
+    + `  产物目录: ${artifactsDir}${existsSync(artifactsDir) ? '（存在但为空）' : '（不存在）'}\n`
+    + `  索引表有 ${index.rows.length} 行的裁决**未经任何外部核对**——`
+    + `它们的真伪取决于「主 Agent 是否愿意如实抄写」，本脚本此刻查不出来。`
+    + `（与 R8 的 unsupported_harness 同一纪律：缺能力时报 WARN 并明示，不把流程卡死。）`,
+    { artifacts_dir: artifactsDir, rows: index.rows.length });
+}
+
+for (const row of index.rows) {
+  const where = `裁决索引表第 ${row.lineNo} 行（${row.id}）`;
+
+  if (!index.hasRefColumn) break;   // 上面已整表报过，逐行再报只是噪音
+
+  if (!looksLikePath(row.ref)) {
+    refsMissing++;
+    fail('verdict_ref_missing',
+      `${where}的「出处」为空或不是文件路径（原文: ${JSON.stringify(row.refRaw ?? '')}）`
+      + '——这一行的裁决没有任何可复核的来源。'
+      + '出处必须指向锐评相位的 Arbiter 产物（例如 `round1-03-critique-arbiter.md`），'
+      + '「见上文」「同上」这类散文指代不算出处（无法机械核对）',
+      { finding_id: row.id, line: row.lineNo, raw: row.refRaw ?? null });
+    continue;
+  }
+
+  if (crosscheck === 'DEGRADED') continue;   // 已整表 WARN，逐行不再重复
+
+  const hit = resolveRefPath(row.ref, artifactsDir, reportDir);
+  if (!hit) {
+    refsNotFound++;
+    add(refLevel, 'verdict_ref_not_found',
+      `${where}的「出处」指向的文件不存在: ${row.ref}`
+      + `（已在 ${artifactsDir} 与报告同目录下查找${/[{}]/.test(row.ref) ? '，并按占位符通配查找' : ''}）`
+      + '——出处悬空时，这一行的裁决无法被任何外部文件复核，'
+      + '它等价于「主 Agent 自己说这条降级了，但没人能查」',
+      { finding_id: row.id, line: row.lineNo, ref: row.ref, artifacts_dir: artifactsDir });
+    continue;
+  }
+
+  let parsed = sourceCache.get(resolve(hit.path));
+  if (!parsed) {
+    try { parsed = readSourceVerdicts(hit.path); } catch { parsed = null; }
+    if (parsed) sourceCache.set(resolve(hit.path), parsed);
+  }
+  const actual = parsed?.verdicts.get(row.id);
+  if (!actual) {
+    sourceMissing++;
+    add(refLevel, 'verdict_source_missing_finding',
+      `${where}的出处 ${row.ref} 里**找不到 ${row.id} 的裁决**`
+      + `（该文件可读出的裁决 ${parsed?.verdicts.size ?? 0} 条`
+      + `${parsed?.sources.length ? `，来源形态: ${parsed.sources.join(' / ')}` : '，没有可识别的裁决结构'}）`
+      + '——索引表声称这条被裁决过，但出处文件里没有它。'
+      + '要么出处指向了错的产物（例如指向审计产物：它只有 findings，没有裁决），'
+      + '要么这条裁决是索引表自己编的',
+      { finding_id: row.id, line: row.lineNo, ref: row.ref, path: hit.path,
+        source_verdicts: [...(parsed?.verdicts.keys() ?? [])].slice(0, 20) });
+    continue;
+  }
+
+  verdictRefs++;
+
+  // 出处文件自身的 JSON 信封与正文表格打架：这不是索引表的问题，但不能静默取一个。
+  for (const c of parsed.conflicts ?? []) {
+    warn('verdict_source_self_conflict',
+      `出处文件 ${row.ref} 内部不自洽：${c.id} 的 JSON 信封写 ${c.json}，正文表格写 ${c.table}`
+      + '——本检查取 JSON 信封（output-contract §2.3 的结构化字段优先），但这份产物本身应当重写',
+      { path: hit.path, finding_id: c.id, json: c.json, table: c.table });
+  }
+
+  if (actual !== row.verdict) {
+    mismatches++;
+    add(refLevel, 'verdict_mismatch_with_source',
+      `${where}的裁决与出处不一致：索引表写 **${row.verdict}**，`
+      + `出处 ${row.ref} 写 **${actual}**`
+      + (parsed.raw.get(row.id) ? `（出处原文: ${JSON.stringify(parsed.raw.get(row.id))}）` : '')
+      + '。\n'
+      + '  framework/artifacts/final-report.md:89 的铁律：主 Agent **只做排序、加索引、加统计**，'
+      + '不得改写任何子 Agent 的裁决结论。\n'
+      + (actual === 'UPHELD' && row.verdict !== 'UPHELD'
+        ? '  这一条正是 R7「洞 3」的核心形态：把 UPHELD 在索引表里改成 DOWNGRADED，'
+          + '`upheld` 集合变空、`missing` 变 0，于是 `upheld_without_fix_contract` 整个不触发。'
+          + '出处文件说它该修，所以它必须进入修复登记。'
+        : '  索引表与出处必须逐字一致；改一处不改另一处，说明裁决表被手工改写过了。'),
+      { finding_id: row.id, line: row.lineNo, ref: row.ref,
+        report_verdict: row.verdict, source_verdict: actual, source_path: hit.path });
   }
 }
 
@@ -694,6 +1097,16 @@ const totals = {
   contractRows: contracts.length,
   notUpheldWarn,
   notUpheldFail,
+  // R10：裁决表 × 出处文件的交叉校验
+  crosscheck,          // ENABLED / DEGRADED
+  artifactFiles,       // 产物目录里的产物份数（降级判据）
+  critiqueArtifacts,   // 其中能读出裁决的份数
+  hasRefColumn: index.hasRefColumn,
+  verdictRefs,         // 成功在出处里核对到的行数
+  refsMissing,
+  refsNotFound,
+  sourceMissing,
+  mismatches,
 };
 
 if (ARGS.json) {
@@ -717,7 +1130,10 @@ console.log(`  裁决表:   ${index.heading ?? '（未定位到标题，按表�
 console.log(`  账本侧:   ${contracts.length} 条 fix_contract / `
   + `${instances.size} 个 distinct fix_agent_id / spawned_fix_agents=${spawned}`
   + (hasSpawned ? '' : '（缺失，按 0）'));
-console.log(`  合并申报: ${mergeRecords.length} 条 FIX_INSTANCE_MERGED\n`);
+console.log(`  合并申报: ${mergeRecords.length} 条 FIX_INSTANCE_MERGED`);
+console.log(`  出处交叉校验: ${crosscheck === 'ENABLED'
+  ? `已启用（产物目录 ${artifactsDir}，产物 ${artifactFiles} 份，可读出裁决 ${critiqueArtifacts} 份，已核对 ${verdictRefs} 行）`
+  : `已降级为 WARN（产物目录 ${artifactsDir} 不存在或为空）`}\n`);
 
 const order = { FAIL: 0, WARN: 1, CONFIG: 2, PASS: 3 };
 const tag = { FAIL: '✗', WARN: '!', CONFIG: '✗', PASS: '✓' };
@@ -727,7 +1143,9 @@ for (const p of [...problems].sort((a, b) => order[a.level] - order[b.level])) {
 
 console.log(`\n合计: ${upheldIds.size} 条 UPHELD / 已登记 ${accounted} / 未登记 ${missing.length}`
   + ` / 实例 ${instances.size} / spawned ${spawned}`);
-console.log(`合计: ${accounted} PASS / ${counts.FAIL ?? 0} FAIL / ${counts.WARN ?? 0} WARN\n`);
+console.log(`合计: ${accounted} PASS / ${counts.FAIL ?? 0} FAIL / ${counts.WARN ?? 0} WARN`);
+console.log(`合计: 出处核对 ${verdictRefs} / 出处缺失 ${refsMissing} / 出处悬空 ${refsNotFound}`
+  + ` / 来源无此条 ${sourceMissing} / 裁决不一致 ${mismatches}\n`);
 
 if (exitCode === 0) {
   if ((counts.WARN ?? 0) > 0) {
@@ -735,10 +1153,18 @@ if (exitCode === 0) {
     console.log('这些是「已知且被记录」的风险，不再属于「静默丢失」——但收口前应逐条确认。\n');
   } else if (upheldIds.size === 0) {
     console.log('结论：裁决索引表里没有 UPHELD 发现，没有要修的东西——'
-      + 'fix_contracts 为空是正确的，不是「一条都没修」。\n');
+      + 'fix_contracts 为空是正确的，不是「一条都没修」。'
+      + (crosscheck === 'ENABLED'
+        ? `\n      ${verdictRefs} 行裁决已在出处文件里逐条核对一致。\n`
+        : '\n      （注意：没有锐评产物可供交叉校验，这个「0 条」是索引表自述。）\n'));
   } else {
     console.log(`结论：${upheldIds.size} 条 UPHELD 全部已登记，实例计数自洽，合并申报可复核。\n`);
   }
+} else if (mismatches > 0 || sourceMissing > 0 || refsNotFound > 0 || refsMissing > 0) {
+  console.log('结论：裁决索引表与它自己声明的出处对不上（见上）。');
+  console.log('索引表说 DOWNGRADED、出处说 UPHELD，就是 R7「洞 3」的形态：'
+    + '把裁决表改成全降级，`upheld` 集合变空，`upheld_without_fix_contract` 整个不触发。');
+  console.log('出处文件是主 Agent 不能单方面改写的那一侧——它说什么，修复登记就得跟什么。\n');
 } else if (missing.length > 0) {
   console.log(`结论：${missing.length} 条 UPHELD 从未进入任何修复登记。`);
   console.log('它们可能从未进入任何任务书——这正是「38 条只修 6 条」丢失的地方，'

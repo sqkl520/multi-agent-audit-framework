@@ -481,6 +481,160 @@ console.log('case 22: 两个产物文件映射到同一 scope → exit 2');
   fx.cleanup();
 }
 
+// ────────────────────────────────────────────────────────────────────
+// R9 / 洞 2：HIGH 填 WONT_FIX 曾能洗掉 high_severity_unaccounted
+//
+// R7 实测（experiments/hilltop-dsh/FIX-R7-report.md §4 洞 2）：
+//   8 条 HIGH 全填 WONT_FIX + 默认            -> exit 0 | highUnaccounted 0 | 无警告
+//   8 条 HIGH 全填 WONT_FIX + --strict-high   -> exit 0 | highUnaccounted 0 | 无警告
+// 根因：判据只认 DEFERRED / 无去向，WONT_FIX 根本没进判据。
+//
+// 处置：不把 WONT_FIX 混进 high_severity_unaccounted（两者性质不同），
+// 而是单开 high_severity_wont_fix——WONT_FIX 主张「这不是缺陷」，
+// 比 DEFERRED 的「下轮修」更强，所以它需要自己的一条可见规则。
+// ────────────────────────────────────────────────────────────────────
+
+const HIGH8 = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8'];
+
+console.log('case 23: 8 条 HIGH 全填 WONT_FIX（理由够长）→ 默认 WARN，且必须逐条点名');
+{
+  const fx = fixture({
+    'round1-core-audit.md': HIGH8.map((id) => finding(id, 'HIGH')),
+  }, ledgerTable(HIGH8.map((id, i) => [`round1-core::${id}`, 'WONT_FIX',
+    `这是设计意图，第 ${i + 1} 处 src/ConfigManager.java:${100 + i} 的校验由调用方负责，不修`])));
+  const r = run(fx);
+  expect('退出码 0（WARN 不阻断）', r.code === 0, `实际 ${r.code} / ${r.stdout.slice(-400)}`);
+  const p = problemWith(r, 'high_severity_wont_fix');
+  expect('报 high_severity_wont_fix', !!p, JSON.stringify(rules(r)));
+  expect('级别是 WARN 而非 FAIL', p?.level === 'WARN', p?.level);
+  expect('计数 = 8', p?.high_wont_fix === 8, String(p?.high_wont_fix));
+  for (const id of HIGH8) {
+    expect(`逐条点名 round1-core::${id}`,
+      new RegExp(`round1-core::${id}(?![0-9])`).test(JSON.stringify(p ?? {})),
+      JSON.stringify(p?.msg));
+  }
+  expect('消息里带理由摘录（读者能判断，而不是只看到个数）',
+    /这是设计意图/.test(String(p?.msg ?? '')), String(p?.msg));
+  expect('解释为什么 WONT_FIX 要单开一条规则',
+    /DEFERRED/.test(String(p?.msg ?? '')) && /WONT_FIX/.test(String(p?.msg ?? '')), String(p?.msg));
+  expect('totals.highWontFix = 8', r.data?.totals?.highWontFix === 8,
+    JSON.stringify(r.data?.totals));
+  expect('WONT_FIX 不混进 high_severity_unaccounted', !hasRule(r, 'high_severity_unaccounted'),
+    JSON.stringify(rules(r)));
+  fx.cleanup();
+}
+
+console.log('case 24: 8 条 HIGH 全填 DEFERRED → 仍然报 high_severity_unaccounted（既有行为不变）');
+{
+  const fx = fixture({
+    'round1-core-audit.md': HIGH8.map((id) => finding(id, 'HIGH')),
+  }, ledgerTable(HIGH8.map((id) => [`round1-core::${id}`, 'DEFERRED',
+    '未纳入任何修复任务书，等下一轮统一评估'])));
+  const r = run(fx);
+  expect('退出码 0', r.code === 0, `实际 ${r.code} / ${r.stdout.slice(-400)}`);
+  const p = problemWith(r, 'high_severity_unaccounted');
+  expect('仍然报 high_severity_unaccounted', !!p, JSON.stringify(rules(r)));
+  expect('计数仍然是 8', p?.high_unaccounted === 8, String(p?.high_unaccounted));
+  expect('不误报到 high_severity_wont_fix', !hasRule(r, 'high_severity_wont_fix'),
+    JSON.stringify(rules(r)));
+  expect('totals.highWontFix = 0', r.data?.totals?.highWontFix === 0,
+    JSON.stringify(r.data?.totals));
+  fx.cleanup();
+}
+
+console.log('case 25: HIGH 填 FIXED → 不报任何 HIGH 相关警告');
+{
+  const fx = fixture({
+    'round1-core-audit.md': HIGH8.map((id) => finding(id, 'HIGH')),
+  }, ledgerTable(HIGH8.map((id) => [`round1-core::${id}`, 'FIXED', `#${id.slice(1)} 已修，红测通过`])));
+  const r = run(fx);
+  expect('退出码 0', r.code === 0, `实际 ${r.code} / ${r.stdout.slice(-400)}`);
+  expect('没有 high_severity_wont_fix', !hasRule(r, 'high_severity_wont_fix'), JSON.stringify(rules(r)));
+  expect('没有 high_severity_unaccounted', !hasRule(r, 'high_severity_unaccounted'),
+    JSON.stringify(rules(r)));
+  expect('没有 FAIL', !(r.data?.problems ?? []).some((p) => p.level === 'FAIL'),
+    JSON.stringify(r.data?.problems));
+  expect('highWontFix / highUnaccounted 都是 0',
+    r.data?.totals?.highWontFix === 0 && r.data?.totals?.highUnaccounted === 0,
+    JSON.stringify(r.data?.totals));
+  fx.cleanup();
+}
+
+console.log('case 26: HIGH 填 WONT_FIX 但理由太短 → 同时报 disposition_missing_reason 与 high_severity_wont_fix');
+{
+  const fx = fixture({
+    'round1-core-audit.md': [finding('F1', 'HIGH')],
+  }, ledgerTable([['round1-core::F1', 'WONT_FIX', '设计如此']]));
+  const r = run(fx);
+  expect('报 disposition_missing_reason', hasRule(r, 'disposition_missing_reason'),
+    JSON.stringify(rules(r)));
+  expect('HIGH 的 WONT_FIX 仍然可见（薄理由不能让它消失）', hasRule(r, 'high_severity_wont_fix'),
+    JSON.stringify(rules(r)));
+  fx.cleanup();
+}
+
+console.log('case 27: --strict-high 把 HIGH 的 WONT_FIX 从 WARN 升级为 FAIL');
+{
+  const fx = fixture({
+    'round1-core-audit.md': HIGH8.map((id) => finding(id, 'HIGH')),
+  }, ledgerTable(HIGH8.map((id, i) => [`round1-core::${id}`, 'WONT_FIX',
+    `这是设计意图，第 ${i + 1} 处 src/ConfigManager.java:${100 + i} 的校验由调用方负责，不修`])));
+  const r = run(fx, ['--strict-high']);
+  expect('退出码 1', r.code === 1, `实际 ${r.code} / ${r.stdout.slice(-400)}`);
+  const p = problemWith(r, 'high_severity_wont_fix');
+  expect('规则升级为 FAIL', p?.level === 'FAIL', p?.level);
+  expect('计数仍是 8', p?.high_wont_fix === 8, String(p?.high_wont_fix));
+  fx.cleanup();
+}
+
+console.log('case 28: HIGH 的 WONT_FIX 理由过短（≥10 但 <40 字）→ 额外报 high_wont_fix_reason_thin');
+{
+  const fx = fixture({
+    'round1-core-audit.md': [finding('F1', 'HIGH')],
+  }, ledgerTable([['round1-core::F1', 'WONT_FIX', '文案已告知，属设计意图']]));
+  const r = run(fx);
+  expect('不报 disposition_missing_reason（已过 10 字底线）',
+    !hasRule(r, 'disposition_missing_reason'), JSON.stringify(rules(r)));
+  expect('报 high_wont_fix_reason_thin', hasRule(r, 'high_wont_fix_reason_thin'),
+    JSON.stringify(rules(r)));
+  const p = problemWith(r, 'high_wont_fix_reason_thin');
+  expect('级别是 WARN', p?.level === 'WARN', p?.level);
+  expect('点名那条 HIGH 与字数', /round1-core::F1/.test(JSON.stringify(p ?? {}))
+    && /11/.test(JSON.stringify(p ?? {})), JSON.stringify(p));
+  fx.cleanup();
+}
+
+console.log('case 29: MEDIUM 的 WONT_FIX 不触发 HIGH 专属规则（门槛只对 HIGH 抬高）');
+{
+  const fx = fixture({
+    'round1-core-audit.md': [finding('F1', 'MEDIUM'), finding('F2', 'LOW')],
+  }, ledgerTable([
+    ['round1-core::F1', 'WONT_FIX', '文案已告知，属设计意图'],
+    ['round1-core::F2', 'WONT_FIX', '不修'],
+  ]));
+  const r = run(fx);
+  expect('不报 high_severity_wont_fix', !hasRule(r, 'high_severity_wont_fix'), JSON.stringify(rules(r)));
+  expect('不报 high_wont_fix_reason_thin', !hasRule(r, 'high_wont_fix_reason_thin'),
+    JSON.stringify(rules(r)));
+  expect('LOW 的 2 字理由仍按既有规则 FAIL', hasRule(r, 'disposition_missing_reason'),
+    JSON.stringify(rules(r)));
+  fx.cleanup();
+}
+
+console.log('case 30: 人读输出必须写明 HEAD 的 WONT_FIX 条数（不能只在 JSON 里）');
+{
+  const fx = fixture({
+    'round1-core-audit.md': [finding('F1', 'HIGH')],
+  }, ledgerTable([['round1-core::F1', 'WONT_FIX',
+    '这是设计意图，src/ConfigManager.java:42 的校验由调用方负责，不修']]));
+  const r = run(fx, [], { json: false });
+  expect('exit 0', r.code === 0, `实际 ${r.code}`);
+  expect('输出含 high_severity_wont_fix', /high_severity_wont_fix/.test(r.stdout), r.stdout.slice(-600));
+  expect('点名叫得上 id', /round1-core::F1/.test(r.stdout), r.stdout.slice(-600));
+  expect('结论里点出 HIGH 的 WONT_FIX 条数', /WONT_FIX/.test(r.stdout), r.stdout.slice(-600));
+  fx.cleanup();
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);
