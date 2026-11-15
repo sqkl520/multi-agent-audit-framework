@@ -1179,6 +1179,35 @@ console.log('case 47 (R20-E): fix_baseline 格式非法（dirty_paths 不是数�
   }
 }
 
+console.log('case 48 (R20-F): 基线之后 HEAD 变了（中途 commit）→ WARN 说明口径已不确定');
+{
+  // R20 写完后实测发现的边界：基线记 src/A.java 脏，实例改完 A.java 并 commit。
+  // 于是 git status 变干净 → A.java 落进 restored，同时又从 actual 消失
+  // → 产物声称改了它却被判 overclaimed。**两个都是假警报**。
+  //
+  // 不能因此关掉判据（commit 修复是合法做法），但必须把「HEAD 变了」说出来——
+  // 上面一切结论都建立在那个已经不确定的差值上。这是 head 字段唯一的判据价值。
+  const repo = makeGitRepo(R19_REPO_FILES());
+  const d = r19Artifact([{ path: 'src/A.java', change_summary: '改了 A' }]);
+  try {
+    putFile(repo, 'src/A.java', 'class A { int pre; }\n');       // 修复前就脏
+    const bl = baselineOf(repo, ['src/A.java']);
+    putFile(repo, 'src/A.java', 'class A { int x; }\n');          // 本轮修复
+    gitIn(repo, ['add', '-A']);
+    gitIn(repo, ['commit', '-qm', 'fix committed mid-round']);    // 中途 commit → HEAD 变了
+    const r = runHookFull(closedWave4(d, { target_repo: repo, fix_baseline: bl }));
+    expect('WARN 说明基线与现在的 HEAD 不一致',
+      /HEAD 不一致/.test(r.err), r.err.slice(0, 1600));
+    expect('WARN 说明后果（会被误判成 restored / overclaimed）',
+      /overclaimed|被还原/.test(r.err), r.err.slice(0, 1600));
+    expect('WARN 给出补法（重抓基线）', /重抓基线|更新 fix_baseline/.test(r.err), r.err.slice(0, 1600));
+    expect('WARN 带溯源', /captured_at=/.test(r.err), r.err.slice(0, 1600));
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(d, { recursive: true, force: true });
+  }
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

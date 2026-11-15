@@ -481,6 +481,20 @@ if (baselineDirty === null) {
 但「修复前脏、现在不脏」也可能是「本轮改动被误 checkout 掉」的唯一痕迹
 （`experiments/CHECKOUT-INCIDENT.md` 记过一次真实事故），所以要提示、要留痕，但不阻断。
 
+**HEAD 漂移（`head` 字段唯一的判据价值）**：减法假设「同一个 HEAD 下的两次 `git status` 可比」。
+若在抓基线之后、hook 运行之前仓库发生过一次 commit（或 reset），这个假设就不成立了：
+
+```
+基线记 src/A.java 脏 → 实例改完 A.java → git commit → git status 变干净
+→ A.java 落进 restored，同时从 actual 里消失
+→ 产物声称改了 A.java，却因为 actual 里没有 → 被判 overclaimed
+```
+
+`restored` 与 `overclaimed` 会**同时**报出，两个都是假警报。`stop-hook.mjs` 会比对
+`fix_baseline.head` 与现在的 `git rev-parse HEAD`，不一致时 WARN 说明「本段给出的一切结论
+都建立在这个已经不确定的差值上」，并给出补法（在 commit 之后**重抓**基线，`captured_at` 与 `head` 一起更新）。
+**它不修那个假警报，只是让它可见**——真正的修法是基线记未提交的 blob hash，见 §2.7.5。
+
 ### 2.7.5 它解决了什么、没解决什么（诚实标注）
 
 > **`fix_baseline` 是把假阴性/假阳性缩小，不是消除。它本身也是自述。**
@@ -490,7 +504,8 @@ if (baselineDirty === null) {
 | 「修复前就脏」被算成本轮改动 → underreported 假阳性大幅收窄（自证：14 个 → 4 个） | **实例级的归属**：`files_touched` 没有 `agent_id` 维度，对账是全局的。基线只知道「修复前哪些脏」，不知道「这一轮是**哪个实例**改的」 |
 | 「修复前就脏、本轮没动」被算成本轮改动 → overclaimed 假阴性被堵住（用例 C） | **基线本身的真伪**：主 Agent 可以写 `dirty_paths: []`，让所有改动都算成本轮改的。做不到验证——没有外部基准能与「修复前那一刻」比对 |
 | 基线里脏、现在干净（被还原 / stash / checkout）从「静默」变成 WARN | **同一文件既在基线里又被本轮改了**：减法会把这种情况判成「不是本轮改的」，即新的假阴性。要堵它需要基线记内容哈希，不是路径列表 |
-| 格式非法的基线不会被静默当成空基线 | **跨轮基线**：`fix_baseline` 只管这一轮；`wave5` 的验收相位目前**不**重新抓基线 |
+| 格式非法的基线不会被静默当成空基线 | **中途 commit**：基线记的 HEAD 与现在不一致时，减法假设失效，会同时造出假 restored 与假 overclaimed。已加 HEAD 漂移 WARN，但**判据本身没修**（见 §2.7.4 末） |
+| 基线记的 HEAD 与现在不一致时 WARN 说明口径已不确定 | **跨轮基线**：`fix_baseline` 只管这一轮；`wave5` 的验收相位目前**不**重新抓基线 |
 
 **`captured_at` / `head` 的作用就是让假基线留痕。** 本框架不试图验证基线真伪，
 但一个假基线至少要写下「它声称自己在什么时刻、基于什么 HEAD 抓的」，

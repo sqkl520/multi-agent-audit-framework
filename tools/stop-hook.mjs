@@ -1227,6 +1227,43 @@ if (state.phase === 'wave4' || state.phase === 'wave5') {
                   baselineProvenance = `fix_baseline：captured_at=${ca ?? '未记录'}，`
                     + `head=${head ?? '未记录'}，dirty_paths=${baselinePaths.size} 个`;
 
+                  // ── HEAD 漂移：基线记的 HEAD 与现在的 HEAD 不一致（R20 实测发现）──
+                  //
+                  // 这是 `head` 字段从「纯装饰」变成「有判据价值」的唯一一处。
+                  // 为什么会漂：修复实例（或主 Agent）在中途 `git commit` 了。
+                  // 后果是**减法会反向出错**：
+                  //   基线里 dirty 的文件 → 被 commit 掉 → git status 变干净
+                  //   → 它落进 restored，同时从 actual 里消失
+                  //   → 产物声称改了它，却因为 actual 里没有 → 被误判成 overclaimed。
+                  // 实测复现：基线记 src/A.java 脏，实例改完 A.java 并 commit，hook 报
+                  //   restored 1 个 + overclaimed 1 个，两个都是假警报。
+                  //
+                  // 不能因此关掉判据（commit 修复也是合法做法），也不能假装没发生：
+                  // 只能是 WARN，并把「HEAD 变了」这件事实说清楚——它是上面所有结论的
+                  // 口径前提，读者必须知道。
+                  if (head) {
+                    let nowHead = null;
+                    try {
+                      nowHead = execFileSync('git', ['-C', repoDir, 'rev-parse', 'HEAD'], {
+                        encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 20_000,
+                      }).trim();
+                    } catch { nowHead = null; }
+                    if (nowHead && nowHead !== head) {
+                      warnings2.push(
+                        `WARN · 修复基线与现在的 HEAD 不一致：基线记的是 ${head.slice(0, 12)}，`
+                        + `现在是 ${nowHead.slice(0, 12)}。\n`
+                        + `这说明在抓基线之后、本段运行之前，仓库发生过一次 commit（或 reset）。`
+                        + `后果：基线里脏、后来被 commit 掉的文件，在现在的 \`git status\` 里是干净的，`
+                        + `于是它们既会被算成「被还原」，又会在产物声称改了它们时被误判成 overclaimed。`
+                        + `**本段给出的一切结论都建立在这个已经不确定的差值上。**\n`
+                        + `补法：若 commit 是本轮修复的一部分（合法做法），请重抓基线——`
+                        + `在 commit 之后、下一批修复实例派发之前再跑一次 \`git status --porcelain\` `
+                        + `并更新 fix_baseline（captured_at 与 head 一起更新）。\n`
+                        + `溯源（${baselineProvenance}）。`
+                      );
+                    }
+                  }
+
                   // 基线里的目录条目（`repair-artifacts/`）要按前缀覆盖其下所有文件，
                   // 否则「修复前就存在的未跟踪目录」里的每个文件都会被算成本轮新增。
                   const baselineDirs = [...baselinePaths].filter((p) => p.endsWith('/'));
