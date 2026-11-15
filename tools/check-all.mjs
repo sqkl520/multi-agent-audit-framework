@@ -179,6 +179,23 @@ const CHECKS = [
     script: 'check-disposition-coverage.test.mjs',
     desc: '用例：漏 1 条点名 / 产物内 id 重复 / 去向表杜撰 / 少理由 / HIGH 被 DEFERRED 警告 / 去向表缺失 exit 2',
   },
+  {
+    name: '修复实例对账（UPHELD 是否都进入了修复登记）',
+    // 同样注册 **.test.mjs 自测**，理由与上一条相同：check-all 是框架自检，
+    // 它不知道某次审计的 state.json 与 final-report.md 在哪。
+    //
+    // 收口时应把它当作 close 门的必过项手动跑：
+    //   node tools/check-fix-instances.mjs \
+    //     --state <state.json> --report <final-report.md> [--strict]
+    //
+    // 为什么它必须单独存在（而不是并进 check-disposition-coverage）：
+    // 去向表对的是「每条发现有没有表态」，本检查器对的是「裁决为 UPHELD 的发现
+    // 有没有真的被派发」。前者可以全填 DEFERRED 过关，后者要求 state.json 与
+    // 最终报告的裁决索引表（外部基准）逐条对齐——这是 R5 §5.1 指出的
+    // 「两个自述互相对账不产生外部约束力」的唯一解法。
+    script: 'check-fix-instances.test.mjs',
+    desc: '用例：UPHELD 少登记点名 / 修了 DOWNGRADED 警告 / 杜撰 id / 无申报合并 / 合并集合不等 / spawned 缺失按 0 / 审计路径跳过',
+  },
 ];
 
 let failed = 0;
