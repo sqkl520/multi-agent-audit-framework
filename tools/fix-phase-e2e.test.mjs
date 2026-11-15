@@ -199,6 +199,28 @@ function auditArtifactMd(scope, rows) {
   return `# ${scope} 审计产物\n\n摘要文字（重演 hilltop-dsh 事故的合成数据）。\n\n\`\`\`json\n${JSON.stringify(env, null, 2)}\n\`\`\`\n`;
 }
 
+// R10 之后，裁决索引表的「出处」必须指向真实存在的 arbiter 产物，
+// 且该产物里每条 finding 的裁决要与索引表一致。
+// 这里的合成 arbiter 产物把 8 条 HIGH 全部判 UPHELD —— 与事故真实形态一致。
+function arbiterArtifactMd() {
+  const verdicts = HIGH_IDS.map((id) => ({
+    finding_id: id,
+    verdict: 'UPHELD',
+    reason: `${id} 的证据成立，维持 HIGH`,
+  }));
+  const env = {
+    schema_version: 'output-contract-v1',
+    agent_id: 'round1-arbiter',
+    role: 'critique',
+    status: 'SUCCESS',
+    contract_valid: true,
+    artifact_path: '<OUTDIR>/round1-03-critique-arbiter.md',
+    payload: { critique_role: 'arbiter', verdicts },
+    error: null,
+  };
+  return `# 锐评相位 · Arbiter 裁决\n\n8 条 HIGH 全部维持 UPHELD。\n\n\`\`\`json\n${JSON.stringify(env, null, 2)}\n\`\`\`\n`;
+}
+
 /** 修复产物：role=fix，disposition 契约的载体。 */
 function fixArtifactMd({ agentId, findingId, redLogPath }) {
   const env = {
@@ -293,7 +315,7 @@ function finalReportMd(rows) {
     '| finding_id | 严重性 | 维度 | 位置 | 裁决 | 出处 |',
     '|---|---|---|---|---|---|',
     ...rows.map(([id, verdict, severity]) =>
-      `| ${id} | ${severity} | logic | \`src/a.java:10\` | ${verdict} | \`round1-03-critique-arbiter.md\` |`),
+      `| ${id} | ${severity} | logic | \`src/a.java:10\` | ${verdict} | \`round1-03-critique-arbiter.artifact\` |`),
     '',
     '## 2. 覆盖说明',
     '',
@@ -325,6 +347,17 @@ function makeWorkspace() {
   for (const [scope, rows] of Object.entries(INCIDENT)) {
     writeFileSync(join(artifacts, `${scope}-audit.md`), auditArtifactMd(scope, rows));
   }
+  // R10 起 `check-fix-instances.mjs` 会交叉校验裁决索引表的「出处」——
+  // 出处指向的文件必须真实存在，且里面该 finding 的裁决要与索引表一致。
+  // 这个 fixture 早期只生成审计产物、不生成 arbiter 产物，
+  // 于是新规则下 8 条 verdict_ref_not_found 全是**真实 FAIL**（出处悬空）。
+  //
+  // 注意：arbiter 产物**不能**是 `.md`——`check-disposition-coverage.mjs` 会把目录下
+  // 每个 `.md` 都当成审计产物，要求里面必须有 findings 数组，否则报
+  // `artifact_without_findings`（exit 2）。而 arbiter 产物天然没有 findings（它有 verdicts）。
+  // 真实流程里这两类产物本来就在不同目录；这里用 `.json.md` 之外的扩展名区分，
+  // 既让 R6 能按索引表里的出处找到它，又不干扰 R4 的产物扫描。
+  writeFileSync(join(artifacts, 'round1-03-critique-arbiter.artifact'), arbiterArtifactMd());
   return {
     root,
     artifacts,
@@ -376,7 +409,7 @@ console.log('    去向表一行未填、其中一条修复把红测日志写进
       !/相位尚未闭合/.test(hook.stderr), hook.stderr.slice(0, 400));
 
     // ── 断言 2：R6 · 裁决表（外部基准）抓「UPHELD 少登记」──
-    const fi = runNode(CHECK_FIX_INSTANCES, ['--state', ws.statePath, '--report', ws.reportPath, '--json']);
+    const fi = runNode(CHECK_FIX_INSTANCES, ['--state', ws.statePath, '--report', ws.reportPath, '--artifacts-dir', ws.artifacts, '--json']);
     const fiData = tryJson(fi.stdout);
     const fiR = { data: fiData };
     const missingProb = probWith(fiR, 'upheld_without_fix_contract');
@@ -476,7 +509,7 @@ console.log('    红测日志放到 experiments/ 下。四道门必须全部放�
       `实际 exit ${hook.code}；stderr=${hook.stderr.slice(0, 300)}`);
 
     // ── B2：R6 放行（裁决表 8 条 UPHELD 全部登记；实例数与 spawned 一致）──
-    const fi = runNode(CHECK_FIX_INSTANCES, ['--state', ws.statePath, '--report', ws.reportPath, '--json']);
+    const fi = runNode(CHECK_FIX_INSTANCES, ['--state', ws.statePath, '--report', ws.reportPath, '--artifacts-dir', ws.artifacts, '--json']);
     const fiData = tryJson(fi.stdout);
     expect('B2 [R6/check-fix-instances] exit 0', fi.code === 0,
       `实际 exit ${fi.code}；problems=${JSON.stringify(fiData?.problems?.map((p) => p.rule))}`);
@@ -505,7 +538,7 @@ console.log('    红测日志放到 experiments/ 下。四道门必须全部放�
     const liePath = join(ws.root, 'state-lie.json');
     writeFileSync(liePath,
       JSON.stringify(stateOf({ contracts: literalContracts, spawned: 9, discipline: literalDiscipline }), null, 2));
-    const lie = runNode(CHECK_FIX_INSTANCES, ['--state', liePath, '--report', ws.reportPath, '--json']);
+    const lie = runNode(CHECK_FIX_INSTANCES, ['--state', liePath, '--report', ws.reportPath, '--artifacts-dir', ws.artifacts, '--json']);
     const lieData = tryJson(lie.stdout);
     expect('B5 [R6] spawned=9 但只有 8 个 distinct agent → exit 1（机器化对账抓自述不一致）',
       lie.code === 1 && (lieData?.problems ?? []).some((p) => p.rule === 'spawned_count_mismatch'),
@@ -524,7 +557,7 @@ console.log('    红测日志放到 experiments/ 下。四道门必须全部放�
     writeFileSync(mergeStatePath, JSON.stringify(
       stateOf({ contracts: mergedContracts, spawned: 7, discipline: literalDiscipline }), null, 2));
     const mergeRun = runNode(CHECK_FIX_INSTANCES,
-      ['--state', mergeStatePath, '--report', ws.reportPath, '--json']);
+      ['--state', mergeStatePath, '--report', ws.reportPath, '--artifacts-dir', ws.artifacts, '--json']);
     const mergeData = tryJson(mergeRun.stdout);
     expect('B6 [R6] 真实合并（8 条 → 7 实例，已申报）→ exit 0',
       mergeRun.code === 0,
@@ -535,7 +568,7 @@ console.log('    红测日志放到 experiments/ 下。四道门必须全部放�
     writeFileSync(noMergePath, JSON.stringify(
       stateOf({ contracts: mergedContracts, spawned: 7, discipline: [] }), null, 2));
     const noMerge = runNode(CHECK_FIX_INSTANCES,
-      ['--state', noMergePath, '--report', ws.reportPath, '--json']);
+      ['--state', noMergePath, '--report', ws.reportPath, '--artifacts-dir', ws.artifacts, '--json']);
     const noMergeData = tryJson(noMerge.stdout);
     expect('B7 [R6] 无 FIX_INSTANCE_MERGED → exit 1（合并必须申报）',
       noMerge.code === 1 && (noMergeData?.problems ?? []).some((p) => p.rule === 'merged_without_record'),
@@ -591,7 +624,7 @@ console.log('    本场景证明 R4 会放行但点名 HIGH，而 R6 仍然拦�
       highProb?.msg?.slice(0, 500));
 
     // ── C3：R6 仍然拦下 —— 去向表填满绕不过「真的派发」──
-    const fi = runNode(CHECK_FIX_INSTANCES, ['--state', ws.statePath, '--report', ws.reportPath, '--json']);
+    const fi = runNode(CHECK_FIX_INSTANCES, ['--state', ws.statePath, '--report', ws.reportPath, '--artifacts-dir', ws.artifacts, '--json']);
     const fiData = tryJson(fi.stdout);
     const fiR = { data: fiData };
     expect('C3 [R6/check-fix-instances] exit 1（去向表满也救不了没派发）', fi.code === 1,

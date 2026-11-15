@@ -9,7 +9,7 @@
  *   - 文档里两个矛盾的 §7.1 无人发现
  */
 
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -1571,6 +1571,285 @@ console.log('case 116: 非 fix 角色不得被要求 disposition（不能过度�
   expect('sweep 产物不报 missing_disposition',
     !s.r?.errors?.some(x => x.rule === 'missing_disposition'),
     JSON.stringify(s.r?.errors?.map(x => x.rule)));
+}
+
+// ── 2026-11-15 夜（R11）：证据存在性检查 ──
+// 洞 4（R7 实测）：red_log 指向不存在的文件（target/ 外）→ exit 0 / rules []
+//                test_path 指向不存在的文件            → exit 0 / rules []
+//                red_log_path 写成 red.log（无目录）   → exit 0 / rules []
+// 即：`red_log_in_target` 只校验**路径形状**（正则 (^|/)target/），从不 existsSync。
+// 「路径不指向 target/」证明的是「证据不会被构建清理」，不是「证据曾经存在过」。
+// 同形事故：验收引用的三个「修复前是红的」日志全被 mvn clean 删掉，验收记录却写「证据存在且内容可信」。
+//
+// 用例需要在产物目录里真建文件、并显式传 --artifact-dir / --repo。
+function runIn({ content, args = [], files = {}, cwd = null }) {
+  const dir = mkdtempSync(join(tmpdir(), 'cp-evi-'));
+  const art = join(dir, 'artifact.md');
+  writeFileSync(art, content);
+  for (const [rel, body] of Object.entries(files)) {
+    const p = join(dir, rel);
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, body);
+  }
+  try {
+    const out = execFileSync('node', [SCRIPT, art, '--json', ...args],
+      { encoding: 'utf8', cwd: cwd ?? dir });
+    return { code: 0, r: JSON.parse(out), dir };
+  } catch (e) {
+    try { return { code: e.status ?? 1, r: JSON.parse(e.stdout), dir }; }
+    catch { return { code: e.status ?? 1, r: null, raw: e.stdout, dir }; }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+const hasRule = (r, rule) => !!r.r?.errors?.some((x) => x.rule === rule);
+const hasWarn = (r, rule) => !!r.r?.warnings?.some((x) => x.rule === rule);
+
+console.log('case 117: FIXED + red_log_path/test_path 都指向真实存在的文件 → 通过（不误杀）');
+{
+  const r = runIn({
+    content: wrap(fixEnv({
+      red_log_path: 'red/F1.log',
+      test_path: 'test/persist.test.js',
+    })),
+    files: { 'red/F1.log': 'FAIL 1 test\n', 'test/persist.test.js': '// red before fix\n' },
+    args: ['--artifact-dir', '.'],
+  });
+  expect('无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
+  expect('不报 red_log_not_found', !hasRule(r, 'red_log_not_found'));
+  expect('不报 test_path_not_found', !hasRule(r, 'test_path_not_found'));
+}
+
+console.log('case 118: FIXED + red_log_path 指向不存在的文件 → 必须 FAIL red_log_not_found');
+{
+  // 洞 4 的核心：路径形状完全合法（不在 target/ 下），但文件从来没生成过。
+  const r = runIn({
+    content: wrap(fixEnv({
+      red_log_path: 'experiments/round1/red-F1.log',
+      test_path: 'test/persist.test.js',
+    })),
+    files: { 'test/persist.test.js': '// exists\n' },
+    args: ['--artifact-dir', '.'],
+  });
+  expect('退出码 1', r.code === 1, `got ${r.code}`);
+  expect('报 red_log_not_found', hasRule(r, 'red_log_not_found'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+  const msg = r.r?.errors?.find((x) => x.rule === 'red_log_not_found')?.msg ?? '';
+  expect('消息列出试过的解析路径', /试过|tried/.test(msg) && /red-F1\.log/.test(msg), msg);
+  expect('消息点明「路径形状对了不代表文件存在过」', /形状/.test(msg), msg);
+}
+
+console.log('case 119: FIXED + red_log_path 是裸文件名 red.log → WARN red_log_no_directory（不是 FAIL）');
+{
+  // 裸文件名无法判断落在哪个目录，但有些环境里产物和日志就是并排的——
+  // 所以这里只警告，不阻断。
+  const r = runIn({
+    content: wrap(fixEnv({ red_log_path: 'red.log', test_path: 'test/persist.test.js' })),
+    files: { 'red.log': 'FAIL\n', 'test/persist.test.js': '// exists\n' },
+    args: ['--artifact-dir', '.'],
+  });
+  expect('报 red_log_no_directory 警告', hasWarn(r, 'red_log_no_directory'),
+    JSON.stringify(r.r?.warnings?.map((x) => x.rule)));
+  expect('不因裸文件名 FAIL', !hasRule(r, 'red_log_no_directory'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+  expect('裸文件名且文件确实存在时不报 red_log_not_found', !hasRule(r, 'red_log_not_found'));
+}
+
+console.log('case 120: FIXED + test_path 指向存在的文件 → 通过');
+{
+  const r = runIn({
+    content: wrap(fixEnv({ test_path: 'test/persist.test.js', red_log_path: 'red/F1.log' })),
+    files: { 'test/persist.test.js': '// exists\n', 'red/F1.log': 'FAIL\n' },
+    args: ['--artifact-dir', '.'],
+  });
+  expect('无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
+}
+
+console.log('case 121: FIXED + test_path 指向不存在的文件 → 必须 FAIL test_path_not_found');
+{
+  const r = runIn({
+    content: wrap(fixEnv({ test_path: 'test/does-not-exist.test.js', red_log_path: 'red/F1.log' })),
+    files: { 'red/F1.log': 'FAIL\n' },
+    args: ['--artifact-dir', '.'],
+  });
+  expect('退出码 1', r.code === 1, `got ${r.code}`);
+  expect('报 test_path_not_found', hasRule(r, 'test_path_not_found'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+}
+
+console.log('case 122: FIXED + test_path 是「需新建」→ 跳过存在性检查并 WARN');
+{
+  // wave4-fix.md 的契约允许「如果不存在，写明『需新建』」，
+  // 所以占位值不能被当成本不存在的路径判死。
+  const r = runIn({
+    content: wrap(fixEnv({ test_path: '需新建', red_log_path: 'red/F1.log' })),
+    files: { 'red/F1.log': 'FAIL\n' },
+    args: ['--artifact-dir', '.'],
+  });
+  expect('不报 test_path_not_found', !hasRule(r, 'test_path_not_found'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+  expect('报 test_path_placeholder 警告', hasWarn(r, 'test_path_placeholder'),
+    JSON.stringify(r.r?.warnings?.map((x) => x.rule)));
+  expect('整体无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
+}
+
+console.log('case 122b: test_path 写成「需新建 + 说明」→ 仍按占位跳过');
+{
+  // wave4-fix.md:169 的原文是「如果不存在，写明『需新建』」，
+  // 真实产物往往补一句说明（「需新建 覆盖恢复量测试」），不能因此判死。
+  for (const v of ['需新建 覆盖恢复量测试', 'TODO: 等上游 API 稳定后补', '待创建（依赖 F2）']) {
+    const r = runIn({
+      content: wrap(fixEnv({ test_path: v, red_log_path: 'red/F1.log' })),
+      files: { 'red/F1.log': 'FAIL\n' },
+      args: ['--artifact-dir', '.'],
+    });
+    expect(`占位值「${v}」不报 test_path_not_found`, !hasRule(r, 'test_path_not_found'),
+      JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+  }
+}
+// 注：占位值不得反过来成为「永远跳过」的后门——只有占位词本身才跳过，
+// 一个普通文件名仍然要过存在性检查（case 121 已覆盖）。
+
+console.log('case 123: 不给 --repo 也不给 --artifact-dir + 路径不存在 → WARN 而非 FAIL（降级纪律）');
+{
+  // 与 R8 的 unsupported_harness、R10 的 --artifacts-dir 缺失同一纪律：
+  // 需要外部目录的参数缺失时不能把流程卡死。
+  const r = runIn({
+    content: wrap(fixEnv({
+      red_log_path: 'experiments/round1/red-F1.log',
+      test_path: 'test/nowhere.test.js',
+    })),
+    // 注意：fixture 里确实没有这些文件，但调用方没给任何根，故不可判定
+  });
+  expect('退出码 0', r.code === 0, `got ${r.code}`);
+  expect('不报 red_log_not_found',
+    !r.r?.errors?.some((x) => x.rule === 'red_log_not_found'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+  expect('不报 test_path_not_found',
+    !r.r?.errors?.some((x) => x.rule === 'test_path_not_found'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+  expect('报 evidence_existence_unchecked 降级警告',
+    hasWarn(r, 'evidence_existence_unchecked'),
+    JSON.stringify(r.r?.warnings?.map((x) => x.rule)));
+  const msg = r.r?.warnings?.find((x) => x.rule === 'evidence_existence_unchecked')?.msg ?? '';
+  expect('警告写明未提供 --repo/--artifact-dir', /--repo/.test(msg) && /--artifact-dir/.test(msg), msg);
+}
+
+console.log('case 124: --repo 解析相对路径（日志只在仓库根下存在）→ 通过');
+{
+  // 产物在 A 目录、被审仓库在 B 目录：先按 artifact-dir 拼（不存在），
+  // 再按 --repo 拼（存在）→ 必须通过。
+  const r = runIn({
+    content: wrap(fixEnv({ red_log_path: 'experiments/round1/red-F1.log', test_path: 'test/p1.test.js' })),
+    files: {
+      'repo/experiments/round1/red-F1.log': 'FAIL\n',
+      'repo/test/p1.test.js': '// exists\n',
+    },
+    args: ['--artifact-dir', '.', '--repo', 'repo'],
+  });
+  expect('无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
+  expect('不报 evidence_existence_unchecked',
+    !hasWarn(r, 'evidence_existence_unchecked'),
+    JSON.stringify(r.r?.warnings?.map((x) => x.rule)));
+}
+
+console.log('case 124c: --artifact-dir 优先于 --repo（两处同名文件，取 artifact-dir 那份）');
+{
+  // 解析顺序是契约的一部分：先 artifact-dir、再 repo、再 cwd。
+  // 这里文件只存在于 artifact-dir 一侧；--repo 指向的目录是空的。
+  // 若顺序反了（先 repo），就会误判为不存在。
+  const r = runIn({
+    content: wrap(fixEnv({
+      red_log_path: 'logs/red.log',
+      test_path: '需新建',
+    })),
+    files: { 'logs/red.log': 'FAIL\n' },   // 相对 artifact-dir
+    args: ['--artifact-dir', '.', '--repo', 'repo'],
+  });
+  expect('artifact-dir 命中即通过', !hasRule(r, 'red_log_not_found'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+}
+
+console.log('case 124b: 绝对路径不依赖任何根即可判定（存在 → 通过）');
+{
+  const dir = mkdtempSync(join(tmpdir(), 'cp-abs-'));
+  const absLog = join(dir, 'abs-red.log');
+  writeFileSync(absLog, 'FAIL\n');
+  try {
+    const r = runIn({
+      content: wrap(fixEnv({
+        red_log_path: absLog,
+        test_path: '需新建',
+      })),
+      args: ['--artifact-dir', '.'],
+    });
+    expect('绝对路径存在时不报 red_log_not_found', !hasRule(r, 'red_log_not_found'),
+      JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+console.log('case 125: 回归 —— target/ 的 4 种写法仍然报 red_log_in_target（给出根时同样成立）');
+{
+  const paths = ['target/red-F1.log', './target/logs/red.log', 'D:/proj/myapp/target/red.log', 'target\\red.log'];
+  const missed = [];
+  for (const p of paths) {
+    const r = runIn({
+      content: wrap(fixEnv({ red_log_path: p, test_path: 'test/p1.test.js' })),
+      files: { 'test/p1.test.js': '// exists\n' },
+      args: ['--artifact-dir', '.'],
+    });
+    if (!hasRule(r, 'red_log_in_target')) missed.push(p);
+  }
+  expect('四种 target/ 写法全部被抓', missed.length === 0, `绕过: ${missed.join(' / ')}`);
+}
+
+console.log('case 126: 真实事故的完整形态 —— target/ 日志已不存在 → 同时报 in_target 与 not_found');
+{
+  // experiments/hilltop-dsh/repair/SUMMARY.md / ACCEPTANCE-ROUND1.md 引用的
+  // target/config7-red.log、target/config7-infinity-red.log、target/repair1-red.log
+  // 已被 mvn clean 删光（磁盘上实际只剩 target/{classes,surefire-reports,...}）。
+  const r = runIn({
+    content: wrap(fixEnv({
+      red_log_path: 'target/repair1-red.log',
+      test_path: 'src/test/java/Repair1Test.java',
+    })),
+    files: { 'src/test/java/Repair1Test.java': 'class Repair1Test {}\n' },
+    args: ['--artifact-dir', '.'],
+  });
+  expect('报 red_log_in_target', hasRule(r, 'red_log_in_target'));
+  expect('同时报 red_log_not_found（文件已被清理）', hasRule(r, 'red_log_not_found'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+}
+
+console.log('case 127: 证据已存在但路径落在 target/ → 有根时仍只报 in_target，不报 not_found');
+{
+  // 证明两条规则判的是两件不同的事：形状 vs 存在。
+  const r = runIn({
+    content: wrap(fixEnv({ red_log_path: 'target/red-F1.log', test_path: 'test/p1.test.js' })),
+    files: { 'target/red-F1.log': 'FAIL\n', 'test/p1.test.js': '// exists\n' },
+    args: ['--artifact-dir', '.'],
+  });
+  expect('报 red_log_in_target', hasRule(r, 'red_log_in_target'));
+  expect('不报 red_log_not_found', !hasRule(r, 'red_log_not_found'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+}
+
+console.log('case 128: 非 FIXED 的 disposition 不因 test_path 不存在而 FAIL（不能过度执法）');
+{
+  const r = runIn({
+    content: wrap(fixEnv({
+      disposition: 'WONT_FIX',
+      disposition_reason: '该分支是协议规定的 fail-closed 设计：拒写优于写坏，重试由上层调度器负责，不应在此处吞异常',
+      test_path: 'test/never-created.test.js',
+      red_log_path: undefined,
+    })),
+    args: ['--artifact-dir', '.'],
+  });
+  expect('不报 test_path_not_found', !hasRule(r, 'test_path_not_found'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+  expect('无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
 }
 
 console.log(`

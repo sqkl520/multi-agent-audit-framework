@@ -10,7 +10,9 @@
 | `tools/check-disposition-coverage.test.mjs` | 修改 | 新增 case 23–30（42 条断言），原有 60 条不变 |
 | `experiments/hilltop-dsh/FIX-R9-report.md` | 新建 | 本文 |
 
-**验证**：`check-disposition-coverage.test.mjs` **102 通过 / 0 失败**（原有 60 + 新增 42）；`check-all.mjs` **✅ 全部通过，exit 0**（含并行 agent 的 `check-fix-instances` 100/100）；R7 的 `fix-phase-e2e.test.mjs` **48/48 仍全过**（未被我破坏）。
+**验证**：`check-disposition-coverage.test.mjs` **102 通过 / 0 失败**（原有 60 + 新增 42）；`check-all.mjs` **✅ 全部通过，exit 0**（其中「发现去向对账」102/102、「修复实例对账」160/160）。
+
+**关于 `fix-phase-e2e.test.mjs`（R7 的文件）**：改动刚落地时它是 **48/48 全过**。收尾复查时变成 **45 通过 / 3 失败**——3 条失败全部是 `[R6/check-fix-instances]` 的 `verdict_ref_not_found`：并行 agent 在我工作期间给 R6 加了一条「裁决索引表『出处』指向的文件必须存在」的新规则，而 R7 的 fixture 里没有那个 `round1-03-critique-arbiter.md`。这是并行改动与 R7 fixture 之间的冲突，**不在我的两个文件里，我按任务要求没有去修**（R6 自己的自测此刻是 160/160 全过，check-all 也全绿，说明这是 fixture 缺文件而不是 R6 坏了）。
 
 ---
 

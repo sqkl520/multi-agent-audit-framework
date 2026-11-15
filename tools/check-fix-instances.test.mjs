@@ -1150,6 +1150,69 @@ console.log('case 36b: 产物目录只有审计产物 → 不降级，逐行报 
   fx.cleanup();
 }
 
+// ── case 38：出处悬空 + 目录里有审计产物 → FAIL，不是降级 WARN ─────
+// 这条锁住降级判据的边界。fix-phase-e2e 的 B2 场景就是它：
+// 临时目录里有 7 份审计产物，report 的出处写着 `round1-03-critique-arbiter.md`
+// （从没被生成过）。若降级判据写成「目录里没有可读裁决的产物」，
+// 这个场景会被判成「无法交叉校验」而只报 WARN —— 那等于给「删掉 arbiter 产物」
+// 开了一条路：主 Agent 只要保证碰撞产物不被写下，检查就永远降级。
+console.log('case 38: 目录里只有审计产物、出处写的是不存在的 arbiter → verdict_ref_not_found（FAIL）');
+{
+  const ids = ['F1', 'F2', 'F3'];
+  const fx = fixtureWithArtifacts(
+    stateOf({ contracts: ids.map((id, i) => contract(id, `fix-${i + 1}`)), spawned: 3 }),
+    reportMd(ids.map((id) => [id, 'UPHELD', 'HIGH', '`round1-03-critique-arbiter.md`'])),
+    {
+      'round1-02-audit-slice-01-logic.md': auditMd(['F1']),
+      'round1-02-audit-slice-02-logic.md': auditMd(['F2', 'F3']),
+    },
+  );
+  const r = run(fx, ['--artifacts-dir', fx.artifactsDir]);
+  expect('退出码 1', r.code === 1, `实际 ${r.code} / ${r.stdout.slice(-500)}`);
+  expect('交叉校验 ENABLED（目录非空就不能降级）', r.data?.totals?.crosscheck === 'ENABLED',
+    JSON.stringify(r.data?.totals));
+  expect('3 行都报 verdict_ref_not_found',
+    problemsWith(r, 'verdict_ref_not_found').length === 3,
+    String(problemsWith(r, 'verdict_ref_not_found').length));
+  expect('没有降级 WARN', !hasRule(r, 'verdict_crosscheck_degraded'), JSON.stringify(rules(r)));
+  fx.cleanup();
+}
+
+// ── case 39：出处文件内部自相矛盾（信封说 UPHELD、表格说 DOWNGRADED）──
+// 不能静默取一个。取 JSON 信封（结构化字段优先），但必须让这份产物可见地需要重写。
+console.log('case 39: 出处文件内部信封与正文表格打架 → verdict_source_self_conflict（WARN）');
+{
+  const fx = fixtureWithArtifacts(
+    stateOf({ contracts: [contract('F1', 'fix-1')], spawned: 1 }),
+    reportMd([['F1', 'UPHELD']]),
+    {
+      // 正文表格写 DOWNGRADED，JSON 信封写 UPHELD
+      'round1-03-critique-arbiter.md':
+        arbiterMd([['F1', 'DOWNGRADED']], { envelope: false })
+        + '\n```json\n' + JSON.stringify({
+          schema_version: 'output-contract-v1',
+          agent_id: 'critique-arbiter-1',
+          role: 'critique',
+          status: 'SUCCESS',
+          contract_valid: true,
+          artifact_path: 'x.md',
+          payload: { critique_role: 'arbiter', target_finding_ids: ['F1'],
+            verdicts: [{ finding_id: 'F1', verdict: 'UPHELD', reason: 'r' }] },
+          error: null,
+        }, null, 2) + '\n```\n',
+    },
+  );
+  const r = run(fx, ['--artifacts-dir', fx.artifactsDir]);
+  expect('报 verdict_source_self_conflict', hasRule(r, 'verdict_source_self_conflict'),
+    JSON.stringify(rules(r)));
+  expect('级别是 WARN（产物该重写，但索引表按信封是对的）',
+    hasLevel(r, 'verdict_source_self_conflict', 'WARN'),
+    JSON.stringify(problemsWith(r, 'verdict_source_self_conflict')));
+  expect('索引表 UPHELD 与信封一致 → 不报 mismatch',
+    !hasRule(r, 'verdict_mismatch_with_source'), JSON.stringify(rules(r)));
+  fx.cleanup();
+}
+
 // ── case 37：--help 必须自述新参数与新规则 ──────────────────────
 console.log('case 37: --help 说明 --artifacts-dir 与三条新规则');
 {

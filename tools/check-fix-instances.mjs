@@ -774,6 +774,7 @@ let refsMissing = 0;
 let refsNotFound = 0;
 let sourceMissing = 0;
 let mismatches = 0;
+const emittedSourceConflicts = new Set();   // 出处文件绝对路径（同一文件的冲突只报一次）
 
 if (!index.hasRefColumn) {
   // 整列都没有。这不是「某一行忘了写」，是「这一轮的报告结构不合铁律」。
@@ -848,11 +849,16 @@ for (const row of index.rows) {
   verdictRefs++;
 
   // 出处文件自身的 JSON 信封与正文表格打架：这不是索引表的问题，但不能静默取一个。
-  for (const c of parsed.conflicts ?? []) {
-    warn('verdict_source_self_conflict',
-      `出处文件 ${row.ref} 内部不自洽：${c.id} 的 JSON 信封写 ${c.json}，正文表格写 ${c.table}`
-      + '——本检查取 JSON 信封（output-contract §2.3 的结构化字段优先），但这份产物本身应当重写',
-      { path: hit.path, finding_id: c.id, json: c.json, table: c.table });
+  // 按文件去重——38 行共用一个出处文件时，同一个冲突只该报一次（否则报告被噪音淹没）。
+  const conflictKey = resolve(hit.path);
+  if (!emittedSourceConflicts.has(conflictKey)) {
+    emittedSourceConflicts.add(conflictKey);
+    for (const c of parsed.conflicts ?? []) {
+      warn('verdict_source_self_conflict',
+        `出处文件 ${row.ref} 内部不自洽：${c.id} 的 JSON 信封写 ${c.json}，正文表格写 ${c.table}`
+        + '——本检查取 JSON 信封（output-contract §2.3 的结构化字段优先），但这份产物本身应当重写',
+        { path: hit.path, finding_id: c.id, json: c.json, table: c.table });
+    }
   }
 
   if (actual !== row.verdict) {

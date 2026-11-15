@@ -23,16 +23,45 @@
  */
 
 import { readFileSync, existsSync } from 'node:fs';
-import { resolve, dirname, isAbsolute } from 'node:path';
+import { resolve, dirname, isAbsolute, join } from 'node:path';
 
 const args = process.argv.slice(2);
 const jsonOut = args.includes('--json');
 const roleIdx = args.indexOf('--role');
 const expectRole = roleIdx >= 0 ? args[roleIdx + 1] : null;
-const file = args.find((a) => !a.startsWith('--') && a !== expectRole);
+
+// 2026-11-15（R11）：证据存在性检查需要知道「相对路径相对于谁」。
+// 背景（R7 实测的「洞 4」）：red_log_path / test_path 此前只做正则形状校验
+// （`(^|\/)target\/`），从不 existsSync。于是「路径写成 target/ 之外、
+// 但这个文件从来没生成过」可以通过——而「路径不指向 target/」只证明证据不会
+// 被构建清理，不证明证据曾经存在过。同形事故：验收引用的三个红测日志全被
+// mvn clean 删掉，验收记录却写「证据存在且内容可信」。
+const repoIdx = args.indexOf('--repo');
+const artifactDirIdx = args.indexOf('--artifact-dir');
+for (const [flag, idx] of [['--repo', repoIdx], ['--artifact-dir', artifactDirIdx]]) {
+  if (idx >= 0) {
+    const v = args[idx + 1];
+    // 显式给了 flag 却没给值，不能静默忽略——那会让调用方以为检查生效了
+    if (v === undefined || v.startsWith('--')) {
+      console.error(`${flag} 需要一个目录参数`);
+      process.exit(2);
+    }
+  }
+}
+const repoDir = repoIdx >= 0 ? resolve(args[repoIdx + 1]) : null;
+const artifactDir = artifactDirIdx >= 0 ? resolve(args[artifactDirIdx + 1]) : null;
+
+// 选项的「值」不是产物文件。此前只排除 --role 的值，新增两个带值选项后
+// 必须一起排除，否则 `--repo /path` 里的 /path 会被当成产物路径。
+// 注意用**原始 argv 字符串**比较：repoDir 已被 resolve 成绝对路径，与 argv 不同形。
+const OPTION_VALUES = new Set([expectRole, repoIdx >= 0 ? args[repoIdx + 1] : null,
+  artifactDirIdx >= 0 ? args[artifactDirIdx + 1] : null]
+  .filter((v) => typeof v === 'string' && v !== ''));
+const file = args.find((a) => !a.startsWith('--') && !OPTION_VALUES.has(a));
 
 if (!file) {
-  console.error('用法: node check-payload.mjs <产物文件> [--role sweep|audit|recon|critique|fix|verify] [--json]');
+  console.error('用法: node check-payload.mjs <产物文件> [--role sweep|audit|recon|critique|fix|verify]'
+    + ' [--repo <被审仓库根>] [--artifact-dir <产物所在目录>] [--json]');
   process.exit(2);
 }
 if (!existsSync(file)) {
@@ -81,6 +110,82 @@ const DISPOSITIONS = ['FIXED', 'WONT_FIX', 'DEFERRED', 'NEW_FINDING'];
 // 整个删掉，验收时就再也无法复核「修复前确实是红的」。
 // 证据一旦可被构建清理，等于没有证据。
 const RED_LOG_IN_TARGET = /(^|\/)target\//i;
+
+// ────────────────────────────────────────────────────────────────────
+// 0.1 · 证据存在性（2026-11-15 R11 新增，修 R7 报告的「洞 4」）
+// ────────────────────────────────────────────────────────────────────
+// 洞 4 的实测形态（R7《FIX-R7-report.md》§4）：
+//   red_log 指向不存在的文件（target/ 外）  -> exit 0 | rules []
+//   test_path 指向不存在的文件              -> exit 0 | rules []
+//   red_log_path 写成 red.log（无目录）     -> exit 0 | rules []
+//
+// 即上面的 RED_LOG_IN_TARGET 只校验**路径形状**。形状对了，只证明
+// 「证据不会被构建清理」；它无法证明「这个文件曾经存在过」。
+// 而同形事故真实发生过：某次验收引用的三个「修复前是红的」日志全被
+// `mvn clean` 删掉，验收记录却写着「证据存在且内容可信」。
+//
+// 所以对 FIXED 的产物要再问一次：这些路径现在能打开吗？
+//
+// 降级纪律（关键）：产物里的路径可能是相对路径，解析需要外部根。
+// 若调用方既没给 --repo 也没给 --artifact-dir，就无法判定——此时
+// **降级为 WARN**，绝不 FAIL。理由与 R8 的 unsupported_harness、
+// R10 的 --artifacts-dir 缺失一致：不能因为一个「需要外部信息」的参数
+// 没传就把整条流程卡死（否则所有既有调用方一夜之间全红）。
+
+// 可用作「相对路径解析根」的目录。顺序契约：artifact-dir → repo → cwd。
+const EVIDENCE_ROOTS = [];
+for (const [label, dir] of [['--artifact-dir', artifactDir], ['--repo', repoDir]]) {
+  if (!dir) continue;
+  if (!existsSync(dir)) {
+    warnings.push({
+      field: label, rule: 'evidence_root_not_found',
+      msg: `${label} 指向的目录不存在: ${dir}。该根不可用于解析证据路径，已忽略`,
+    });
+    continue;
+  }
+  EVIDENCE_ROOTS.push({ label, dir });
+}
+
+// 解析顺序：先按 --artifact-dir 拼，再按 --repo 拼，再按 cwd 拼；任一存在即通过。
+// 绝对路径不依赖任何根，直接判。
+function locateEvidence(rawPath) {
+  if (isAbsolute(rawPath)) {
+    return { decided: true, found: existsSync(rawPath), tried: [rawPath] };
+  }
+  if (EVIDENCE_ROOTS.length === 0) {
+    // 没有根 → 只还能试 cwd。命中即通过；未命中则**无法判定**（降级 WARN）。
+    // 不直接判 FAIL：调用方没给根，测不到不等于不存在。
+    const cwdPath = join(process.cwd(), rawPath);
+    if (existsSync(cwdPath)) return { decided: true, found: true, tried: [cwdPath], hit: cwdPath };
+    return { decided: false, found: false, tried: [cwdPath] };
+  }
+  const tried = [...new Set([
+    ...EVIDENCE_ROOTS.map((r) => join(r.dir, rawPath)),
+    join(process.cwd(), rawPath),
+  ])];
+  const hit = tried.find((p) => existsSync(p));
+  return { decided: true, found: !!hit, tried, hit };
+}
+
+// wave4-fix.md:169 的契约允许「test_path 如果不存在，写明『需新建』」，
+// 所以占位值不能被当成一个「不存在的路径」判死。
+const TEST_PATH_PLACEHOLDER = /^(需新建|待创建|待新建|需创建|新建|TODO|TBD|N\/?A|无)$/i;
+const isPlaceholderPath = (s) => {
+  const t = String(s ?? '').replace(ZERO_WIDTH, '').trim()
+    .replace(/[\s。，,.;；:：!！?？()[\]（）]/g, '');
+  if (t === '') return false;
+  // 精确占位词，或「需新建」「TODO:<说明>」这类以占位词开头并带补充说明的写法
+  return TEST_PATH_PLACEHOLDER.test(t)
+    || /^(需新建|待创建|待新建|需创建|TODO|TBD).{2,}$/i.test(t);
+};
+
+const TRIED_MSG = (tried) => tried.length > 0
+  ? `试过：${tried.map((t) => `\`${t}\``).join(' / ')}`
+  : '未提供任何可解析的根';
+
+// 多发现形态下 payload.dispositions[] 里每条都可能带同一批不可判定路径，
+// 降级警告按「路径集合」去重，避免同一句提示刷 N 遍。
+const UNDECIDED_WARNED = new Set();
 
 function validateDispositionEntry(entry, prefix) {
   const out = [];
@@ -133,6 +238,80 @@ function validateDispositionEntry(entry, prefix) {
         msg: 'disposition=FIXED 时必须给出 red_log_path（修复前测试为红的日志）。'
           + '没有红测日志，无法区分「修复生效」和「测试本来就是绿的」',
       });
+    }
+
+    // ── 证据存在性（R11 新增，见文件顶部 §0.1）──
+    // 规则 3：裸文件名 → WARN，不 FAIL。
+    // 理由：裸文件名无法判断落在哪个目录，容易和 cwd 混淆；但有些环境里
+    // 「产物和日志并排」是正常做法，升级为 FAIL 会误杀。
+    if (typeof rlp === 'string' && rlp.trim() !== '' && !/[\\/]/.test(rlp.trim())) {
+      warnings.push({
+        field: `${prefix}.red_log_path`, rule: 'red_log_no_directory',
+        msg: `red_log_path 是裸文件名（${rlp}），不含任何路径分隔符——无法判断它落在哪个目录，`
+          + '容易和「当前工作目录」混淆。建议写成相对产物或仓库根的路径'
+          + '（例如 experiments/<round>/red-<finding>.log）',
+      });
+    }
+
+    const undecided = [];
+
+    // 规则 1：red_log_path 解析后不存在 → FAIL
+    if (typeof rlp === 'string' && rlp.trim() !== '') {
+      const p = rlp.trim();
+      const loc = locateEvidence(p);
+      if (!loc.decided) {
+        undecided.push({ field: `${prefix}.red_log_path`, path: p, rule: 'red_log_not_found' });
+      } else if (!loc.found) {
+        out.push({
+          field: `${prefix}.red_log_path`, rule: 'red_log_not_found',
+          msg: `red_log_path 指向的文件不存在（${TRIED_MSG(loc.tried)}）。`
+            + '路径形状对了不代表文件存在过——2026-11-15 那次验收引用的三个红测日志就是这样：'
+            + '路径都合法，但已经被构建清理掉了，验收却写着『证据存在且内容可信』。',
+        });
+      }
+    }
+
+    // 规则 2：test_path 解析后不存在 → FAIL；占位值（需新建 / 待创建 / TODO）跳过并 WARN
+    if (typeof tp === 'string' && tp.trim() !== '') {
+      const p = tp.trim();
+      if (isPlaceholderPath(p)) {
+        // wave4-fix.md:169 的契约允许「如果不存在，写明『需新建』」——
+        // 这是合法写法，但必须让主 Agent 看见「这条测试现在还不存在」。
+        warnings.push({
+          field: `${prefix}.test_path`, rule: 'test_path_placeholder',
+          msg: `test_path 是占位值（${p}）：按 wave4-fix.md 契约允许，本次跳过存在性检查。`
+            + '**但意味着这条修复的测试当时并不存在**——验收波必须确认它后来真的被建出来了',
+        });
+      } else {
+        const loc = locateEvidence(p);
+        if (!loc.decided) {
+          undecided.push({ field: `${prefix}.test_path`, path: p, rule: 'test_path_not_found' });
+        } else if (!loc.found) {
+          out.push({
+            field: `${prefix}.test_path`, rule: 'test_path_not_found',
+            msg: `test_path 指向的文件不存在（${TRIED_MSG(loc.tried)}）。`
+              + 'FIXED 声称「有证明修复前是红的测试」，但测试文件本身找不到——'
+              + '「声称有测试」和「测试真的存在」是两件事',
+          });
+        }
+      }
+    }
+
+    // 降级纪律：没有可解析的根时，物理解析不可能，只能 WARN 不能 FAIL。
+    // 若这些路径是绝对路径，locateEvidence 已能判定，不会走到这里。
+    if (undecided.length > 0) {
+      const key = JSON.stringify(undecided.map((u) => u.path).sort());
+      if (!UNDECIDED_WARNED.has(key)) {
+        UNDECIDED_WARNED.add(key);
+        warnings.push({
+          field: undecided.map((u) => u.field).join(', '),
+          rule: 'evidence_existence_unchecked',
+          msg: '未提供 --repo/--artifact-dir，无法校验证据是否存在：'
+            + undecided.map((u) => `${u.field}（${u.path}）`).join(' / ')
+            + '。路径形状检查仍然生效，但**「文件是否真的存在过」这一项本轮没有验证**——'
+            + '请主 Agent 在接收时带 --repo <被审仓库根> 或 --artifact-dir <产物目录> 重跑一次',
+        });
+      }
     }
   }
 
