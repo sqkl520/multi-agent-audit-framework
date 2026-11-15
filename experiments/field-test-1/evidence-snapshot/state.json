@@ -1,0 +1,204 @@
+{
+  "schema_version": "run-state-v1",
+  "trace_id": "field-test-1-round1-20261115",
+  "round_id": "round1",
+  "path_mode": "FIX",
+  "phase": "wave5",
+  "status": "RUNNING",
+  "target_repo": "<TARGET_REPO>",
+  "budget": {
+    "total_cap": 60,
+    "spent": 7,
+    "reserved_for_downstream": 7,
+    "planned_sweep_agents": 0,
+    "spawned_deep_dive": 0,
+    "failed_sweep": 0,
+    "failed_deep_dive": 0,
+    "spawned_fix_agents": 7
+  },
+  "slices": {},
+  "in_flight": [],
+  "current_plan": {
+    "phase": "wave5",
+    "written_at": "2026-11-15T21:58:30Z",
+    "steps": [
+      {
+        "id": 1,
+        "action": "派发 G1/G2/G3 头部实例 F1、F5、F6，并登记 3 条 fix contract",
+        "done_when": "3 个实例收到 GO 并进入修复"
+      },
+      {
+        "id": 2,
+        "action": "按 G1 顺序派发 F2、F3、F4；按 G3 顺序派发 F7",
+        "done_when": "7 个独立修复实例全部到终态，spawned_fix_agents=7"
+      },
+      {
+        "id": 3,
+        "action": "校验收到的 7 份修复产物信封与 files_touched",
+        "done_when": "7 份 check-payload 退出码 0，harness 对账无 FAIL"
+      },
+      {
+        "id": 4,
+        "action": "生成 post-fix 快照并运行 verify-postfix-snapshot",
+        "done_when": "快照校验退出码 0"
+      },
+      {
+        "id": 5,
+        "action": "派发 7 个独立验收实例",
+        "done_when": "7 条 fix contract 均有 verdict 与 verified_at"
+      },
+      {
+        "id": 6,
+        "action": "运行最终构建并写最终报告",
+        "done_when": "build.cmd -o test 为 0 failures，最终报告与账本落盘"
+      }
+    ],
+    "exit_condition": "7 条 finding 均有处置与 verdict；快照校验退出码 0；最终构建 0 failures；最终报告落盘",
+    "current_step": 2,
+    "revised_at": null,
+    "revision_reason": null
+  },
+  "discipline_log": [
+    {
+      "type": "FIX_FILE_DEPENDENCY_GROUPING",
+      "recorded_at": "2026-11-15T21:58:30Z",
+      "detail": "F1->F2->F3->F4 共享 ShopConfigLoader.java，串行；F5 独立，与 G1/G3 并行；F6->F7 共享 CommandsDocumentGenerator.java，串行。7 条 finding 对应 7 个独立实例，不合并。"
+    },
+    {
+      "type": "ARTIFACT_DIR_DEVIATION",
+      "recorded_at": "2026-11-15T21:58:30Z",
+      "detail": "规定 OUTDIR 在 DSH workspace 之外，write 与 subagent 均被 workspace-write 拒绝且无 approval channel；产物暂存于 git-ignored 的 .work/round1，源码写入仍限定在 target_files 与测试。"
+    }
+  ],
+  "failure_stats": {
+    "NO_OUTPUT": 0,
+    "SKELETON_ONLY": 0,
+    "TOOL_REJECTED": 0,
+    "EMPTY_RESULT": 0,
+    "CONTRACT_VIOLATION": 0
+  },
+  "wave2_completed": [],
+  "report": {
+    "dir_ready": true,
+    "dir_path": "<TARGET_REPO>/.work/round1",
+    "final_report_path": "<TARGET_REPO>/.work/round1/round1-final-report.md",
+    "written_at": null,
+    "is_complete": false
+  },
+  "legacy_artifacts": [],
+  "fix_baseline": {
+    "captured_at": "2026-11-15T21:57:37.1867019Z",
+    "dirty_paths": [
+      "src/main/java/com/hilltopvillage/admin/ArenaResetService.java",
+      "src/main/java/com/hilltopvillage/admin/gui/ArenaManageGUI.java",
+      "src/main/java/com/hilltopvillage/ai/AirdropSpawnGoal.java",
+      "src/main/java/com/hilltopvillage/ai/ExplodeBeetleGoal.java",
+      "src/main/java/com/hilltopvillage/command/HilltopCommandHandler.java",
+      "src/main/java/com/hilltopvillage/config/ConfigManager.java",
+      "src/main/java/com/hilltopvillage/config/menu/MainConfigMenu.java",
+      "src/main/java/com/hilltopvillage/mechanics/NodeListener.java",
+      "src/main/java/com/hilltopvillage/mechanics/NodeSystem.java",
+      "src/main/java/com/hilltopvillage/mechanics/TabListManager.java",
+      "src/main/resources/game-settings.yml",
+      "src/main/resources/messages.yml",
+      "src/test/java/com/hilltopvillage/ai/AirdropSpawnGoalTest.java",
+      "src/test/java/com/hilltopvillage/ai/ExplodeBeetleGoalTest.java",
+      "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java",
+      "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java",
+      "repair-artifacts/",
+      "src/test/java/com/hilltopvillage/admin/ArenaResetNodeRollbackTest.java",
+      "src/test/java/com/hilltopvillage/ai/AirdropMobTypeNpeReachabilityTest.java",
+      "src/test/java/com/hilltopvillage/command/HilltopCommandReloadResultTest.java",
+      "src/test/java/com/hilltopvillage/config/AirdropMobTypeNullabilityTest.java",
+      "src/test/java/com/hilltopvillage/config/ConfigLoadClampTest.java",
+      "src/test/java/com/hilltopvillage/config/YamlNullMechanismTest.java",
+      "src/test/java/com/hilltopvillage/config/menu/MainConfigMenuReloadResultTest.java",
+      "src/test/java/com/hilltopvillage/mechanics/RepairSettlementTest.java"
+    ],
+    "head": "11ae7223923721bf13846f0cbdfa73151a218fa8"
+  },
+  "fix_contracts": [
+    {
+      "finding_id": "F1",
+      "fix_agent_id": "2361960f-9b85-4cd6-93cd-1c55a192b29b",
+      "registered_at": "2026-11-15T22:03:22.8328274Z",
+      "defect_statement": "当 shop.yml 语法损坏或被截断时，YamlConfiguration.loadConfiguration 返回空配置，load() 仍返回正常 ShopConfig，商店静默变空；预期是加载失败可见且不把空配置当正常。",
+      "disproof_condition": "在临时目录写入非法 YAML 的 shop.yml，调用 load()；修复前返回空商品且无异常，修复后必须抛出或返回明确失败。",
+      "baseline_result": "RED 2/2 assertion failures (expected IllegalStateException, none thrown); GREEN 2/2 pass; loader-specific existing ShopConfigLoaderTest 31 pass; SECOND PASS: RED 1/4 truncated-items test, GREEN 35/35 (4 corrupt + 31 loader); VERIFY PASS 2026-11-16, exact factory items:-header truncation rejected, items:{} and omitted-items controls valid, mutation E08E6F3D... to 66E7DBC6... restored byte-identical",
+      "baseline_unverified": false,
+      "rollback_command": "Copy-Item -LiteralPath '.work/round1/backups/F1-before.java' -Destination 'src/main/java/com/hilltopvillage/shop/ShopConfigLoader.java' -Force",
+      "test_path": "src/test/java/com/hilltopvillage/shop/ShopConfigCorruptFileTest.java",
+      "verdict": "PASS",
+      "verified_at": "2026-11-15T23:00:45.9507659Z",
+      "verification_artifact": ".work/round1/round1-05-verify-1.md",
+      "red_log_path": ".work/round1/redlogs/F1-pass2-red.log",
+      "green_log_path": ".work/round1/redlogs/F1-pass2-green.log"
+    },
+    {
+      "finding_id": "F5",
+      "fix_agent_id": "09140833-03e6-4981-ab37-f18c021f3762",
+      "registered_at": "2026-11-15T22:03:22.8328274Z",
+      "defect_statement": "成功消息在 addItem(product) 之后读取 product.getAmount()；Paper 合并部分堆时会就地减少该栈数量，导致消息显示剩余量而非实际购买量。",
+      "disproof_condition": "构造部分同类堆使 addItem 把 8 改成 4，购买后检查成功消息；修复前显示 4，修复后必须显示 8。",
+      "baseline_result": "RED 1/1 assertion failure expected [8] got [4]; GREEN 1/1 pass",
+      "baseline_unverified": false,
+      "rollback_command": "Copy-Item -LiteralPath '.work/round1/backups/F5-before.java' -Destination 'src/main/java/com/hilltopvillage/shop/ShopListener.java' -Force",
+      "test_path": "src/test/java/com/hilltopvillage/shop/ShopListenerPurchaseMessageTest.java"
+    },
+    {
+      "finding_id": "F6",
+      "fix_agent_id": "1a7e6733-0658-4996-9ae8-dc7e62f58417",
+      "registered_at": "2026-11-15T22:03:22.8328274Z",
+      "defect_statement": "自动生成的 /hilltop tps 文档声称输出包含 DisplayEntity 清理队列，但 TpsDiagnostic.printDiagnostic 不输出该项，且该队列已作为死代码删除；文档与实现不一致。",
+      "disproof_condition": "生成命令文档并检查渲染文本；修复前包含 DisplayEntity 清理队列，修复后必须不包含。",
+      "baseline_result": "RED 1/1 assertion failure stale DisplayEntity claim; GREEN 1/1 pass",
+      "baseline_unverified": false,
+      "rollback_command": "Copy-Item -LiteralPath '.work/round1/backups/F6-before.java' -Destination 'src/main/java/com/hilltopvillage/doc/CommandsDocumentGenerator.java' -Force",
+      "test_path": "src/test/java/com/hilltopvillage/doc/CommandsDocumentationCleanupClaimTest.java"
+    },
+    {
+      "finding_id": "F7",
+      "fix_agent_id": "0222220b-f7a7-4683-9819-37d52555acaf",
+      "registered_at": "2026-11-15T22:07:55.9069339Z",
+      "defect_statement": "CommandsDocumentGenerator 在异步线程用 Files.write 直接截断并覆盖 commands.md；崩溃、磁盘满、权限变化或并发读取会留下空文件/半截文档，且启动只生成一次、无旧版可回退。",
+      "disproof_condition": "在旧 commands.md 存在时让原子移动失败；修复前直接写会破坏旧内容，修复后临时文件写失败/移动失败必须保留旧内容并清理临时文件。",
+      "baseline_result": "RED 3/3: 2-arg/3-arg writeAtomically absent + source guard Files.write(docFile; GREEN 3/3 atomic write/failed-move-preserves-old; F6 regression 1/1; generator regression 7/7. Red is structural (no pre-fix seam), post-fix fault injection executed.",
+      "baseline_unverified": false,
+      "rollback_command": "Copy-Item -LiteralPath '.work/round1/backups/F7-before.java' -Destination 'src/main/java/com/hilltopvillage/doc/CommandsDocumentGenerator.java' -Force",
+      "test_path": "src/test/java/com/hilltopvillage/doc/CommandsDocumentAtomicWriteTest.java"
+    },
+    {
+      "finding_id": "F2",
+      "fix_agent_id": "36409b77-2e0e-46aa-bde8-9aace6bd90c5",
+      "registered_at": "2026-11-15T22:12:56.3241220Z",
+      "defect_statement": "MATERIAL 商品缺少 icon.material 时 parseItem 保留 Material.BARRIER 并继续加载，GUI/发货会拿屏障方块冒充商品；只有 EQUIPMENT 有缺省拒绝。",
+      "disproof_condition": "加载一个无 icon.material 的 MATERIAL 条目；修复前它进入 ShopConfig 且 icon=BARRIER，修复后必须被跳过/拒绝；同时带合法 icon.material 的 MATERIAL 条目仍正常加载。",
+      "baseline_result": "RED 1/1 assertion (MATERIAL no icon loaded with BARRIER); GREEN 32/32 loader suite; combined F1+F2 regression 34/34",
+      "baseline_unverified": false,
+      "rollback_command": "Copy-Item -LiteralPath '.work/round1/backups/F2-before.java' -Destination 'src/main/java/com/hilltopvillage/shop/ShopConfigLoader.java' -Force",
+      "test_path": "src/test/java/com/hilltopvillage/shop/ShopConfigMaterialValidationTest.java"
+    },
+    {
+      "finding_id": "F3",
+      "fix_agent_id": "c8a13a85-3814-4877-b520-b92ea386e99c",
+      "registered_at": "2026-11-15T22:15:13.1048466Z",
+      "defect_statement": "parseItem 用 getInt(price,1) 把缺键/null 与显式 price:0 混为一谈；服主漏写 price 会静默变成 1 货币，既不报错也不符合「免费/收费」意图。",
+      "disproof_condition": "加载缺 price 的 MATERIAL 条目；修复前 price=1 且条目存在，修复后条目必须被跳过并告警；price:0 仍为合法免费，price:-5 仍钳 0 告警。",
+      "baseline_result": "RED 4/4, 2 failures (missing price and price:null loaded as 1; zero/negative controls passed); GREEN 35/35 final code with corrected ShopConfigLoaderTest; broad Shop* subset 125 errors = Mockito MockMaker environment, REGRESSION_UNVERIFIED.",
+      "baseline_unverified": false,
+      "rollback_command": "Copy-Item -LiteralPath '.work/round1/backups/F3-before.java' -Destination 'src/main/java/com/hilltopvillage/shop/ShopConfigLoader.java' -Force",
+      "test_path": "src/test/java/com/hilltopvillage/shop/ShopConfigPriceValidationTest.java"
+    },
+    {
+      "finding_id": "F4",
+      "fix_agent_id": "15d68097-68e3-4355-aba0-28ff82df6c5d",
+      "registered_at": "2026-11-15T22:20:41.4019785Z",
+      "defect_statement": "parseItem 接受显式 amount 0/负数；GUI/描述按配置数量，deliverItem 却把交付 stack 钳成 1，而价格仍按原价扣一次，等于按未申明数量收费。",
+      "disproof_condition": "加载 amount:0 与 amount:-5 的 MATERIAL 条目；修复前条目存在（amount 0/-5），修复后必须被跳过并告警；缺 amount 仍为 1，amount:3 仍为 3。",
+      "baseline_result": "RED 5/5, 2 failures (amount 0/-5 loaded and would be billed); GREEN 36/36 targeted; full build 902 tests / 0 failures / 0 errors / 1 skipped with self-attach + workspace temp (default sandbox run had 557 Mockito errors)",
+      "baseline_unverified": false,
+      "rollback_command": "Copy-Item -LiteralPath '.work/round1/backups/F4-before.java' -Destination 'src/main/java/com/hilltopvillage/shop/ShopConfigLoader.java' -Force",
+      "test_path": "src/test/java/com/hilltopvillage/shop/ShopConfigAmountValidationTest.java"
+    }
+  ]
+}

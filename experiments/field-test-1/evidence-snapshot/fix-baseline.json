@@ -1,0 +1,32 @@
+﻿{
+    "captured_at":  "2026-11-15T21:57:37.1867019Z",
+    "head":  "11ae7223923721bf13846f0cbdfa73151a218fa8",
+    "dirty_paths":  [
+                        " M src/main/java/com/hilltopvillage/admin/ArenaResetService.java",
+                        " M src/main/java/com/hilltopvillage/admin/gui/ArenaManageGUI.java",
+                        " M src/main/java/com/hilltopvillage/ai/AirdropSpawnGoal.java",
+                        " M src/main/java/com/hilltopvillage/ai/ExplodeBeetleGoal.java",
+                        " M src/main/java/com/hilltopvillage/command/HilltopCommandHandler.java",
+                        " M src/main/java/com/hilltopvillage/config/ConfigManager.java",
+                        " M src/main/java/com/hilltopvillage/config/menu/MainConfigMenu.java",
+                        " M src/main/java/com/hilltopvillage/mechanics/NodeListener.java",
+                        " M src/main/java/com/hilltopvillage/mechanics/NodeSystem.java",
+                        " M src/main/java/com/hilltopvillage/mechanics/TabListManager.java",
+                        " M src/main/resources/game-settings.yml",
+                        " M src/main/resources/messages.yml",
+                        " M src/test/java/com/hilltopvillage/ai/AirdropSpawnGoalTest.java",
+                        " M src/test/java/com/hilltopvillage/ai/ExplodeBeetleGoalTest.java",
+                        " M src/test/java/com/hilltopvillage/config/ConfigManagerTest.java",
+                        " M src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java",
+                        "?? repair-artifacts/",
+                        "?? src/test/java/com/hilltopvillage/admin/ArenaResetNodeRollbackTest.java",
+                        "?? src/test/java/com/hilltopvillage/ai/AirdropMobTypeNpeReachabilityTest.java",
+                        "?? src/test/java/com/hilltopvillage/command/HilltopCommandReloadResultTest.java",
+                        "?? src/test/java/com/hilltopvillage/config/AirdropMobTypeNullabilityTest.java",
+                        "?? src/test/java/com/hilltopvillage/config/ConfigLoadClampTest.java",
+                        "?? src/test/java/com/hilltopvillage/config/YamlNullMechanismTest.java",
+                        "?? src/test/java/com/hilltopvillage/config/menu/MainConfigMenuReloadResultTest.java",
+                        "?? src/test/java/com/hilltopvillage/mechanics/RepairSettlementTest.java"
+                    ],
+    "count":  25
+}
