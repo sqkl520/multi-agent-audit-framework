@@ -148,7 +148,8 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role <你�
       "regression_scan_performed": true,
       "user_journey_aligned": true,
       "mutation_check": "performed | skipped",
-      "mutation_scope": "implementation_only | implementation_and_callsite | null"
+      "mutation_scope": "implementation_only | implementation_and_callsite | null",
+      "input_space_basis": "exhaustive | boundary | single_sample | unknown"
     },
     "residual_risk_disposition": [
       {
@@ -196,17 +197,10 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role <你�
 独立评审用 **192 个真实行边界截断样本**穷举才证明它只堵住 **1.0%**。
 
 后来试过用「按断言语义做 diff」的检测器去抓这件事，实测结论是**结构上做不到**：
-
-| 形态 | 检测结果 |
-|---|---|
-| F1 的测试加进已有文件 | **0 命中** |
-| F1 的测试加进全新文件 | **0 命中** |
-| 名字声称穷举但只测 1 种 | **0 命中** |
-
-原因不是算法不够好，是**没有可比的东西**：实测整个被审仓库里
-**0 个测试在遍历截断点**（`grep substring(0, cut|i|len|idx)` = 0）。
-F1 的缺陷不是「加了一条弱测试」，而是「**从来没有测试想过这件事**」。
-任何基于 diff 的检测器面对这种情况都无话可说。
+F1 的测试无论加进已有文件还是全新文件，检测器都 **0 命中**——
+因为实测整个被审仓库里 **0 个测试在遍历截断点**。
+F1 的缺陷不是「加了一条弱测试」，而是「**从来没有测试想过这件事**」，
+没有可比的东西，任何基于 diff 的检测都无话可说。
 
 所以唯一的抓手是**让修复者自己申报**，并让「申报为弱」产生后果：
 
@@ -217,19 +211,14 @@ F1 的缺陷不是「加了一条弱测试」，而是「**从来没有测试想
 | `single_sample` | 只测了一个样本 | **`escalation_required` 必须为 `true`**（带保留通过）|
 | `unknown` | 没想过这件事 | **`escalation_required` 必须为 `true`** |
 
-**注意它不是证据，是申报。** 它无法阻止一个不诚实的 Agent 写 `exhaustive`。
-它的价值在于：**诚实申报 `single_sample` 会触发「带保留通过」**，从而让「这条修复只测了一个样本」
-这件事进入最终报告，而不是静默消失在「✅ 契约合规」里。
+**它是申报，不是证据。** 它无法阻止不诚实的 Agent 写 `exhaustive`。
+它的价值在于：**诚实申报 `single_sample` 会触发「带保留通过」**，
+从而让「这条修复只测了一个样本」进入最终报告，而不是静默消失在「✅ 契约合规」里。
 
-> 这与 `files_touched` 是同一层的东西：都是自述，只能保证「说了的话必须一致」，
-> 不能保证「说的是真的」。区别在于**它覆盖的那一类缺陷，目前没有任何别的手段能触及**。
-> 所以宁可用一个弱的抓手，也好过假装那一类不存在。
-
-**已知的绕过与它的边界**（必须写在此处，否则下一个人会以为它挡住了更多）：
-- 写 `exhaustive` 而不真的穷举 → 不报。这是自述层无法解决的，只能靠人工评审。
-- 写 `unknown` 而不是 `single_sample` → 后果相同（都要求 `escalation_required`），所以不构成绕过。
-- **不要**试图从源码静态估算「实际覆盖了几种输入」——那会变成第二个「用自造样本验证自己」，
-  实测过：按 `@CsvSource`/`assertThrows`/`List.of(` 等 6 个信号去数，
+**已知边界**（写在此处，否则下一个人会以为它挡住了更多）：
+- 写 `exhaustive` 而不真穷举 → 不报。自述层无法解决，只能靠人工评审。
+- **不要**试图从源码静态估算「实际覆盖了几种输入」——那会变成第二个「用自造样本验证自己」。
+  实测：按 `@CsvSource`/`assertThrows`/`List.of(` 等 6 个信号去数，
   在被审仓库的 35 个测试文件上算出 **0**，而它们实际各有 5–7 个文本块输入样本。
 
 **验收Agent的独立性硬约束**：`payload` 中**不得**包含对修复Agent说明的引用或复述。验收必须从原始用户旅程和缺陷的验收标准出发，而不是从"修复Agent说它修了什么"出发。如果验收Agent的 `evidence` 字段中出现"根据修复报告"之类的表述，主Agent判定为 `CONTRACT_VIOLATION`。
