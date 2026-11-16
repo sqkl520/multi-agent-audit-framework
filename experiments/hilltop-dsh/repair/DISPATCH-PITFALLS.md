@@ -30,7 +30,7 @@ if (!contained) throw new FsError(`cannot write "…": file access denied under 
 ```
 
 **任务书里写「修改 D:/Server/.../Hilltop Village Plugin」没有用。**
-我从框架仓库 `D:/Projects/AI prompt/.../multi-agent-audit-framework` 启动的 dsh，
+我从框架仓库 `<WORKSPACE>/.../multi-agent-audit-framework` 启动的 dsh，
 它的可写根就是框架仓库，目标项目在另一个盘根，写入必然被拒。
 
 ### 症状

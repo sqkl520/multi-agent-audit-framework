@@ -32,7 +32,7 @@
 |---|---|
 | `git fsck --lost-found` | 无 dangling object |
 | `git stash list` | 空 |
-| 搜索 `D:/Projects/AI prompt` 下其他副本 | 无 |
+| 搜索 `<WORKSPACE>` 下其他副本 | 无 |
 | transcript 里的 grep 片段（13 条行号引用） | **部分恢复**，见下 |
 | transcript 里的 Write 操作记录 | 只有 `audit-specialist`，且内容是恢复后的版本 |
 | transcript 里的完整 Read 结果 | 无（本次会话从未 Read 过 wrapper 全文） |

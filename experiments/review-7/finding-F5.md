@@ -2,7 +2,7 @@
 
 评审对象：`<TARGET_REPO>`
 文件：`src/main/java/com/hilltopvillage/shop/ShopListener.java`（未提交 diff，+3/−1）
-方法：只读。Paper 1.21.4 行为以 `<TARGET_PARENT>/Hilltop Village/versions/1.21.4/paper-1.21.4.jar`
+方法：只读。Paper 1.21.4 行为以 `<TARGET_REPO>/versions/1.21.4/paper-1.21.4.jar`
 反编译（`javap -p -c`）为证，不引二手文档。
 
 ---

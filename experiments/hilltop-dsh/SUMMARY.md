@@ -116,7 +116,7 @@
 ## 复现
 
 ```bash
-cd "D:/Projects/AI prompt/many-agents_multi-prompt-files_token-heavy/multi-agent-audit-framework"
+cd "<FRAMEWORK_ROOT>"
 AUDIT_API_KEY=<key> node "<dsh>/lib/bin.js" --profile headless \
   --patch experiments/hilltop-dsh/patch-audit.yml "$(cat experiments/hilltop-dsh/task-*.md)"
 ```

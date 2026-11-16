@@ -1,7 +1,7 @@
 # DIAG3 · 三层闭环的实际断裂点
 
 > 只读分析。不改仓库任何文件，不新增校验器。
-> 框架根：`D:/Projects/AI prompt/many-agents_multi-prompt-files_token-heavy/multi-agent-audit-framework`
+> 框架根：`<FRAMEWORK_ROOT>`
 > 实验目录：`experiments/hilltop-dsh/`
 > 本文所有结论均带 `文件:行`。凡未见证据者明确写「无」。
 

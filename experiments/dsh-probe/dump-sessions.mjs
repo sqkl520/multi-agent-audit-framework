@@ -3,7 +3,7 @@ import { zstdDecompressSync } from 'node:zlib';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-const root = join(homedir(), '.dsh', 'sessions', '<dsh-project-dir>');
+const root = join(homedir(), '.dsh', 'sessions', process.argv[2] ?? '<dsh-project-dir>');
 const childId = '82757119-cfd1-45d1-8807-d5f82d3f52e6';
 const parentId = 'session-ecc5b264-5bf5-41c7-88c7-405e7468c822';
 

@@ -10,7 +10,7 @@
 
 ## 产物
 
-写到：D:/Projects/AI prompt/many-agents_multi-prompt-files_token-heavy/multi-agent-audit-framework/experiments/hilltop-dsh/out/round1-core-audit.md
+写到：<FRAMEWORK_ROOT>/experiments/hilltop-dsh/out/round1-core-audit.md
 
 结构：
 ```
@@ -23,9 +23,9 @@
 ```
 ```
 
-JSON 信封照抄 D:/Projects/AI prompt/many-agents_multi-prompt-files_token-heavy/multi-agent-audit-framework/framework/components/output-contract/examples/audit.md 的格式，把 findings 换成你找到的。
+JSON 信封照抄 <FRAMEWORK_ROOT>/framework/components/output-contract/examples/audit.md 的格式，把 findings 换成你找到的。
 
 写完立刻跑：
-node "D:/Projects/AI prompt/many-agents_multi-prompt-files_token-heavy/multi-agent-audit-framework/tools/check-payload.mjs" <产物> --role audit
+node "<FRAMEWORK_ROOT>/tools/check-payload.mjs" <产物> --role audit
 
 不通过就修到通过。

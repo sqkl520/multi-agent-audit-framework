@@ -1,12 +1,12 @@
-修复 round1（实战验证轮）。全程遵守 `D:/Projects/AI prompt/many-agents_multi-prompt-files_token-heavy/multi-agent-audit-framework/framework/orchestrator/protocol.md` §0 的零写入边界：
+修复 round1（实战验证轮）。全程遵守 `<FRAMEWORK_ROOT>/framework/orchestrator/protocol.md` §0 的零写入边界：
 只允许修改每条发现 target_files[] 里的文件及其对应测试，不得 commit / add / push。
 
 ## 路径
 
 ```
-<FRAMEWORK_ROOT> = D:/Projects/AI prompt/many-agents_multi-prompt-files_token-heavy/multi-agent-audit-framework/framework
+<FRAMEWORK_ROOT> = <FRAMEWORK_ROOT>/framework
 <TARGET_REPO>    = <TARGET_REPO>
-<OUTDIR>         = D:/Projects/AI prompt/many-agents_multi-prompt-files_token-heavy/multi-agent-audit-framework/experiments/field-test-1
+<OUTDIR>         = <FRAMEWORK_ROOT>/experiments/field-test-1
 ```
 
 ## 第 0 步：先加载，再动手

@@ -176,6 +176,6 @@ tools/ 检查器                   → 6 个
 复核方式：
 
 ```bash
-cd "D:/Projects/AI prompt/many-agents_multi-prompt-files_token-heavy/multi-agent-audit-framework"
+cd "<FRAMEWORK_ROOT>"
 node tools/check-all.mjs
 ```

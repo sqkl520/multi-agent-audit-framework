@@ -271,7 +271,7 @@ D:/audit-out/round1-web-style
 /workspace/audit/round31
 
 # ❌ 禁止
-"D:/Projects/AI prompt/many-agents_multi-prompt-files_token-heavy/audit-runs"   # 含空格
+"<WORKSPACE>/many-agents_multi-prompt-files_token-heavy/audit-runs"   # 含空格
 D:/审计报告/round31                                                              # 含中文
 ```
 

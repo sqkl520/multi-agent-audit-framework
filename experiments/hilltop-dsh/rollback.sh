@@ -11,7 +11,7 @@
 # 备份位置：backups/prerepair-*/
 set -euo pipefail
 
-ROOT="<TARGET_PARENT>/Server plugin/Hilltop Village"
+ROOT="<TARGET_REPO>"
 SRC="$ROOT/Hilltop Village Plugin/src"
 BACKUPS="$ROOT/backups"
 

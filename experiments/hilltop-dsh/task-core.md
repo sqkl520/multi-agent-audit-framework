@@ -20,15 +20,15 @@ GameManager.java / GameState.java / PlayerData.java / PlayerGoodsManager.java / 
 
 ## 输出要求
 
-产物写到：D:/Projects/AI prompt/many-agents_multi-prompt-files_token-heavy/multi-agent-audit-framework/experiments/hilltop-dsh/out/round1-core-audit.md
+产物写到：<FRAMEWORK_ROOT>/experiments/hilltop-dsh/out/round1-core-audit.md
 
 格式：
 - 正文写分析
 - 最后必须有一个 ```json 代码块，内容是完整的 JSON 信封（参考
-  D:/Projects/AI prompt/many-agents_multi-prompt-files_token-heavy/multi-agent-audit-framework/framework/components/output-contract/examples/audit.md）
+  <FRAMEWORK_ROOT>/framework/components/output-contract/examples/audit.md）
 - role 填 "audit"，findings 数组里每条要有 finding_id / dimension / severity / evidence{file,line,quote} / inference{claim,basis,alternatives} / status
 
 写完自检：
-node "D:/Projects/AI prompt/many-agents_multi-prompt-files_token-heavy/multi-agent-audit-framework/tools/check-payload.mjs" <你的产物> --role audit
+node "<FRAMEWORK_ROOT>/tools/check-payload.mjs" <你的产物> --role audit
 
 退出码非 0 就按它说的修，修到通过为止。

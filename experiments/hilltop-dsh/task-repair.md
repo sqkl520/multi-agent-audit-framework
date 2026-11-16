@@ -3,7 +3,7 @@
 
 ## 现状（已由前序工作完成，不要重做）
 
-- 备份：<TARGET_PARENT>/Server plugin/Hilltop Village/backups/prerepair-20261114-225746/
+- 备份：<TARGET_REPO>/backups/prerepair-20261114-225746/
 - 基线：`build.cmd -o test` → Tests run: 863, Failures: 0
 - 已修 2 条：#2 TabListManager 任务累积、#5 AirdropSpawnGoal NPE
 
@@ -71,7 +71,7 @@
 ## 产物
 
 每修完一条写一份：
-`D:/Projects/AI prompt/many-agents_multi-prompt-files_token-heavy/multi-agent-audit-framework/experiments/hilltop-dsh/repair/done-<编号>.md`
+`<FRAMEWORK_ROOT>/experiments/hilltop-dsh/repair/done-<编号>.md`
 
 内容必须有：
 - 改了什么（文件:行 + 关键代码片段）

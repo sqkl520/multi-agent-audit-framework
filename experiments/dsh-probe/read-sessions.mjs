@@ -3,7 +3,7 @@ import { zstdDecompressSync } from 'node:zlib';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-const root = join(homedir(), '.dsh', 'sessions', '<dsh-project-dir>');
+const root = join(homedir(), '.dsh', 'sessions', process.argv[2] ?? '<dsh-project-dir>');
 
 function summarize(dir) {
   const p = join(root, dir, 'session.v4.jsonl.zstd');

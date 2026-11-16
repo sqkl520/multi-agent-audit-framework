@@ -326,7 +326,7 @@ R5 说「检查 4 是关键，只有它需要外部基准」——这句话是�
 ## 7. 复现命令
 
 ```bash
-cd "D:/Projects/AI prompt/many-agents_multi-prompt-files_token-heavy/multi-agent-audit-framework"
+cd "<FRAMEWORK_ROOT>"
 
 # 自测
 node tools/check-fix-instances.test.mjs          # → 100 通过 / 0 失败
