@@ -72,8 +72,9 @@ const norm = (p, repo, ci) => mod?.normalizePath?.(p, repo, ci);
 
 /** 一个 dsh session 的事件序列。字段位置照真实日志：
  *  `session` 事件的 id / cwd / delegationDepth / parentSession 在**顶层**；
- *  `tool/call` 的文件路径在 `.data.arguments`（JSON 字符串）里。 */
-function sessionEvents({ id, depth = 0, parent = null, cwd = 'C:\\ws', tools = ['read', 'write', 'edit'], writes = [], steps = 3 }) {
+ *  `tool/call` 的文件路径在 `.data.arguments`（JSON 字符串）里。
+ *  `shells`：额外记录 shell 工具调用（R23 的「删除动作」证据走这里）。 */
+function sessionEvents({ id, depth = 0, parent = null, cwd = 'C:\\ws', tools = ['read', 'write', 'edit'], writes = [], shells = [], steps = 3 }) {
   const ev = [{
     type: 'session', version: 4, id, cwd, delegationDepth: depth,
     ...(parent ? { parentSession: parent } : {}),
@@ -88,6 +89,10 @@ function sessionEvents({ id, depth = 0, parent = null, cwd = 'C:\\ws', tools = [
       ? { file_path: w.path, old_string: 'a', new_string: 'b' }
       : { file_path: w.path, content: '// x\n' };
     ev.push({ type: 'tool/call', data: { turn: 1, step: 1, callId: `call-${n++}`, name, arguments: JSON.stringify(args) } });
+  }
+  for (const s of shells) {
+    const name = s.tool ?? 'pwsh';
+    ev.push({ type: 'tool/call', data: { turn: 1, step: 1, callId: `call-${n++}`, name, arguments: JSON.stringify({ command: s.command }) } });
   }
   return ev;
 }
@@ -657,6 +662,305 @@ if (!existsSync(REAL_ROOT)) {
     console.log(`    → a40f0162: calls=${r.data?.writeEditCalls} files=${r.data?.actualFiles} `
       + `claimed=${r.data?.claimedFiles} exit=${r.code}`);
   } finally { rmSync(st.dir, { recursive: true, force: true }); rmSync(art, { recursive: true, force: true }); }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// 6 · R23：探针甄别（写了又删 ≠ 未登记的修复改动）
+// ════════════════════════════════════════════════════════════════════
+//
+// 实战暴露的盲区（field-test-1，2026-11-16）：主 session 为验证修复建了 8 个
+// `*ProbeTest.java` 探针、用完删掉，`files_touched` 没登记它们——这是**对的**，
+// 因为仓库最终状态里没有它们。但 R21 把「harness 记录的所有源码写入」都当成
+// 「修复改动」，于是报 1 FAIL。
+//
+// 判据：write/edit 记录 **且** 文件现在不存在 → `probe_files_deleted`（INFO，不判
+// under-reported）；文件现在存在 → 真改动，仍 FAIL。
+//
+// 这一节必须用**真实存在**的临时仓库：文件真的落在磁盘上，「现在还在不在」才有意义。
+console.log('\n=== 6：探针甄别（写入后删除的一过性文件不算 under-reported）===');
+
+const slash = (p) => String(p).replace(/\\/g, '/');
+
+/** 真实存在的临时仓库：files 里的相对路径会被真的写到磁盘上。 */
+function makeRealRepo(files = []) {
+  const dir = mkdtempSync(join(tmpdir(), 'ft-realrepo-'));
+  for (const f of files) {
+    const p = join(dir, f);
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, '// real file\n');
+  }
+  return dir;
+}
+
+/** 指定路径的任务运行器（用于跑另一个工具 check-payload）。 */
+function runScript(script, args) {
+  try {
+    const out = execFileSync(process.execPath, [script, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    return { code: 0, out, err: '', data: safeJson(out) };
+  } catch (e) {
+    const out = e.stdout?.toString() ?? '';
+    return { code: typeof e.status === 'number' ? e.status : -1, out, err: e.stderr?.toString() ?? '', data: safeJson(out) };
+  }
+}
+
+{
+  // 6.1-6.3 文件现在存在 + 未登记 → FAIL（现有行为不变，不能因为加了甄别就放水）
+  const SID = 'session-dddd0001-0000-0000-0000-000000000001';
+  const A = 'src/main/java/com/x/A.java';
+  const B = 'src/main/java/com/x/B.java';
+  const repo = slash(makeRealRepo([A, B]));
+  const root = makeRoot('--D-Tmp-r23--', [{
+    dir: SID, events: sessionEvents({ id: SID, writes: [{ path: `${repo}/${A}` }, { path: `${repo}/${B}` }] }),
+  }]);
+  const art = makeArtifactDir([artifactOf({ files: [A] })]);
+  const st = writeState(stateOf({ repo, artifactDir: art, contracts: [{ fix_agent_id: 'fix-1' }] }));
+  try {
+    const r = run(['--state', st.path, '--sessions', root, '--json']);
+    expect('6.1 写了、文件现在存在、未登记 → 仍 exit 1', r.code === 1, `code=${r.code} ${JSON.stringify(rulesOf(r))}`);
+    expect('6.2 仍报 files_touched_underreported_by_harness（FAIL）',
+      hasRule(r, 'files_touched_underreported_by_harness', 'FAIL'), JSON.stringify(rulesOf(r)));
+    expect('6.3 点名的正是留在仓库里的 B.java',
+      msgOf(r, 'files_touched_underreported_by_harness').includes('B.java'),
+      msgOf(r, 'files_touched_underreported_by_harness').slice(0, 200));
+    expect('6.4 存在性可判定时不报 probe_files_deleted',
+      !hasRule(r, 'probe_files_deleted'), JSON.stringify(rulesOf(r)));
+  } finally { rmSync(root, { recursive: true, force: true }); rmSync(st.dir, { recursive: true, force: true }); rmSync(art, { recursive: true, force: true }); rmSync(repo, { recursive: true, force: true }); }
+}
+
+{
+  // 6.5-6.9 写了源码、文件现在不存在、**且有删除动作**、未登记
+  //          → exit 0 + INFO（不判 under-reported）
+  const SID = 'session-dddd0002-0000-0000-0000-000000000002';
+  const A = 'src/main/java/com/x/A.java';
+  const P = 'src/test/java/com/x/ProbeTest.java';
+  const repo = slash(makeRealRepo([A]));   // ProbeTest.java 从未落盘 → 写完就删
+  const root = makeRoot('--D-Tmp-r23--', [{
+    dir: SID,
+    events: sessionEvents({
+      id: SID,
+      writes: [{ path: `${repo}/${A}` }, { path: `${repo}/${P}` }],
+      // 真实形状（field-test-1 用的就是 Remove-Item）
+      shells: [{ command: `Remove-Item '${repo}/${P}' -Force` }],
+    }),
+  }]);
+  const art = makeArtifactDir([artifactOf({ files: [A] })]);
+  const st = writeState(stateOf({ repo, artifactDir: art, contracts: [{ fix_agent_id: 'fix-1' }] }));
+  try {
+    const r = run(['--state', st.path, '--sessions', root, '--json']);
+    expect('6.5 探针写了又删、未登记 → exit 0', r.code === 0, `code=${r.code} ${JSON.stringify(rulesOf(r))}`);
+    expect('6.6 不报 underreported（仓库最终状态里没有这个文件）',
+      !hasRule(r, 'files_touched_underreported_by_harness'), JSON.stringify(rulesOf(r)));
+    expect('6.7 报 probe_files_deleted（INFO 级，不是 FAIL）',
+      hasRule(r, 'probe_files_deleted', 'INFO'), JSON.stringify(rulesOf(r)));
+    expect('6.8 INFO 里点名 ProbeTest.java 并写明不参与对账',
+      msgOf(r, 'probe_files_deleted').includes('ProbeTest.java')
+      && /不参与/.test(msgOf(r, 'probe_files_deleted')),
+      msgOf(r, 'probe_files_deleted').slice(0, 300));
+    expect('6.9 JSON 里 probe_files_deleted 记录了这个探针',
+      (r.data?.probeFilesDeleted ?? []).some((p) => p.includes('ProbeTest.java')),
+      JSON.stringify(r.data?.probeFilesDeleted));
+  } finally { rmSync(root, { recursive: true, force: true }); rmSync(st.dir, { recursive: true, force: true }); rmSync(art, { recursive: true, force: true }); rmSync(repo, { recursive: true, force: true }); }
+}
+
+{
+  // 6.10-6.13 混合：5 个写了，3 个删了、2 个留着，只登记 1 个
+  //            → FAIL 只点名「留着且未登记」的那个；删掉的进 INFO
+  const SID = 'session-dddd0003-0000-0000-0000-000000000003';
+  const A = 'src/main/java/com/x/A.java';
+  const B = 'src/main/java/com/x/B.java';
+  const probes = ['src/test/java/com/x/P1Test.java', 'src/test/java/com/x/P2Test.java', 'src/test/java/com/x/P3Test.java'];
+  const repo = slash(makeRealRepo([A, B]));
+  const root = makeRoot('--D-Tmp-r23--', [{
+    dir: SID,
+    events: sessionEvents({
+      id: SID,
+      writes: [A, B, ...probes].map((p) => ({ path: `${repo}/${p}` })),
+      // 3 个探针各有一条删除动作（bash 风格，验证多动词识别）
+      shells: probes.map((p) => ({ tool: 'bash', command: `rm -f "${repo}/${p}"` })),
+    }),
+  }]);
+  const art = makeArtifactDir([artifactOf({ files: [A] })]);
+  const st = writeState(stateOf({ repo, artifactDir: art, contracts: [{ fix_agent_id: 'fix-1' }] }));
+  try {
+    const r = run(['--state', st.path, '--sessions', root, '--json']);
+    const m = msgOf(r, 'files_touched_underreported_by_harness');
+    expect('6.10 5 写 / 3 删 / 2 留、只登记 1 个 → exit 1', r.code === 1, `code=${r.code} ${JSON.stringify(rulesOf(r))}`);
+    expect('6.11 FAIL 消息只点名留下的 B.java，不点已删除的探针',
+      m.includes('B.java') && !/P1Test\.java|P2Test\.java|P3Test\.java/.test(m), m.slice(0, 300));
+    expect('6.12 INFO 列出 3 个已删除的探针',
+      ['P1Test.java', 'P2Test.java', 'P3Test.java'].every((n) => msgOf(r, 'probe_files_deleted').includes(n)),
+      msgOf(r, 'probe_files_deleted').slice(0, 300));
+    expect('6.13 probeFilesDeleted 恰好 3 个',
+      (r.data?.probeFilesDeleted ?? []).length === 3, JSON.stringify(r.data?.probeFilesDeleted));
+  } finally { rmSync(root, { recursive: true, force: true }); rmSync(st.dir, { recursive: true, force: true }); rmSync(art, { recursive: true, force: true }); rmSync(repo, { recursive: true, force: true }); }
+}
+
+{
+  // 6.14-6.16 全部写了又删、没留任何未登记文件 → exit 0，INFO 列出全部
+  const SID = 'session-dddd0004-0000-0000-0000-000000000004';
+  const KEEP = 'src/main/java/com/x/Keep.java';
+  const probes = ['src/test/java/com/x/Q1Test.java', 'src/test/java/com/x/Q2Test.java', 'src/test/java/com/x/Q3Test.java'];
+  const repo = slash(makeRealRepo([KEEP]));
+  const root = makeRoot('--D-Tmp-r23--', [{
+    dir: SID,
+    events: sessionEvents({
+      id: SID,
+      writes: [KEEP, ...probes].map((p) => ({ path: `${repo}/${p}` })),
+      shells: probes.map((p) => ({ command: `Remove-Item '${repo}/${p}' -Force` })),
+    }),
+  }]);
+  const art = makeArtifactDir([artifactOf({ files: [KEEP] })]);
+  const st = writeState(stateOf({ repo, artifactDir: art, contracts: [{ fix_agent_id: 'fix-1' }] }));
+  try {
+    const r = run(['--state', st.path, '--sessions', root, '--json']);
+    expect('6.14 写了 4 个、3 个删掉、留下的那个已登记 → exit 0', r.code === 0, `code=${r.code} ${JSON.stringify(rulesOf(r))}`);
+    expect('6.15 INFO 列出全部 3 个已删除文件',
+      (r.data?.probeFilesDeleted ?? []).length === 3, JSON.stringify(r.data?.probeFilesDeleted));
+    expect('6.16 消息提醒「若认为不该删，检查是否误删」',
+      /误删/.test(msgOf(r, 'probe_files_deleted')), msgOf(r, 'probe_files_deleted').slice(-200));
+  } finally { rmSync(root, { recursive: true, force: true }); rmSync(st.dir, { recursive: true, force: true }); rmSync(art, { recursive: true, force: true }); rmSync(repo, { recursive: true, force: true }); }
+}
+
+{
+  // 6.17-6.20 **边界（方向不能搞混）**：files_touched 登记了一个已删除的文件
+  //            → 这是 R18 的 files_touched_not_found 该抓的，
+  //              本规则（只看「写了的、没登记的」）既不放过也不代劳。
+  const SID = 'session-dddd0005-0000-0000-0000-000000000005';
+  const A = 'src/main/java/com/x/A.java';
+  const GONE = 'src/main/java/com/x/Gone.java';
+  const repo = slash(makeRealRepo([A]));      // Gone.java 不在磁盘上
+  const root = makeRoot('--D-Tmp-r23--', [{
+    dir: SID, events: sessionEvents({ id: SID, writes: [{ path: `${repo}/${A}` }, { path: `${repo}/${GONE}` }] }),
+  }]);
+  const fixArt = artifactOf({ files: [A, GONE] });
+  const art = makeArtifactDir([fixArt]);
+  const st = writeState(stateOf({ repo, artifactDir: art, contracts: [{ fix_agent_id: 'fix-1' }] }));
+  try {
+    const r = run(['--state', st.path, '--sessions', root, '--json']);
+    expect('6.17 登记的已删除文件不由本规则判 under-reported（方向不同）',
+      !hasRule(r, 'files_touched_underreported_by_harness'), JSON.stringify(rulesOf(r)));
+    expect('6.18 也不误判成 overclaim（harness 确实写过它）',
+      !hasRule(r, 'files_touched_overclaimed_by_harness'), JSON.stringify(rulesOf(r)));
+    expect('6.19 本规则整体 exit 0（谁的责任谁负）', r.code === 0, `code=${r.code} ${JSON.stringify(rulesOf(r, 'FAIL'))}`);
+    const cp = runScript(join(HERE, 'check-payload.mjs'),
+      [join(art, 'done-1.md'), '--role', 'fix', '--repo', repo, '--artifact-dir', art, '--json']);
+    expect('6.20 R18 的 files_touched_not_found 仍然抓它（两件事没被合并）',
+      (cp.data?.errors ?? []).some((e) => e.rule === 'files_touched_not_found'),
+      JSON.stringify((cp.data?.errors ?? []).map((e) => e.rule)));
+  } finally { rmSync(root, { recursive: true, force: true }); rmSync(st.dir, { recursive: true, force: true }); rmSync(art, { recursive: true, force: true }); rmSync(repo, { recursive: true, force: true }); }
+}
+
+{
+  // 6.21-6.22 降级纪律：target_repo 本身不是目录 → 存在性不可判定
+  //            **不能**因此把「未登记的源码写入」静默放过（那会重新打开 under-reporting 的口子）
+  const SID = 'session-dddd0006-0000-0000-0000-000000000006';
+  const ghostRepo = 'D:/No/Such/Repo/R23';
+  const root = makeRoot('--D-Tmp-r23--', [{
+    dir: SID, events: sessionEvents({ id: SID, writes: [{ path: `${ghostRepo}/src/A.java` }, { path: `${ghostRepo}/src/B.java` }] }),
+  }]);
+  const art = makeArtifactDir([artifactOf({ files: ['src/A.java'] })]);
+  const st = writeState(stateOf({ repo: ghostRepo, artifactDir: art, contracts: [{ fix_agent_id: 'fix-1' }] }));
+  try {
+    const r = run(['--state', st.path, '--sessions', root, '--json']);
+    expect('6.21 基准目录不存在 → 仍判 under-reported（不静默放过）',
+      hasRule(r, 'files_touched_underreported_by_harness', 'FAIL') && r.code === 1,
+      `code=${r.code} ${JSON.stringify(rulesOf(r))}`);
+    expect('6.22 并 WARN file_existence_unknown（降级必须可见，不能假装甄别过）',
+      hasRule(r, 'file_existence_unknown', 'WARN'), JSON.stringify(rulesOf(r)));
+  } finally { rmSync(root, { recursive: true, force: true }); rmSync(st.dir, { recursive: true, force: true }); rmSync(art, { recursive: true, force: true }); }
+}
+
+{
+  // 6.23-6.25 **关键反证**：文件现在不存在，但日志里**没有任何删除动作**。
+  //    光看「文件不在」分辨不出「写完删了」和「那条 write 根本没落盘 / 基准指错了」。
+  //    后者照旧判 under-reported —— 否则「别让文件落盘」就成了绕过手段。
+  //    （这正是 stop-hook.test.mjs case 50 / R21-B 的形状。）
+  const SID = 'session-dddd0007-0000-0000-0000-000000000007';
+  const A = 'src/main/java/com/x/A.java';
+  const SNEAKY = 'src/main/java/com/x/Sneaky.java';
+  const repo = slash(makeRealRepo([A]));    // Sneaky.java 不在磁盘上，也没有删除记录
+  const root = makeRoot('--D-Tmp-r23--', [{
+    dir: SID, events: sessionEvents({ id: SID, writes: [{ path: `${repo}/${A}` }, { path: `${repo}/${SNEAKY}` }] }),
+  }]);
+  const art = makeArtifactDir([artifactOf({ files: [A] })]);
+  const st = writeState(stateOf({ repo, artifactDir: art, contracts: [{ fix_agent_id: 'fix-1' }] }));
+  try {
+    const r = run(['--state', st.path, '--sessions', root, '--json']);
+    expect('6.23 文件不在、但无删除动作 → 仍 exit 1（不能靠「不落盘」绕过）',
+      r.code === 1, `code=${r.code} ${JSON.stringify(rulesOf(r))}`);
+    expect('6.24 仍报 underreported 并点名 Sneaky.java',
+      hasRule(r, 'files_touched_underreported_by_harness', 'FAIL')
+      && msgOf(r, 'files_touched_underreported_by_harness').includes('Sneaky.java'),
+      msgOf(r, 'files_touched_underreported_by_harness').slice(0, 300));
+    expect('6.25 不报 probe_files_deleted（缺删除证据就不认）',
+      !hasRule(r, 'probe_files_deleted'), JSON.stringify(rulesOf(r)));
+  } finally { rmSync(root, { recursive: true, force: true }); rmSync(st.dir, { recursive: true, force: true }); rmSync(art, { recursive: true, force: true }); rmSync(repo, { recursive: true, force: true }); }
+}
+
+{
+  // 6.26-6.28 写了、没删（还在磁盘上）、但日志里**有**一条别的删除命令提到它 ——
+  //    「文件在」优先于「有删除记录」：仓库最终状态里有它，就是改动。
+  //    （防止只认日志、不看磁盘造成漏报。）
+  const SID = 'session-dddd0008-0000-0000-0000-000000000008';
+  const A = 'src/main/java/com/x/A.java';
+  const B = 'src/main/java/com/x/B.java';
+  const repo = slash(makeRealRepo([A, B]));
+  const root = makeRoot('--D-Tmp-r23--', [{
+    dir: SID,
+    events: sessionEvents({
+      id: SID,
+      writes: [{ path: `${repo}/${A}` }, { path: `${repo}/${B}` }],
+      // 曾经删过、后来又写回来了：日志里有删除动作，但文件现在在
+      shells: [{ command: `Remove-Item '${repo}/${B}' -Force` }],
+    }),
+  }]);
+  const art = makeArtifactDir([artifactOf({ files: [A] })]);
+  const st = writeState(stateOf({ repo, artifactDir: art, contracts: [{ fix_agent_id: 'fix-1' }] }));
+  try {
+    const r = run(['--state', st.path, '--sessions', root, '--json']);
+    expect('6.26 文件现在存在（即便曾有删除记录）→ 仍判 under-reported',
+      hasRule(r, 'files_touched_underreported_by_harness', 'FAIL') && r.code === 1,
+      `code=${r.code} ${JSON.stringify(rulesOf(r))}`);
+    expect('6.27 点名的正是仍留在仓库里的 B.java',
+      msgOf(r, 'files_touched_underreported_by_harness').includes('B.java'),
+      msgOf(r, 'files_touched_underreported_by_harness').slice(0, 200));
+    expect('6.28 不报 probe_files_deleted', !hasRule(r, 'probe_files_deleted'), JSON.stringify(rulesOf(r)));
+  } finally { rmSync(root, { recursive: true, force: true }); rmSync(st.dir, { recursive: true, force: true }); rmSync(art, { recursive: true, force: true }); rmSync(repo, { recursive: true, force: true }); }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// 7 · 真实数据自证（field-test-1：8 个探针写了又删 → 0 FAIL + INFO）
+// ════════════════════════════════════════════════════════════════════
+console.log('\n=== 7：真实数据自证（field-test-1 / session 99da3b3f 的 8 个探针）===');
+
+const FT_STATE = '<TARGET_REPO>/.work/round1/state.json';
+const FT_REPO = '<TARGET_REPO>';
+const FT_SESSION = 'session-99da3b3f-7a50-4935-9098-81e4f1accf29';
+const FT_PROBES = [
+  'src/test/java/com/hilltopvillage/doc/F6DocStructureProbeTest.java',
+  'src/test/java/com/hilltopvillage/doc/F6IndependentProbeTest.java',
+  'src/test/java/com/hilltopvillage/shop/F1TruncationProbeTest.java',
+  'src/test/java/com/hilltopvillage/shop/F2VerificationProbeTest.java',
+  'src/test/java/com/hilltopvillage/shop/F3VerifyProbeTest.java',
+  'src/test/java/com/hilltopvillage/shop/F4IndependentProbeTest.java',
+  'src/test/java/com/hilltopvillage/shop/F4bGhostSlotProbeTest.java',
+  'src/test/java/com/hilltopvillage/shop/ShopListenerPurchaseMessageProbeTest.java',
+];
+
+if (!existsSync(REAL_ROOT) || !existsSync(FT_STATE) || !existsSync(FT_REPO)) {
+  console.log('  SKIP: 真实 field-test-1 账本 / 目标仓库 / dsh 日志不在这台机器上（不计失败）');
+} else if (FT_PROBES.some((p) => existsSync(join(FT_REPO, p)))) {
+  console.log('  SKIP: 那 8 个探针文件又被建出来了——「已删除」的前提不成立（不计失败）');
+} else {
+  const r = run(['--state', FT_STATE, '--sessions', REAL_ROOT, '--session-id', FT_SESSION, '--json']);
+  expect('7.1 真实账本能跑通（不是配置错误）', r.data?.exitCode !== undefined, r.err.slice(0, 200));
+  expect('7.2 8 个探针写后已删 → 0 FAIL / exit 0', r.code === 0, `code=${r.code} ${JSON.stringify(rulesOf(r, 'FAIL'))}`);
+  expect('7.3 8 个探针全部进 probe_files_deleted',
+    (r.data?.probeFilesDeleted ?? []).length === 8, String((r.data?.probeFilesDeleted ?? []).length));
+  expect('7.4 一个都不算 under-reported',
+    !hasRule(r, 'files_touched_underreported_by_harness'), JSON.stringify(rulesOf(r)));
+  console.log(`    → field-test-1: calls=${r.data?.writeEditCalls} files=${r.data?.actualFiles} `
+    + `probes=${(r.data?.probeFilesDeleted ?? []).length} exit=${r.code}`);
 }
 
 console.log(`\n合计: ${pass} 通过 / ${fail} 失败`);

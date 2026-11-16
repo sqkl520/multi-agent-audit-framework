@@ -207,8 +207,124 @@ if (existsSync(EXAMPLE_DIR)) {
   }
 }
 
+// ────────────────────────────────────────────────────────────────────
+// 规则 recursion_depth_mismatch（2026-11-16 新增）
+//
+// 实战暴露：triage.md 说 T2 = 3 层，wrappers/planner.md 说 T2 = 2 层。
+// 两者都是「对同一件事的声明」，任何单独一方读起来都自洽，
+// 只有并排看才发现冲突。agent 读到 planner 的 2 就按 2 执行，
+// 然后在收尾报告里把「任务书要 3」写成框架缺陷——这个发现成本本来不该由 agent 承担。
+//
+// 提取方式：**不用正则去猜自然语言**，而是要求两处都放一张带标记的结构化表格：
+//
+//   <!-- RECURSION-DEPTH-TABLE -->
+//   | TIER | 递归上限（层） |
+//   |---|---|
+//   | T0 | 1 |
+//   | T1 | 2 |
+//   | T2 | 3 |
+//
+// 标记行让「找到表」这件事变成存在性判断，而不是猜标题措辞。
+// 表格让「取哪一列」变成位置判断，而不是从散文里抽数字。
+//
+// 关键：**找不到表不是跳过，是失败。** 如果提取失败就放行，
+// 这个校验器等于没有——首个用例（case 10）就是钉这一点的。
+// ────────────────────────────────────────────────────────────────────
+const DEPTH_MARK = '<!-- RECURSION-DEPTH-TABLE -->';
+const DEPTH_SOURCES = [
+  { file: 'orchestrator/triage.md', path: join(ROOT, 'framework', 'orchestrator', 'triage.md') },
+  { file: 'wrappers/planner.md', path: join(WRAPPERS, 'planner.md') },
+];
+const TIERS = ['T0', 'T1', 'T2'];
+const recursionDepth = { sources: [] };
+
+/**
+ * 从标记之后的第一个 markdown 表格里抽取 TIER → 层数。
+ * 返回 { ok, depths, reason }。
+ */
+function extractDepthTable(text, label) {
+  const at = text.indexOf(DEPTH_MARK);
+  if (at < 0) {
+    return { ok: false, reason: `找不到标记 ${DEPTH_MARK}（递归表被搬走或改写成散文）` };
+  }
+  const lines = text.slice(at + DEPTH_MARK.length).split('\n');
+
+  const depths = {};
+  let sawTable = false;
+  let sawSeparator = false;
+
+  for (const raw of lines) {
+    const ln = raw.trim();
+    if (ln === '') { if (sawTable) break; else continue; }   // 空行：表前忽略，表后结束
+    if (!ln.startsWith('|')) { if (sawTable) break; else continue; }
+
+    const cells = ln.split('|').slice(1, -1).map((c) => c.trim());
+    if (cells.length < 2) continue;
+
+    // 分隔行 |---|---|
+    if (/^:?-{2,}:?$/.test(cells[1])) { sawSeparator = true; continue; }
+    // 表头
+    if (/TIER/i.test(cells[0])) { sawTable = true; continue; }
+
+    const tier = cells[0].replace(/[^A-Z0-9]/g, '');
+    if (!TIERS.includes(tier)) continue;
+    const m = cells[1].match(/\d+/);
+    if (!m) return { ok: false, reason: `${tier} 行的层数格无数字: "${cells[1]}"` };
+    depths[tier] = Number(m[0]);
+    sawTable = true;
+  }
+
+  if (!sawTable) return { ok: false, reason: `标记之后找不到表格` };
+  if (!sawSeparator) return { ok: false, reason: `标记之后的表格缺分隔行，不是合法 markdown 表` };
+
+  const missing = TIERS.filter((t) => !(t in depths));
+  if (missing.length) {
+    return { ok: false, reason: `表里缺 TIER: ${missing.join(', ')}（表格不完整，不能当作「已声明」）` };
+  }
+  return { ok: true, depths };
+}
+
+for (const { file, path } of DEPTH_SOURCES) {
+  if (!existsSync(path)) {
+    problems.push({
+      where: file, field: 'recursion.max_depth', kind: 'recursion_depth_table_missing',
+      detail: `${file} 不存在，无法比对递归上限——缺文件不是「一致」`,
+    });
+    continue;
+  }
+  const r = extractDepthTable(readFileSync(path, 'utf8'), file);
+  if (!r.ok) {
+    problems.push({
+      where: file, field: 'recursion.max_depth', kind: 'recursion_depth_table_missing',
+      detail: `${file} 的递归上限表无法提取: ${r.reason}。**提取失败不等于通过**`,
+    });
+    continue;
+  }
+  recursionDepth.sources.push({ file, depths: r.depths });
+}
+
+// 两个来源都拿到了才逐 TIER 比对；少一个已经在上面报过 missing。
+if (recursionDepth.sources.length === DEPTH_SOURCES.length) {
+  const [a, b] = recursionDepth.sources;
+  const bad = [];
+  for (const tier of TIERS) {
+    if (a.depths[tier] !== b.depths[tier]) {
+      bad.push(`${tier}: ${a.file} 说 ${a.depths[tier]} 层，${b.file} 说 ${b.depths[tier]} 层`);
+    }
+  }
+  if (bad.length) {
+    problems.push({
+      where: `${a.file} vs ${b.file}`, field: 'recursion.max_depth',
+      kind: 'recursion_depth_mismatch',
+      detail: `递归上限不一致 —— ${bad.join('；')}。`
+        + `两处必须逐 TIER 相同（harness 能力不足造成的更低上限由 compatibility.md 处理，不写进这两张表）`,
+    });
+  }
+  recursionDepth.consistent = bad.length === 0;
+}
+
 if (jsonOut) {
-  console.log(JSON.stringify({ enumDefs, problems, docDeclsFound, exampleValuesChecked }, null, 2));
+  console.log(JSON.stringify({ enumDefs, problems, docDeclsFound, exampleValuesChecked, recursionDepth }, null, 2));
   process.exit(problems.length ? 1 : 0);
 }
 
@@ -223,6 +339,7 @@ for (const { field, values } of enumDefs) {
 console.log('');
 if (problems.length === 0) {
   console.log('结论：契约切片 / wrapper / 模板 / 示例四处与校验器闭集一致。');
+  console.log(`递归上限：${recursionDepth.sources.map((s) => `${s.file} T0=${s.depths.T0} T1=${s.depths.T1} T2=${s.depths.T2}`).join(' | ')} — 逐 TIER 一致。`);
   process.exit(0);
 }
 console.log(`发现 ${problems.length} 处漂移：`);

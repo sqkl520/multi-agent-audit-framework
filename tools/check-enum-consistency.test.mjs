@@ -153,6 +153,79 @@ console.log('case 7: templates/ 必须在扫描范围内（回归：reachability
   expect('指向模板文件', /模板/.test(hit?.where ?? ''), hit?.where);
 }
 
+// ────────────────────────────────────────────────────────────────────
+// case 8-10：递归上限跨文件一致性（2026-11-16 新增）
+//
+// 实战暴露的矛盾：triage.md 说 T2 = 3 层，wrappers/planner.md 说 T2 = 2 层。
+// 一次真实修复任务里，agent 读到 planner 的「2」，按 depth 2 保守执行，
+// 在收尾报告里把「depth 3 vs 上限 2」写成「框架文档/闸门矛盾」。
+// 同一份框架，T2 的上限一个说 3 一个说 2 —— 这不该靠 agent 写报告来发现。
+// ────────────────────────────────────────────────────────────────────
+const DEPTH_MARK = '<!-- RECURSION-DEPTH-TABLE -->';
+
+/** 在标记之后的表格里，把某个 TIER 的层数改成另一个数字 */
+function mutateDepthRow(file, tier, value) {
+  const t = readFileSync(file, 'utf8');
+  const i = t.indexOf(DEPTH_MARK);
+  if (i < 0) throw new Error(`${file} 里找不到 ${DEPTH_MARK}`);
+  const head = t.slice(0, i);
+  const tail = t.slice(i);
+  const re = new RegExp(`\\|\\s*${tier}\\s*\\|\\s*\\d+\\s*\\|`);
+  if (!re.test(tail)) throw new Error(`${file} 的递归表里找不到 ${tier} 行`);
+  writeFileSync(file, head + tail.replace(re, `| ${tier} | ${value} |`));
+}
+
+console.log('case 8: 两个文件的递归上限表都存在且一致 → 必须通过');
+{
+  const r = withCopy(() => {}, runIn);
+  const depthProbs = (r.data?.problems ?? []).filter((p) => /^recursion_depth/.test(p.kind));
+  expect('无 recursion_depth_* 问题', depthProbs.length === 0, JSON.stringify(depthProbs));
+  expect('解析出两个来源的递归表', (r.data?.recursionDepth?.sources?.length ?? 0) === 2,
+    JSON.stringify(r.data?.recursionDepth));
+  const triageVals = r.data?.recursionDepth?.sources?.find?.((s) => /triage/.test(s.file))?.depths;
+  expect('triage 解析出 T2 = 3', triageVals?.T2 === 3, JSON.stringify(triageVals));
+}
+
+console.log('case 9: planner 的 T2 改成 2（实战里真实发生的那次漂移）→ 必须点名 T2 并给两个数字');
+{
+  const r = withCopy((fw) => {
+    mutateDepthRow(join(fw, 'wrappers', 'planner.md'), 'T2', 2);
+  }, runIn);
+  expect('退出码 1', r.code === 1, `实际 ${r.code}`);
+  const hit = (r.data?.problems ?? []).find((p) => p.kind === 'recursion_depth_mismatch');
+  expect('报 recursion_depth_mismatch', !!hit, JSON.stringify(r.data?.problems));
+  expect('点名 TIER = T2', /T2:/.test(hit?.detail ?? ''), hit?.detail);
+  expect('报出两个数字（triage 3 / planner 2）',
+    /3/.test(hit?.detail ?? '') && /2/.test(hit?.detail ?? ''), hit?.detail);
+}
+
+console.log('case 10: planner 缺递归表 → 必须报错，不得因为「找不到」就静默通过');
+{
+  const r = withCopyWithMissingTable();
+  const hit = (r.data?.problems ?? []).find((p) => p.kind === 'recursion_depth_table_missing');
+  expect('报 recursion_depth_table_missing', !!hit, JSON.stringify(r.data?.problems));
+  expect('点名缺表的文件', /planner\.md/.test(hit?.detail ?? ''), hit?.detail);
+  expect('退出码非 0', r.code !== 0, `实际 ${r.code}`);
+}
+
+/** 把 planner 里的整张递归表删掉（含标记行），模拟「表格被改写/搬走」 */
+function withCopyWithMissingTable() {
+  return withCopy((fw) => {
+    const p = join(fw, 'wrappers', 'planner.md');
+    const t = readFileSync(p, 'utf8');
+    const i = t.indexOf(DEPTH_MARK);
+    if (i < 0) throw new Error('planner.md 里找不到递归表标记');
+    // 从标记行删到表格结束（遇到第一个空行之后的行即停）
+    const lines = t.slice(i).split('\n');
+    let end = 1;
+    for (; end < lines.length; end++) {
+      const ln = lines[end].trim();
+      if (ln !== '' && !ln.startsWith('|')) break;
+    }
+    writeFileSync(p, t.slice(0, i) + lines.slice(end).join('\n'));
+  }, runIn);
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

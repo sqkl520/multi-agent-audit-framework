@@ -134,7 +134,31 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role planne
 | `tier` | 必须与 `score` 对应（0→T0 / 1→T1 / ≥2→T2） |
 | `member_count` | 必须 ≥ `triage.md` §3 规定的最小值 |
 | `members[].role` | 必须是六种之一：`execute` / `retrieve` / `critique` / `redteam` / `verify` / `arbiter` |
-| `recursion.max_depth` | 不得超过 T0=0 / T1=1 / T2=2 |
+| `recursion.max_depth` | 必须 ≤ 下表该 TIER 的值，见「递归上限」 |
+
+### 4.1 递归上限（与 `orchestrator/triage.md` 第 5 节保持一致，2026-11-16 修正）
+
+<!-- RECURSION-DEPTH-TABLE -->
+| TIER | 递归上限（层） |
+|---|---|
+| T0 | 1 |
+| T1 | 2 |
+| T2 | 3 |
+
+**这张表必须与 `orchestrator/triage.md` 第 5 节的同名表逐格相同。**
+`max_depth` 是**上限**不是目标：取更小永远合法（复杂度不需要就别硬派），
+取更大就是超界。harness 能力不足导致的更低上限由 `compatibility.md` §2.2 统一处理，
+**不写进这张表**。
+
+> **2026-11-16 修正痕迹**：此处原写「不得超过 T0=0 / T1=1 / T2=2」，
+> 与 `orchestrator/triage.md:119`「T2 递归 3 层（Claude Code 官方 subagent
+> 嵌套上限就是 3）」矛盾，也与 `tools/check-plan.mjs` 的
+> `maxDepth = { T0: 1, T1: 2, T2: 3 }` 矛盾——**两处机械检查都按 3 走，
+> 只有这份文档按 2 走**。实战（field-test-1）确实因此让 agent 按 depth 2 保守执行，
+> 并把「任务书 depth 3 vs planner 上限 2」当成框架缺陷报了上来。
+> 现改为与 triage 逐格一致的结构化表格，并由
+> `tools/check-enum-consistency.mjs` 的 `recursion_depth_mismatch` 规则守住。
+
 
 **`template` 的选择**：
 

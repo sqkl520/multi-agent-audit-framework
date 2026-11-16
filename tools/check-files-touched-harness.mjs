@@ -75,7 +75,10 @@
  *   agent_attribution_unavailable            fix_agent_id 映射不到 session（降级）       WARN
  *   unnormalizable_claimed_path              声称侧的绝对路径不在 target_repo 内         WARN
  *   unnormalizable_actual_path               写操作的目标不在 target_repo 内             WARN
+ *   file_existence_unknown                   无法判定文件现在是否还在（降级）           WARN
  *   repo_from_session_cwd                    target_repo 缺失，基准取自 session cwd      INFO
+ *   probe_files_deleted                      写了源码、文件已删、且有删除记录（探针）    INFO
+ *   probe_files_deleted_by_agent             同上，但发生在逐实例归属对账里              INFO
  *   more_actual_than_claimed_files           实际写的文件多于声称（仅计数提示）          INFO
  *
  * 退出码：0 = 通过（允许 WARN/INFO） / 1 = 有 FAIL / 2 = 配置错误
@@ -91,6 +94,38 @@
  *   - 写完之后有没有被回滚（`write` 过再 `git checkout --` 还原，日志里仍有那条 write
  *     记录）——本脚本判「写动作发生过」，**不判「写动作最终生效」**。见 R21 报告 §六。
  *   - 非 dsh 的 harness（当前未实现适配器，故意不做半成品）
+ *
+ * ── R23：写了又删的探针不是「未登记的修复改动」───────────────────────
+ * field-test-1（2026-11-16）真实盲区：主 session 为验证修复建了 8 个
+ * `*ProbeTest.java` 探针、用完删掉，`files_touched` 没登记它们——**这是对的**，
+ * 因为仓库最终状态里没有它们。R21 把「harness 记录的所有源码写入」都当成
+ * 「修复改动」，于是报 1 FAIL。
+ *
+ * 判据（**两条都要**，缺一不认）：
+ *   (a) harness 有 write/edit 记录，且该文件**现在不在磁盘上**
+ *   (b) harness 的 shell 调用里有一条**删除动作**（Remove-Item / rm / git clean…）
+ *       指向这个文件
+ *   → probe_files_deleted（INFO），不判 under-reported
+ *   只满足 (a) 不满足 (b) → 照旧 FAIL
+ *
+ * 为什么必须要 (b)：光看「文件不在」分辨不出三种情况——
+ *   1. 写完就删的探针（本规则要放行的）
+ *   2. 日志里那条 write 根本没落盘 / 基准 target_repo 指错了（**该报的**）
+ *   3. agent 为了逃避登记把文件删了（**该报的**——不过那时仓库里确实没改动，
+ *      真正该抓的是「修复没发生」，由 R18 的 files_touched_not_found 与
+ *      测试/红测证据链负责，见 R23 报告 §诚实评估）
+ * 只有 (b) 能把 1 与 2/3 分开，因为它是**动作记录**，不是状态推断。
+ *
+ * 为什么仍然必须显式列出来（INFO，不静默过滤）：静默过滤等于规则自己决定什么不重要；
+ * 而且「写了又忘删」的情形仍会留在仓库里 → 那时规则照旧报 FAIL，**这是对的**。
+ *
+ * 存在性不可判定（target_repo 不是目录 / 路径形态无法解析）时**不甄别**：
+ * 退回到 R21 的行为并 WARN `file_existence_unknown`。
+ * 宁可维持旧口径，也不能让「判断不了」变成「一律放过」——那会重新打开
+ * under-reporting 的口子。
+ *
+ * 反方向不受影响：`files_touched` 登记了一个不存在的文件，是 R18 的
+ * `files_touched_not_found` 的事（`check-payload.mjs`），本脚本不代劳也不放过。
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -198,6 +233,41 @@ function isNoisePath(rel) {
   return NOISE_PREFIXES.some((pre) => lower === pre.slice(0, -1) || lower.startsWith(pre));
 }
 const isSourcePath = (rel) => !isNoisePath(rel) && SRC_EXT.test(rel);
+
+// ────────────────────────────────────────────────────────────────────
+// R23 · 文件现在还在不在
+// ────────────────────────────────────────────────────────────────────
+//
+// 甄别「写了又删的探针」与「留下来的真改动」的唯一依据。
+// 三个返回值，必须**都**能表达，不能用 false 兜底：
+//   true  = 文件现在存在（真改动）
+//   false = 文件现在不存在（写了又删的探针）
+//   null  = 判断不了（基准目录不存在 / 路径形态无法解析）→ 调用方**不甄别**
+//
+// 为什么 null 不折成 false：折成 false 等于「判断不了就算已删除」，
+// under-reporting 会重新变成可绕过的（只要让 target_repo 指向一个不存在的目录）。
+// 为什么 null 不折成 true：折成 true 会在 target_repo 指错时产生假 FAIL。
+// 两种猜测都会错，所以只能把「不确定」如实传出去，由调用方降级并 WARN。
+//
+// 只看 `target_repo` 本身是不是一个真目录，**不**用「父目录存在」兜底：
+// 一个路径的父目录在、文件不在，可能只是它被删了，也可能是 root 拼错了。
+// 分辨不了就不要假装分辨了。
+export function fileExistence(rel, targetRepo, caseInsensitive = IS_WIN) {
+  if (typeof rel !== 'string' || rel.trim() === '') return null;
+  if (typeof targetRepo !== 'string' || targetRepo.trim() === '') return null;
+  let repoIsDir = false;
+  try { repoIsDir = statSync(targetRepo.trim()).isDirectory(); } catch { repoIsDir = false; }
+  if (!repoIsDir) return null;
+
+  const n = normalizePath(rel, targetRepo, caseInsensitive);
+  if (!n.ok || !n.abs) return null;
+  if (!isAbsolutePath(n.abs)) return null;
+  try {
+    return existsSync(n.abs);
+  } catch {
+    return null;
+  }
+}
 
 // ────────────────────────────────────────────────────────────────────
 // 主流程
@@ -630,8 +700,111 @@ function main() {
       { paths: unnormalizableActual.map((w) => w.raw) });
   }
 
+  // ── 6.5 · 删除记录（R23）──
+  //
+  // 「文件现在不存在」单独**不足以**证明它是「写完就删的探针」：
+  // 它也可能是 target_repo 指错、或者日志里那条 write 根本没落盘。
+  // 两者必须能分开，否则 under-reporting 会重新变成可绕过的
+  // （只要别让文件落盘、或者把基准指向一个空目录）。
+  //
+  // 第二个信号来自 harness 自己：**它记了删除动作**。
+  // field-test-1 的 8 个探针全部留下 `Remove-Item ...` 的 pwsh 调用，
+  // 这是「写了又删」最直接的证据，而且是**动作记录**，不是状态推断。
+  //
+  // 判据（两者都要）：
+  //   (a) harness 有 write/edit 记录，且文件**现在不存在**
+  //   (b) harness 的 shell 调用里有一条**删除动作**指向这个文件
+  //
+  // 只满足 (a) 不满足 (b) → 照旧 FAIL。「日志说写过、磁盘上没有、
+  // 也没人删过它」= 那条 write 记录与仓库对不上，这本身就是要报的，
+  // 而且它正是 R18 §6 那种「只列存在的文件」的形状。
+  const SHELL_TOOLS = ['pwsh', 'powershell', 'bash', 'sh', 'shell', 'zsh', 'cmd',
+    'terminal', 'run_command', 'execute_bash', 'exec', 'run'];
+  // 只认**明确的删除动词**。故意不把 `Test-Path` / `Get-Content` / `Resolve-Path`
+  // 算进来：它们只是引用路径，不改变仓库。
+  // `git clean` 也算（它会真的把未跟踪文件删掉）。
+  const DELETE_PATTERN = new RegExp([
+    'Remove-Item',
+    '(?:^|[^\\w-])rm\\s+-',
+    '(?:^|[^\\w-])rm\\s+[^\\s]',
+    '(?:^|[^\\w-])del\\s+/[A-Za-z]',
+    '(?:^|[^\\w-])rmdir\\b',
+    '(?:^|[^\\w-])unlink\\b',
+    'git\\s+clean',
+    '\\[System\\.IO\\.File\\]::Delete',
+    '\\[System\\.IO\\.Directory\\]::Delete',
+  ].join('|'), 'i');
+
+  const extractCommand = (ev) => {
+    let args = ev.data?.arguments;
+    if (typeof args === 'string') {
+      try { args = JSON.parse(args); } catch { return null; }
+    }
+    if (!args || typeof args !== 'object') return null;
+    const c = args.command ?? args.cmd ?? args.script ?? args.input;
+    return typeof c === 'string' && c.trim() !== '' ? c : null;
+  };
+
+  const deleteCommands = [];      // [{ sessionId, cmd }]（cmd 已转 posix + 小写）
+  for (const s of scanned) {
+    for (const ev of s.read.events) {
+      if (ev.type !== 'tool/call') continue;
+      if (!SHELL_TOOLS.includes(ev.data?.name)) continue;
+      const cmd = extractCommand(ev);
+      if (!cmd || !DELETE_PATTERN.test(cmd)) continue;
+      deleteCommands.push({ sessionId: s.meta.id, cmd: toPosix(cmd).toLowerCase() });
+    }
+  }
+
+  // 命中口径：命令里出现**这个文件的相对路径**，或它的唯一 basename（≥6 字符，
+  // 避免 `A.java` 这种到处都有的名字误命中）。shell 里可能写反斜杠、也可能写绝对路径，
+  // 都在 cmd 归一化成 posix 之后覆盖。
+  const deleteEvidence = new Map();   // relLower → [cmd...]
+  const deleteEvidenceFor = (rel) => {
+    const relLower = toPosix(rel).toLowerCase();
+    if (deleteEvidence.has(relLower)) return deleteEvidence.get(relLower);
+    const base = relLower.split('/').pop();
+    const hits = deleteCommands
+      .filter((d) => d.cmd.includes(relLower) || (base.length >= 6 && d.cmd.includes(base)))
+      .map((d) => d.cmd);
+    deleteEvidence.set(relLower, hits);
+    return hits;
+  };
+
   // ── 8 · 核心规则 ──
   const claimedCount = claimed.size;
+
+  // 供 §10 输出复用：**不重算**，避免在没有核心判据的回合（no_claimed_files）
+  // 里为了填 JSON 字段去触一次存在性判断、凭空多一条 WARN。
+  let outUnderreported = [];
+  let outProbeFiles = [];
+
+  // R23 · 「文件现在还在不在」的唯一判定入口（8.2 与 9 共用同一份缓存）。
+  //
+  // 三值语义见 fileExistence()：true / false / null。
+  // **null 绝不折成 false**：那等于「判断不了就算已删除」，under-reporting
+  // 只要把 target_repo 指向一个不存在的目录就能绕过。null 时退回 R21 口径 + WARN。
+  const existenceCache = new Map();
+  let existenceUnknownWarned = false;
+  const existsNow = (rel) => {
+    if (!existenceCache.has(rel)) existenceCache.set(rel, fileExistence(rel, repoBase));
+    const got = existenceCache.get(rel);
+    if (got === null && !existenceUnknownWarned) {
+      existenceUnknownWarned = true;
+      warn('file_existence_unknown',
+        `无法判断 harness 写过的文件现在是否还在：路径基准 `
+        + `${repoBase === null ? '（未知）' : `"${repoBase}" 不是一个存在的目录`}。\n`
+        + '  本回合**不做探针甄别**（未登记的源码写入一律照 R21 口径判 under-reported），'
+        + '逐实例归属对账同理不甄别。\n'
+        + '  为什么不按「文件不在 = 已删除」处理：那等于把「判断不了」变成「一律放过」，'
+        + 'under-reporting 只要把 target_repo 指向一个不存在的目录就能绕过。\n'
+        + '  为什么不按「文件在 = 存在」处理：基准指错时会造出假 FAIL，而假 FAIL 比漏报更糟'
+        + '（它会让整条规则被关掉）。\n'
+        + '  两种猜测都会错，所以这里只把「不确定」如实说出来，并维持旧口径。',
+        { repoBase });
+    }
+    return got;
+  };
 
   if (fixEnvelopeCount === 0 || claimedCount === 0) {
     // 没有 claimed 集合 → 核心判据无从执行。**不能静默跳过**：
@@ -677,9 +850,60 @@ function main() {
     // 只看源码（SRC_EXT）且非噪音前缀。修复相位里必然有合法噪音——
     // 产物 .md、日志、repair-artifacts/、experiments/、构建输出。
     // 无条件升 FAIL 会让每个回合都红，然后这条规则被整体关掉（那比漏报更糟）。
+    //
+    // R23：再加一层「文件现在还在不在」。write/edit 记录里有、但文件现在不存在
+    // 的源码，是**写完就删的一过性探针**，不是「改了却没登记」——
+    // `files_touched` 的语义是「这个实例改动了哪些文件」，仓库最终状态里没有它，
+    // 就不构成改动。它们单独走 INFO（probe_files_deleted），不静默过滤。
     const unclaimed = [...actual.entries()].filter(([k]) => !claimed.has(k));
     const unclaimedNoise = unclaimed.filter(([, v]) => !isSourcePath(v.rel));
-    const unclaimedSource = unclaimed.filter(([, v]) => isSourcePath(v.rel)).map(([, v]) => v).sort((a, b) => (a.rel < b.rel ? -1 : 1));
+
+    const unclaimedSourceAll = unclaimed.filter(([, v]) => isSourcePath(v.rel)).map(([, v]) => v);
+    const unclaimedSource = [];
+    const probeFiles = [];
+    const probeNoEvidence = [];
+    for (const v of unclaimedSourceAll) {
+      // 两个条件都要求，缺一不可（见 §6.5 的说明）：
+      //   (a) 文件现在不存在   (b) harness 记过指向它的删除动作
+      // existsNow 为 null（判断不了）时**不甄别**：归入正常判据，不放过。
+      if (existsNow(v.rel) !== false) { unclaimedSource.push(v); continue; }
+      const ev = deleteEvidenceFor(v.rel);
+      if (ev.length > 0) probeFiles.push({ ...v, deleteCommands: ev });
+      else probeNoEvidence.push(v);
+    }
+    // 文件不在磁盘上、但日志里没有任何删除动作 → 不当作探针，照旧判 under-reported。
+    for (const v of probeNoEvidence) unclaimedSource.push(v);
+    unclaimedSource.sort((a, b) => (a.rel < b.rel ? -1 : 1));
+    probeFiles.sort((a, b) => (a.rel < b.rel ? -1 : 1));
+    outUnderreported = unclaimedSource.map((v) => v.rel);
+    outProbeFiles = probeFiles.map((v) => v.rel);
+
+    if (probeFiles.length > 0) {
+      // INFO，不是 WARN：这是**正确**的用法（验证完就清理），不是账本的瑕疵。
+      // 但必须显式列出来——静默过滤等于规则自己决定什么不重要，
+      // 而「写了又忘删」恰恰是真正该报的情形（那时文件还在，会进上面的 FAIL）。
+      info('probe_files_deleted',
+        `harness 记录了 ${probeFiles.length} 个源码文件的写入，但这些文件在 target_repo 里已不存在`
+        + `（写入后删除的一过性探针/临时脚本），不参与 files_touched 对账：\n`
+        + probeFiles.slice(0, 12).map((v) => `  - ${v.rel}（${v.calls} 次写操作；`
+          + `删除动作 ${v.deleteCommands.length} 条）`).join('\n')
+        + (probeFiles.length > 12 ? `\n  … 另有 ${probeFiles.length - 12} 个` : '')
+        + '\n\n判据（两条都要）：harness 有 write/edit 记录 **且** 该文件当前不在磁盘上，'
+        + `**且** harness 的 shell 调用里记过一条指向它的删除动作。`
+        + `\n为什么这不算 under-reported：files_touched 的语义是「这个实例**改动了**哪些文件」，`
+        + `一个写完就删的临时文件不构成改动——仓库最终状态里没有它。`
+        + `\n为什么还要「删除动作」这一条：光看「文件不在」分辨不出「写完删了」和`
+        + `「日志里的 write 根本没落盘 / 基准指错了」。后者照旧判 under-reported（FAIL）。`
+        + `\n但请注意区分：如果一个探针**写了却忘了删**，它会留在仓库里，`
+        + `那时规则照旧判 under-reported（FAIL）——那才是真的留下了未登记的文件。`
+        + `\n如果你认为其中某些不该删，检查它们是否被误删。`,
+        {
+          paths: probeFiles.map((v) => v.rel),
+          calls: probeFiles.map((v) => v.calls),
+          deleteEvidence: probeFiles.map((v) => ({ path: v.rel, commands: v.deleteCommands })),
+        });
+    }
+
     if (unclaimedSource.length > 0) {
       fail('files_touched_underreported_by_harness',
         `harness 记录本次会话写了 ${unclaimedSource.length} 个源码文件，`
@@ -694,9 +918,14 @@ function main() {
         + `\n已排除的噪音（${unclaimedNoise.length} 个写目标）：产物 .md / 日志 / `
         + `repair-artifacts/ experiments/ docs/ target/ build/ 等前缀——排除之后**剩下的**`
         + `才叫「应该被 files_touched 覆盖的东西」。`
+        + (probeFiles.length > 0
+          ? `\n另已识别 ${probeFiles.length} 个「写了又删」的探针（见 INFO probe_files_deleted），`
+            + `它们不算改动、不在本条里。`
+          : '')
         + `\n补法：把这些源码改动登记进对应 fix 产物的 payload.files_touched，`
         + `或确认它们不属于本次修复并说明来源。`,
-        { paths: unclaimedSource.map((v) => v.rel), ignoredNonSource: unclaimedNoise.map(([, v]) => v.rel) });
+        { paths: unclaimedSource.map((v) => v.rel), ignoredNonSource: unclaimedNoise.map(([, v]) => v.rel),
+          probeFilesDeleted: probeFiles.map((v) => v.rel) });
     } else if (unclaimed.length > 0) {
       info('more_actual_than_claimed_files',
         `harness 记录了 ${unclaimed.length} 个未被 files_touched 登记的文件，`
@@ -735,12 +964,21 @@ function main() {
   }
 
   const attributionMismatches = [];
+  const attributionProbes = [];
   for (const m of mapped) {
     const own = writesBySession.get(m.session.meta.id) ?? [];
     const ownKeys = new Set(own.map((n) => n.key));
     const claimedByAgent = new Set();
     for (const [k, v] of claimed) if (v.agents.has(m.agentId)) claimedByAgent.add(k);
-    const uncovered = [...new Map(own.filter((n) => !claimedByAgent.has(n.key)).map((n) => [n.key, n])).values()];
+    const rawUncovered = [...new Map(own.filter((n) => !claimedByAgent.has(n.key)).map((n) => [n.key, n])).values()];
+    // R23：逐实例对账同样不能把「写完就删的探针」算成漏登记（与 8.2 同一判据：
+    // 文件现在不存在 **且** harness 记过删除动作）。判不了（null）时同样不甄别。
+    const uncovered = [];
+    for (const n of rawUncovered) {
+      if (existsNow(n.rel) === false && deleteEvidenceFor(n.rel).length > 0) {
+        attributionProbes.push({ agentId: m.agentId, rel: n.rel });
+      } else uncovered.push(n);
+    }
     if (uncovered.length > 0) {
       attributionMismatches.push({ agentId: m.agentId, sessionId: m.session.meta.id, paths: uncovered.map((n) => n.rel) });
       fail('agent_attribution_mismatch',
@@ -757,6 +995,16 @@ function main() {
         + `\n补法：把漏掉的路径补进这个实例自己的 files_touched（信封的 agent_id 要与 fix_agent_id 一致）。`,
         { agentId: m.agentId, sessionId: m.session.meta.id, paths: uncovered.map((n) => n.rel) });
     }
+  }
+  if (attributionProbes.length > 0) {
+    // 逐实例侧同样显式列出，理由与 8.2 一致：静默过滤等于规则自己决定什么不重要。
+    info('probe_files_deleted_by_agent',
+      `逐实例对账时，有 ${attributionProbes.length} 个子 session 的写后已删探针被排除在外`
+      + `（文件现在不存在，不构成改动）：\n  `
+      + attributionProbes.slice(0, 12).map((p) => `${p.rel}（fix_agent_id = ${p.agentId}）`).join('\n  ')
+      + (attributionProbes.length > 12 ? `\n  … 另有 ${attributionProbes.length - 12} 个` : '')
+      + '\n  判据与 probe_files_deleted 相同：harness 有 write/edit 记录且文件当前不在磁盘上。',
+      { probes: attributionProbes });
   }
   if (fixAgentIds.length > 0 && mapped.length === 0) {
     warn('agent_attribution_unavailable',
@@ -802,13 +1050,14 @@ function main() {
     overclaimed: fixEnvelopeCount > 0
       ? [...claimed.entries()].filter(([k]) => !actual.has(k)).map(([, v]) => v.rel)
       : [],
-    underreported: fixEnvelopeCount > 0
-      ? [...actual.entries()].filter(([k]) => !claimed.has(k) && isSourcePath(actual.get(k).rel)).map(([, v]) => v.rel)
-      : [],
+    underreported: outUnderreported,
+    // R23：写了源码、但文件现在已不存在的一过性探针（INFO，不判 under-reported）。
+    probeFilesDeleted: outProbeFiles,
     attribution: {
       mapped: mapped.length,
       unmapped: fixAgentIds.length - mapped.length,
       mismatches: attributionMismatches,
+      probeFilesDeleted: [...new Set(attributionProbes.map((p) => p.rel))].sort(),
     },
   });
 
@@ -833,6 +1082,7 @@ function main() {
     console.log(`  write/edit 调用数     : ${r.writeEditCalls}`);
     console.log(`  不同被写文件数        : ${r.actualFiles}`);
     console.log(`  其中未登记的非源码    : ${r.ignoredNonSourceWrites}`);
+    console.log(`  其中写后已删的探针    : ${(r.probeFilesDeleted ?? []).length}（INFO，不参与对账）`);
     console.log(`  归属（能映射的实例）  : ${r.attribution?.mapped ?? 0}`);
     console.log('');
     if (r.problems.length === 0) {
