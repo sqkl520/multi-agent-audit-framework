@@ -24,9 +24,10 @@
       "method": "mutating_call_site",
       "mutation_check": "performed",
       "mutation_scope": "implementation_and_callsite",
+      "input_space_basis": "boundary",
       "observed": "把 renameSync 改回旧行为后，定向测试变红；再把调用点改回旧的直接写入，同样变红；恢复修复后变绿。"
     },
-    "notes": "修复有效。两层变异都能复现失败，说明修复点与调用点都参与决定用户可见行为。"
+    "notes": "修复有效。两层变异都能复现失败，说明修复点与调用点都参与决定用户可见行为。输入空间按 boundary 申报：覆盖了重命名失败与并发写入两个边界，但未穷举全部失败模式。"
   },
   "error": null
 }

@@ -707,6 +707,11 @@ if (envelope && envelope.payload && envelope.role) {
     { path: 'reachability', values: ['PROD', 'ENTRY', 'TEST_ONLY', 'UNREACHABLE', 'GENERATED'] },
     { path: 'verdicts[].five_step.path_reachable',  values: ['true', 'false', 'untested', true, false] },
     { path: 'verdicts[].five_step.already_handled', values: ['true', 'false', 'untested', true, false] },
+    // 2026-11-17：登记到这里，check-enum-consistency.mjs 才会把它的闭集
+    // 拿去和契约切片 / 母文件 / 示例做四处比对。不登记 = 这条枚举的漂移永远发现不了。
+    { path: 'evidence.mutation_check',     values: ['performed', 'skipped'] },
+    { path: 'evidence.mutation_scope',     values: ['implementation_only', 'implementation_and_callsite', null] },
+    { path: 'evidence.input_space_basis',  values: ['exhaustive', 'boundary', 'single_sample', 'unknown'] },
   ];
   for (const { path: fp, values } of ENUM_CHECKS) {
     // 顶层字段（如 reachability）：直接校验，不走数组遍历
@@ -1592,21 +1597,43 @@ if (envelope && envelope.role === 'verify') {
         msg: `mutation_scope="${ms}" 不在闭集内`
           + '（implementation_only | implementation_and_callsite）',
       });
-    } else if (ms === 'implementation_only') {
-      // 这里原本有一条 `mutation_scope_weak_unexplained` WARN：若 notes 里没出现
-      // 「调用点 / callsite」就警告。**已删除（2026-11-17 05:00）**，理由是实测：
-      //
-      //   · 9 份真实 verify 产物 **9 份全部触发**。命中率 100% 的 WARN 与 0% 的 WARN
-      //     是同一个东西——不携带任何信息的信号。第一次有人读，第三次就没人读了。
-      //   · 它有明显的绕过：在 notes 里写一句「未做调用点变异」即可，因为正则匹配的是
-      //     **出现**，不是**语义**。
-      //   · 它想判断的那件事（是否属于「函数返回值决定用户可见行为」）需要语义理解，
-      //     属于静态检查做不到的范畴。把做不到的事做成一条恒亮的 WARN，
-      //     只会训练人忽略黄色的字。
-      //
-      // 契约里那句「必须为 implementation_and_callsite，否则须在 notes 说明」仍然有效，
-      // 但它靠**人工评审**执行——这是诚实的现状，不该伪装成机器已覆盖。
     }
+  }
+
+  // ── 5c · input_space_basis：唯一能触及「只测了最容易通过的形态」的抓手 ──
+  // 契约 `verify.md` 把它定为必填。它无法阻止不诚实的申报（那是自述层的极限），
+  // 但它能让「本条修复只测了一个样本」这件事**进入最终报告**，而不是静默消失。
+  //
+  // 为什么需要它：2026-11-16 的 F1 修复声称「截断已被拦住」，实际只堵住 1.0%
+  // （独立评审用 192 个截断样本穷举才证明）。后来实测过三种「按断言语义 diff」
+  // 的检测器形态，对这件事全部 0 命中——因为被测仓库里 0 个测试在遍历截断点，
+  // 没有可比的东西。所以只能靠申报。
+  //
+  // 为什么 `unknown` 也算触发：它和 `single_sample` 对验收的含义相同（都没证明覆盖），
+  // 若只惩罚前者，写 `unknown` 就成了一条免费绕道。
+  const basis = ev.input_space_basis;
+  if (basis === undefined || basis === null || basis === '') {
+    errors.push({
+      field: 'payload.evidence.input_space_basis', rule: 'missing_input_space_basis',
+      msg: 'evidence.input_space_basis 必填'
+        + '（exhaustive | boundary | single_sample | unknown）。'
+        + '它是唯一能记录「这条修复覆盖了缺陷输入空间的哪一档」的字段——'
+        + '缺了它，「只测了一个样本」这件事在账本上完全不可见。',
+    });
+  } else if (!['exhaustive', 'boundary', 'single_sample', 'unknown'].includes(basis)) {
+    errors.push({
+      field: 'payload.evidence.input_space_basis', rule: 'invalid_input_space_basis',
+      msg: `input_space_basis="${basis}" 不在闭集内`
+        + '（exhaustive | boundary | single_sample | unknown）',
+    });
+  } else if ((basis === 'single_sample' || basis === 'unknown')
+             && envelope.payload?.escalation_required !== true) {
+    errors.push({
+      field: 'payload.escalation_required', rule: 'weak_basis_without_escalation',
+      msg: `input_space_basis="${basis}" 表示这条修复没有证明输入空间覆盖，`
+        + 'escalation_required 必须为 true（「带保留通过」）。'
+        + '否则「只测了一个样本」会被当成完整通过写进已闭合集合。',
+    });
   }
 }
 

@@ -198,10 +198,18 @@ const EXAMPLES = {
       // 实战产出 field-test-1/round1-05-verify-1.md 用的就是那个写法。
       mutation_check: 'performed',
       mutation_scope: 'implementation_and_callsite',
+      // input_space_basis 是 verify 契约的必填项（2026-11-17）。范例必须给一个
+      // 真实的值，否则「照抄范例」会立刻被校验器拒绝——而 agent 照抄范例
+      // 是这个框架里最自然的用法。
+      // 这里给 boundary 而不是 exhaustive：范例描述的是一个只验证了
+      // 「实现回退」和「调用点回退」两层变异、但没穷举输入空间的修复。
+      // 诚实申报它，比给它一个好看的 exhaustive 更有教育意义。
+      input_space_basis: 'boundary',
       observed: '把 renameSync 改回旧行为后，定向测试变红；再把调用点改回旧的直接写入，同样变红；'
         + '恢复修复后变绿。',
     },
-    notes: '修复有效。两层变异都能复现失败，说明修复点与调用点都参与决定用户可见行为。',
+    notes: '修复有效。两层变异都能复现失败，说明修复点与调用点都参与决定用户可见行为。'
+      + '输入空间按 boundary 申报：覆盖了重命名失败与并发写入两个边界，但未穷举全部失败模式。',
   },
 };
 

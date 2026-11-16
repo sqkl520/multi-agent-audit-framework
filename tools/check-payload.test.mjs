@@ -2089,7 +2089,10 @@ const verifyEnv = (evidence, notes = '') => ({
   status: 'SUCCESS', contract_valid: true, artifact_path: '<OUTDIR>/v.md',
   payload: {
     finding_id: 'F1', verdict: 'PASS', escalation_required: false,
-    evidence, notes,
+    // input_space_basis 是必填（verify.md 2026-11-17 新增）。默认给 weak 档
+    // 并把 escalation_required 设 true，这样各用例只关心自己那一项。
+    evidence: { input_space_basis: 'exhaustive', ...evidence },
+    notes,
   },
   error: null,
 });
@@ -2164,6 +2167,73 @@ console.log('case 147: implementation_and_callsite → 通过（不得因缺少�
   const r = run(wrap(JSON.stringify(verifyEnv({
     mutation_check: 'performed', mutation_scope: 'implementation_and_callsite', observed: 'x',
   }, '两层变异都能复现失败。'), null, 2)));
+  expect('没有错误', (r.r?.errors ?? []).length === 0,
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+}
+
+// ── 2026-11-17：input_space_basis —— 唯一能触及「只测最容易通过的形态」的抓手 ──
+// 实测背景：三种「按断言语义 diff」的检测器形态对 F1 形态全部 0 命中，
+// 因为被测仓库里 0 个测试在遍历截断点——没有可比的东西。只能靠申报。
+
+console.log('case 148: verify 缺 input_space_basis → 必须报 missing_input_space_basis');
+{
+  const e = verifyEnv({
+    mutation_check: 'performed', mutation_scope: 'implementation_and_callsite', observed: 'x',
+  }, 'x');
+  delete e.payload.evidence.input_space_basis;
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('报 missing_input_space_basis', hasRule(r, 'missing_input_space_basis'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+}
+
+console.log('case 149: input_space_basis 取闭集外的值 → invalid_input_space_basis');
+{
+  const r = run(wrap(JSON.stringify(verifyEnv({
+    mutation_check: 'performed', mutation_scope: 'implementation_and_callsite',
+    input_space_basis: 'mostly', observed: 'x',
+  }, 'x'), null, 2)));
+  expect('报 invalid_input_space_basis', hasRule(r, 'invalid_input_space_basis'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+}
+
+console.log('case 150: single_sample 但 escalation_required=false → 必须报（否则弱覆盖被当完整通过）');
+{
+  const r = run(wrap(JSON.stringify(verifyEnv({
+    mutation_check: 'performed', mutation_scope: 'implementation_and_callsite',
+    input_space_basis: 'single_sample', observed: 'x',
+  }, 'x'), null, 2)));
+  expect('报 weak_basis_without_escalation', hasRule(r, 'weak_basis_without_escalation'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+}
+
+console.log('case 151: unknown 也必须触发 escalation_required（否则写 unknown 是免费绕道）');
+{
+  const r = run(wrap(JSON.stringify(verifyEnv({
+    mutation_check: 'performed', mutation_scope: 'implementation_and_callsite',
+    input_space_basis: 'unknown', observed: 'x',
+  }, 'x'), null, 2)));
+  expect('报 weak_basis_without_escalation', hasRule(r, 'weak_basis_without_escalation'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+}
+
+console.log('case 152: single_sample + escalation_required=true → 带保留通过，不得报错');
+{
+  const e = verifyEnv({
+    mutation_check: 'performed', mutation_scope: 'implementation_and_callsite',
+    input_space_basis: 'single_sample', observed: 'x',
+  }, 'x');
+  e.payload.escalation_required = true;
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('没有错误', (r.r?.errors ?? []).length === 0,
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+}
+
+console.log('case 153: exhaustive 不需要 escalation_required（不得过度执法）');
+{
+  const r = run(wrap(JSON.stringify(verifyEnv({
+    mutation_check: 'performed', mutation_scope: 'implementation_and_callsite',
+    input_space_basis: 'exhaustive', observed: 'x',
+  }, 'x'), null, 2)));
   expect('没有错误', (r.r?.errors ?? []).length === 0,
     JSON.stringify(r.r?.errors?.map((x) => x.rule)));
 }

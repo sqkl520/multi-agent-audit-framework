@@ -198,6 +198,17 @@ node <FRAMEWORK_ROOT>/tools/verify-postfix-snapshot.mjs \
 1. **不做自我验收**。修复Agent的 `verification_commands` 是**辅助证据**，不是验收结论。NeurIPS 的证据表明，让修复Agent自己写测试并运行，既不提高解决率也不降低回归率；真正的验收由独立的验收波从原始验收标准出发执行[^ref7]。修复Agent**不得**在返回中声称“该缺陷已修复”——它只能说“我做了这些修改，并运行了这些检查，结果如下”。
 2. **不做根因重构**。如果修复需要重构共享模块、更改公共 API 签名、或升级依赖才能正确解决，修复Agent**必须**停止并返回 `RETRYABLE_FAILURE`，在 `residual_risks` 中写明“该修复需要超出最小安全差异的重构，应升级为独立任务”，而不是在修复波中做 scope creep。Active Remediation 的 “note + ask” 规则在这里是硬边界：超出最小安全差异的修改**永不自动执行**[^ref8]。
 3. **不修改测试来使测试通过**。修复Agent**不得**通过删除、跳过、弱化或重写测试断言来让检查“通过”。如果现有测试与缺陷的正确修复冲突，修复Agent必须在 `residual_risks` 中标记 `TEST_CONFLICT`，说明“测试 `<test_id>` 的当前断言与正确修复矛盾，需由验收波或人工判断”，而不是自行修改测试。
+
+   **`@Disabled` 带参数同样是禁用**（2026-11-17 修）。JUnit 5 的 `@Disabled` 的 `value()` 是**可选的失败原因**，不是跳过条件——`@Disabled("flaky, 待排查")` 与裸 `@Disabled` 对「这条测试是否执行」**完全等价**。所以「跳过测试」的禁止范围包括 `@Disabled("<任何理由>")`、`@Ignore`、`it.skip(`、`pytest.mark.skip`、`xfail`。**唯一合法的排除是 `Assumptions.assumeTrue/assumeFalse`**（按平台/环境条件跳过，例如只在 POSIX 上跑），那属于可移植性处理，不是回避检查。
+
+   **改了测试文件就必须登记进 `files_touched`**（2026-11-17 增）。只要本轮动过任何 `src/test/**` 下的文件——哪怕只是改一个断言、改个方法名、加一个 `@Disabled`——那个路径都**必须**出现在 `files_touched` 里。理由不是形式主义：`stop-hook.mjs` §3.7.6 的双向对账（`underreported: actual − claimed 非空`）**只有在这个前提下才能发现「改坏了测试」**，因为它是框架里唯一一条不需要解析断言、误报为零的检测。把测试文件从 `files_touched` 里省掉，等于主动关掉那道闸门。
+
+   > **实测依据**（2026-11-17）：本仓库本轮 26 个测试文件被改动，其中 19 个是新增。
+   > 一个「按断言语义做 diff」的检测器在这份数据上的实测射程是：已有测试的期望值反转
+   > 精确率 100%/召回 100%（但全轮只命中 2 条，且都是合法的）、删整个测试方法 63.2%、
+   > **新增文件 45% 的断言结构上不可检**、F1 形态 0 命中。
+   > 所以断言解析**不作为闸门**；能零误报覆盖「删方法 / 改名 / 加 `@Disabled`」三种形态的，
+   > 只有上面这条 `files_touched` 对账。
 4. **不在返回中夹带推断或“建议”** 。修复Agent的 `payload` 只包含 `files_touched`、`verification_commands`、`affected_issues`、`residual_risks` 四个字段。任何关于“我还发现……”“建议后续……”的内容**不进入** `payload`。如果修复Agent在修改过程中看到了其他问题，它**不得**写入返回，而是在 `residual_risks` 中用一行 `OBSERVED_BUT_OUT_OF_SCOPE: <path:line> <一句话>` 透传，供主Agent决定是否在后续轮次中派发新的审计。
 
 

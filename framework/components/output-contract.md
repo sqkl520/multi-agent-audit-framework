@@ -647,7 +647,8 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role <你�
       "regression_scan_performed": true,
       "user_journey_aligned": true,
       "mutation_check": "performed | skipped",
-      "mutation_scope": "implementation_only | implementation_and_callsite | null"
+      "mutation_scope": "implementation_only | implementation_and_callsite | null",
+      "input_space_basis": "exhaustive | boundary | single_sample | unknown"
     },
     "residual_risk_disposition": [
       {
