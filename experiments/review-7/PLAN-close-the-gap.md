@@ -111,7 +111,7 @@ parse_assertions(src) 产出三层结构：
 
 **为什么 `assertion_target_dropped` 用「整份文件里都没有」而不是「同一方法里没有」**：处 3 证明方法名会变；
 `wave5-verify.md:126` 的判据「断言被弱化」关心的是「这个行为还有人钉着吗」，不是「钉在哪个方法里」。
-反过来，这也意味着**把断言搬进 helper 会被算作「还在」**——这是有意的保守选择：宁可漏报也不误拦（`stop-hook.mjs:443-446`「假 FAIL 会让人把整段关掉，比漏报更糟」）。
+反过来，这也意味着**把断言搬进 helper 会被算作「还在」**——这是有意的保守选择：宁可漏报也不误拦（`stop-hook.mjs:1434`「假 FAIL 会让人把整段关掉，比漏报更糟」）。
 
 **为什么 `assertion_reversed_unreported` 判 FAIL 而不是「检测到翻转就 FAIL」**：
 FAIL 的判据是**「你做了一次通常需要理由的动作，但没有留下理由」**，而不是「你做了这个动作」。
@@ -134,7 +134,7 @@ FAIL 的判据是**「你做了一次通常需要理由的动作，但没有留�
 | 该测试文件在 `fix_baseline.dirty_paths` 里（跨轮已脏） | 排除，避免上一轮改动每轮重报 | 排除 = 对该文件放弃强判据 → WARN + 点名（`run-state.md:506` 已记录这个缺口） |
 | `git show <ref>:<T>` 取不到（重命名 / 删除） | 重命名按 `git status --porcelain` 的 `-> 新路径` 取；删除文件只跑 `assertion_target_dropped` | 重命名 + 同时弱化会漏 → WARN |
 
-**误拦的代价（真实数字）**：一次 7 条缺陷的修复 = 9 个子 agent、336 次工具调用、约 90 分钟（`CAPABILITIES.md:110-119`）。
+**误拦的代价（真实数字）**：一次 7 条缺陷的修复 = 9 个子 agent、336 次工具调用、约 90 分钟（`CAPABILITIES.md:115-119`）。
 误拦一条 = 多一轮人工裁决 + 该条从「已修复」降为「待裁决」。相比 review-7 的实际损失（7 条里 5 条有缺陷、2 条严重，`SUMMARY.md:11`），这个代价低一个数量级。
 **但定标给出的 1/3～2/3 假阳性率说明：如果按直觉设计，这道闸门会在第一个真实样本上就被关掉。所以 A.2 的「申报制」不是妥协，是能否落地的前提。**
 
@@ -246,9 +246,12 @@ F1/F7 的注释恰恰**不是 JSDoc 形态**（是 `//` 与 `/**` 混写的散�
 ```
 用法：
   node tools/check-test-assertion-diff.mjs \
-    --repo <被审仓库> [--state <state.json>] [--ref <commit>] \
-    [--ignore <path>]... [--json]
+    --repo <被审仓库> [--state <state.json>] [--ref <commit>] [--json]
 退出码：0 无强判据命中 / 1 有 FAIL / 2 配置错误（repo 不是 git、ref 取不到）
+
+**没有 `--ignore` / `--skip-file`。** 「哪些文件不判」的唯一来源是 `state.fix_baseline.dirty_paths`
+（主 Agent 在进入 wave4 前抓的，`run-state.md:439-447`），且被排除的每个文件都单独 WARN。
+命令行开关会成为默认路径——`check-fix-artifacts-envelope.mjs:60-63` 对同一件事的结论是「降级纪律：无」。
 
 规则（**级别由「有没有申报」决定，不由「有没有改」决定**）：
   assertion_target_dropped        FAIL  old 有某个 subject_key、new 整份文件里一条都没有
@@ -304,7 +307,7 @@ F1/F7 的注释恰恰**不是 JSDoc 形态**（是 `//` 与 `/**` 混写的散�
 
 | 节 | 改动 |
 |---|---|
-| §3 测试有效性排除（`:122-127`） | 第 1、2 条后加「（机械判据：`tools/check-test-assertion-diff.mjs` 的 `assertion_polarity_flipped` / `assertion_weakened`，不由验收 Agent 目测）」 |
+| §3 测试有效性排除（`:122-127`） | 第 1、2、3 条后加「（机械判据：`tools/check-test-assertion-diff.mjs` 的 `assertion_target_dropped` / `assertion_reversed_*` / `test_disabled`，不由验收 Agent 目测。**未申报的反转 = FAIL；已申报 = WARN + 人工裁决**）」 |
 | §3 变异检验（`:129-148`） | 补一句「`mutation_check` / `mutation_scope` / `skipped` 理由由 `check-payload.mjs` 机械校验，写错枚举即 `CONTRACT_VIOLATION`」 |
 | §5.1 两个结构化字段（`:185-222`） | 新增第三个：`input_space_basis` + `input_variants_covered`，写明「声明 `exhaustive`/`boundary` 而样本数 < 2 = `claim_exceeds_samples`，判 `CONTRACT_VIOLATION`」 |
 | §9 自检表（`:283-300`） | 加一行「断言未被反向（`check-test-assertion-diff` 退出码 0）」，并在命令块里加 `check-sample-claims.mjs` |
@@ -378,7 +381,7 @@ F1/F7 的注释恰恰**不是 JSDoc 形态**（是 `//` 与 `/**` 混写的散�
    `check-promises.mjs:15-18` 已自认三类做不到，F1/F7 的注释正落在第一类（散文而非 JSDoc）。
    **替代（且是唯一有效的）**：`wave5-verify.md:129-148` 已强制的变异检验 —— F7 的「`moveIntoPlace` 一次都没执行过」（`finding-F6F7.md:222`）只要做一次实现变异就会暴露。所以 C 的补法不是「检查注释」，而是**让变异检验真的发生**（C2）。以及：把 review-7 这套「5 个独立 agent 红队」写进流程，而不是假装能自动化。
 
-3. **模式 A 的残余（四条，都只能 WARN）**
+3. **模式 A 的残余（五条：1 条是主动接受的偏严，4 条是漏报面）**
    - **合法反转会被推到「待人工裁决」，即使它真的修对了。** 定标处 1、2 就是这种：修复者按正确语义改了断言，`TEST_CONFLICT` 一申报，该条就**不记为已修复**（`wave4-fix.md:301`、`wave5-verify.md:163`）。这比「误拦」轻，但确实是代价：一个修对了的缺陷要人工点头才算数。**这是本方案主动接受的唯一偏严项**，因为框架对这类变更本就只指定了这一条出口。
    - 断言被搬进同一文件（或跨文件）的 helper 方法后再弱化：同文件 helper 会被算作「断言还在」（保守选择，见 A.2），跨文件 helper 会命中 `assertion_target_dropped` 但**指向的是被删的那个 subject，不是 helper 里的弱化**——人要自己顺着查。
    - 测试文件在本轮之前就是脏的：`fix_baseline` 只存路径不存内容（`run-state.md:506` 自己列了这个假阴性），取不到可信的「改动前」→ 只能 `assertion_baseline_unavailable`。修法是 `run-state.md:521-523` 的路标（内容哈希基线），本轮不做。
