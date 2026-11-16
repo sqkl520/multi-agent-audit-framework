@@ -1,7 +1,11 @@
-# 把 review-7 的三条缺陷模式变成可执行检查——实现方案
+# 把 review-7 的缺陷模式变成可执行检查——实现方案
 
 **日期**：2026-11-17
 **范围**：只改框架仓库。不触碰被审仓库（`<TARGET_PARENT>/...`），不做任何 git 写操作。
+**任务范围**：A / B / C 三条来自任务书；**D（元规则）是本轮读定标时浮现的第四条**，它与 A/B/C 同源且成本最低、根治面最大，故一并给出（见 Q1 末尾「模式 D」）。
+
+**一句话结论**：**A 能做但必须做成「申报制」；B 和 C 的核心做不到；D（规则→校验器对账）能做且应最先做。**
+本方案的第一稿在 A 上设计错了——真实定标（3 删 58 增）显示直觉设计有 1/3–2/3 假阳性，已按定标重写。
 **前置阅读已完成**（本轮真读，行号均取自本轮回读）：`framework/templates/wave4-fix.md`（380 行）、
 `framework/templates/wave5-verify.md`（338 行）、`framework/components/output-contract/fix.md`（352 行）、
 `framework/components/output-contract/verify.md`（312 行）、`framework/components/output-contract.md`（811 行）、
@@ -36,7 +40,7 @@
 
 ---
 
-# Q1 三条模式能否机械检查
+# Q1 三条模式能否机械检查（+ 一条元规则）
 
 ## 模式 A：把测试改成反向期望
 
@@ -71,7 +75,7 @@
 这份定标推翻了两种直觉设计，必须写进算法：
 
 - **「极性翻转即 FAIL」不能做。** 处 1、2 正是 `zero/negative` → `exact(other)` 的翻转，在真实样本上的假阳性率是 **2/3**。而这两处是**正确的**——`wave4-fix.md:200` 对这种情况指定的出路是 `TEST_CONFLICT` + 人工裁决，但把它当 FAIL 拦在闭合门上，会把一次合法修复打断。
-- **「按方法名匹配」不能做。** 处 3 的方法被改名，断言一字未改；行级 diff 与「方法名 + 断言字符串」匹配**都会**把它判成「删除了一条断言 + 新增三条」（定标 §三原文：「任何基于『文本行匹配』或『方法名/断言字符串匹配』的检测都会把它判成违规。在这个只有 3 处删除的样本上，假阳性率 1/3」）。
+- **「按方法名匹配」不能做。** 处 3 的方法被改名，断言一字未改；行级 diff 与「方法名 + 断言字符串」匹配**都会**把它判成「删除了一条断言 + 新增三条」（`GROUND-TRUTH-assertion-diff.md:58` 原文：「任何基于『文本行匹配』或『方法名/断言字符串匹配』的检测都会把它判成违规。在这个只有 3 处删除的样本上，假阳性率 1/3」）。
 
 **因此算法是「按断言对象（subject）跨方法匹配」，且把「翻转」从 FAIL 改成「必须申报」：**
 
@@ -86,7 +90,7 @@ parse_assertions(src) 产出三层结构：
   unparsed: [line...]
 ```
 
-`subject_key` 是断言的**语义对象**做规范形归约后的字符串（定标 §四给的可行方向）：
+`subject_key` 是断言的**语义对象**做规范形归约后的字符串（`GROUND-TRUTH-assertion-diff.md:86` 起的「对设计的三条硬约束」给的可行方向）：
 
 | 原形态 | 规范形 |
 |---|---|
@@ -110,17 +114,17 @@ parse_assertions(src) 产出三层结构：
 | `assertion_unparsable` | 抽不出 `subject_key` 的断言行 | **WARN**（**该文件强判据不生效，必须明说**） |
 
 **为什么 `assertion_target_dropped` 用「整份文件里都没有」而不是「同一方法里没有」**：处 3 证明方法名会变；
-`wave5-verify.md:126` 的判据「断言被弱化」关心的是「这个行为还有人钉着吗」，不是「钉在哪个方法里」。
+`wave5-verify.md:125` 的判据「断言被弱化」关心的是「这个行为还有人钉着吗」，不是「钉在哪个方法里」。
 反过来，这也意味着**把断言搬进 helper 会被算作「还在」**——这是有意的保守选择：宁可漏报也不误拦（`stop-hook.mjs:1434`「假 FAIL 会让人把整段关掉，比漏报更糟」）。
 
 **为什么 `assertion_reversed_unreported` 判 FAIL 而不是「检测到翻转就 FAIL」**：
 FAIL 的判据是**「你做了一次通常需要理由的动作，但没有留下理由」**，而不是「你做了这个动作」。
 这与框架里已有的形态同构——`wave4-fix.md:218` 的 `BASELINE_UNVERIFIED`（没做就必须声明）、
 `:233` 的 `AFFECTED_ISSUES_EMPTY_CONFIRMED`（空数组必须是被检查过的结论）。
-定标 §四末句要求的正是这个：「它应当触发『要求 `TEST_CONFLICT` 声明 + 反编译级证据』，而不是直接 FAIL」。
+`GROUND-TRUTH-assertion-diff.md:94` 末句要求的正是这个：「它应当触发『要求 `TEST_CONFLICT` 声明 + 反编译级证据』，而不是直接 FAIL」。
 落地后，处 1、2 会命中 `assertion_reversed_reported`（WARN + 人工裁决），处 3 **一条都不命中**——按 `subject_key` 匹配时 `getItems().get(0).getPrice()` 两侧都在、期望值都是 1。
 
-**`test_disabled` 的已知假阳性**：定标 §六指出 `YamlFilesTest` 用 `Assumptions.assumeTrue` 跳过平台相关用例，那是 1 个合法 skip。
+**`test_disabled` 的已知假阳性**：`GROUND-TRUTH-assertion-diff.md:109-110` 指出 `YamlFilesTest` 用 `Assumptions.assumeTrue` 跳过平台相关用例，那是 1 个合法 skip。
 因此 `Assumptions.assumeTrue/assumeFalse` **不在** `test_disabled` 的触发词里——只有无条件禁用（`@Disabled` 无参、`@Ignore`、`skip(` 无 `if`）才命中。
 
 ### A.3 假阳性风险与误拦代价
@@ -237,9 +241,98 @@ F1/F7 的注释恰恰**不是 JSDoc 形态**（是 `//` 与 `/**` 混写的散�
 
 ---
 
+## 模式 D / 元规则：三条模式的共同形态是「规则写了，机器没读」
+
+### 结论：**这一条能机械做，而且它比 A/B/C 任何一条都便宜、都根治。**
+
+本轮回读 `experiments/review-7/` 时又出现三份定标（`DIAGNOSIS-why-the-framework-missed-it.md`、`GROUND-TRUTH-checklist-not-gated.md`、`GROUND-TRUTH-example-violates-contract.md`），
+它们把 A/B/C 收束成一条可判定的元规则。**这三份的核心事实我都独立复验过**：
+
+| 事实 | 复验命令 | 结果 |
+|---|---|---|
+| `TEST_CONFLICT` 零实现 | `grep -rn "TEST_CONFLICT" tools/` | **0 命中** |
+| `mutation_scope` 零实现 | `grep -rn "mutation_scope" tools/*.mjs` | **1 命中，且是范例生成器**：`gen-contract-examples.mjs:192` |
+| 契约范例自己违反正文 | `verify.md:185` 要求 `implementation_and_callsite`，`gen-contract-examples.mjs:192` 写 `implementation_only`、`:195` 的 `notes` 无解释 | 定标属实 |
+| 「已验证」的章是真的跑过校验器 | `gen-contract-examples.mjs:243` 调 `check-payload.mjs`，`:250-253` 不过就不写，`:273` 写「已经过 check-payload.mjs 验证」 | 属实——**它验证的是校验器知道的那部分，而 `mutation_scope` 校验器不知道** |
+| 必查清单只校验 `length > 0` | `check-payload.mjs:986-988` 只判 `Array.isArray && length > 0`；且整段只在 `noEv.length > 0` 时执行（`:983-984`） | 属实 |
+| 模板里的硬规则数与「点名了工具」的数 | `DIAGNOSIS:26-31` 的表：`wave5-verify.md` 50 条硬规则、**0 条点名工具** | 未逐条复验（成本高），但与本轮读到的 `wave5-verify.md` 观感一致 |
+
+### D.1 判定算法
+
+这是**静态对账**，不需要跑任何东西：
+
+```
+对 framework/templates/*.md 与 framework/components/**/*.md 的每一个「规则句」：
+  rule_sentence = 含 (必须|不得|禁止|一律|must|shall|never) 的行（去掉代码块与引用块）
+
+  若 rule_sentence 附近 ±3 行内出现下列任一「出口标记」→ 视为已对账：
+    (a) 点名了 tools/ 下某个脚本（正则 `tools/[\w.-]+\.mjs`）
+    (b) 点名了某个规则名（正则 `[a-z][a-z0-9]+(?:_[a-z0-9]+){1,}` 且该串在 tools/*.mjs 里出现过）
+    (c) 显式标注 `DISCRETIONARY`
+  否则 → 违规
+```
+
+| 规则 | 判据 | 级别 |
+|---|---|---|
+| `rule_without_validator` | 规则句没有 (a)/(b)/(c) 任一出口 | **FAIL** |
+| `discretionary_without_reason` | 标了 `DISCRETIONARY` 但同一行/下一行没有理由（≥10 字） | **FAIL** |
+| `named_rule_not_in_tools` | 规则句点名了一个形如 `snake_case` 的规则名，但 `tools/*.mjs` 里搜不到 | **FAIL** |
+| `rule_sentence_overcount` | 汇总统计有规则句、但**其中一条出口都没有**的文件数与阈值不符 | WARN（防口径漂移） |
+
+**为什么这个判据不会退化成「给每条规则加一句 `DISCRETIONARY` 就过」**：`discretionary_without_reason` 强制写理由。理由写不出来的规则，就是「本来就没人打算执行」——它应当被删掉，而不是被标注。
+
+### D.2 它会立刻暴露什么（这就是它的价值）
+
+按 `DIAGNOSIS:143-146` 的推演，这条元规则上线第一天会红出：
+- `wave4-fix.md:200`（`TEST_CONFLICT` 零实现）→ 本方案的改动 1 修掉它；
+- `verify.md:185`（`mutation_scope` 零实现）→ 改动 4 修掉它；
+- `wave2-audit.md:629` 模式 5（被排除在检查项外）→ 必须显式写 `DISCRETIONARY` + 理由，不能沉默降级；
+- **`wave5-verify.md` 的 50 条硬规则里，绝大多数**会成为 `rule_without_validator`。
+
+最后一条是最重要的：**如果这条元规则一次上线就红出几十处，它会被立刻关掉。** 所以它必须以「分层存量豁免」落地，机制照 `stop-hook.mjs:472-480` 已对 `legacy_artifacts` 用过的做法：
+- `state.json`（或工具参数）声明 `rules_ledger`：`{ rule_anchor: "wave5-verify.md:129", resolution: "GATED" | "DISCRETIONARY" | "PENDING", reason }`
+- `DISCRETIONARY` 必须带理由；`GATED` 必须点名规则名且该名在 tools 里存在；
+- **`PENDING` 条目计入一个递减的预算**，预算耗尽即 FAIL —— 否则 `PENDING` 变成永久豁免，正是 `stop-hook.mjs:476-479` 点名的那种「豁免条目数 ≥ 待检总数 → 全量豁免等于把检查关掉」。
+
+### D.3 做不到的部分
+
+**「规则句」的抽取是正则，必然有假阳性与假阴性。** 表格里的规则（`wave4-fix.md` 的标记表、`wave5-verify.md` 的动作对照表）不含「必须/不得」字样但同样是硬判据；而叙述性的「必须」有可能只是措辞（「必须读懂这一节」）。
+缓解：**首版只统计不判定**（`rule_sentence_overcount` 一条 WARN，报告出「N 条规则句 / M 条有出口」），把判 FAIL 推迟到 `rules_ledger` 建立之后。
+**这也是 A/B/C 三条都适用的纪律：先测量，再闸门。**
+
+---
+
 # Q2 最小可行方案 —— 文件级改动清单
 
 约定：`tools/check-*.mjs` 是 CLI（退出码 0/1/2），`tools/check-*.test.mjs` 是自测；新增工具各写**反向用例**（漏补/漏检必须被抓住），照 `verify-postfix-snapshot.test.mjs:41-58` 的 `makeRepo()` 造临时 git 仓库的做法。
+
+### 改动 0 · 新增 `tools/check-rule-validator-coverage.mjs` + `.test.mjs`（元规则 D）
+
+这是**最便宜、也最根治**的一条，所以排在最前。
+
+```
+用法：node tools/check-rule-validator-coverage.mjs \
+        [--ledger <rules-ledger.json>] [--report-only] [--json]
+退出码：0 全部对账 / 1 有 FAIL / 2 配置错误
+
+扫描范围：framework/templates/*.md、framework/components/**/*.md（排除 output-contract/examples/）
+解析：去掉 ``` 代码块与 > 引用块后，取含「必须|不得|禁止|一律」的行
+出口（三选一）：(a) 同一行 ±3 行内出现 tools/xxx.mjs
+               (b) 出现一个 snake_case 规则名且该名在 tools/*.mjs 中存在
+               (c) 显式标注 DISCRETIONARY + 理由（≥10 字）
+
+规则：
+  rule_without_validator        FAIL  无任何出口
+  discretionary_without_reason  FAIL  标了 DISCRETIONARY 无理由
+  named_rule_not_in_tools       FAIL  点名的规则名在 tools 里搜不到
+  rules_ledger_stale            FAIL  ledger 里的 GATED 条目，其点名的规则名已不在 tools 里
+  rules_ledger_all_pending      FAIL  ledger 里 PENDING 占比 ≥ 总数（全量豁免 = 关掉检查）
+  rule_sentence_overcount       WARN  只输出「N 条规则句 / M 条有出口」的统计（--report-only 时唯一输出）
+```
+
+**`--report-only` 是第一阶段的默认形态**，理由见 D.3：`DIAGNOSIS:26-31` 估计 `wave5-verify.md` 的 50 条硬规则里几乎全部无出口，首版直接 FAIL 会让这条规则当天被关掉（`stop-hook.mjs:1558-1562` 的教训）。先出统计，再建 ledger，最后才闸门。
+
+**`rules_ledger` 放在哪里**：不进 `state.json`（那是**每轮**的账本，而规则清单是**跨轮**的框架属性）。放 `framework/rules-ledger.json`，随框架一起版本化。这样它不会成为 `run-state.md:449-451` 那种「新增必填字段让存量账本一夜不合规」的问题。
 
 ### 改动 1 · 新增 `tools/check-test-assertion-diff.mjs` + `.test.mjs`（模式 A）
 
@@ -258,7 +351,7 @@ F1/F7 的注释恰恰**不是 JSDoc 形态**（是 `//` 与 `/**` 混写的散�
   assertion_reversed_unreported   FAIL  同 subject_key 的 predicate_class 变档或 expected 变值，且未申报
   assertion_reversed_reported     WARN + 强制 HUMAN_DECISION_REQUIRED  同上但已申报
   test_disabled                   FAIL   新增 @Disabled(无参) / @Ignore / it.skip( / pytest.mark.skip / xfail
-                                         （Assumptions.assumeTrue 不算——定标 §六：那是 1 个合法 skip）
+                                         （Assumptions.assumeTrue 不算——`GROUND-TRUTH-assertion-diff.md:109-110`：那是 1 个合法 skip）
   assertion_unparsable            WARN   抽不出 subject_key → **该文件强判据未生效**
   assertion_baseline_unavailable  WARN   文件在 fix_baseline.dirty_paths 里 / git show 取不到
   test_files_not_found            exit2  仓库里一个测试文件都没识别到（分母为 0 不等于通过）
@@ -286,13 +379,22 @@ F1/F7 的注释恰恰**不是 JSDoc 形态**（是 `//` 与 `/**` 混写的散�
 
 `text_assertion_on_production_source`：FAIL 窄形态、WARN 其余。**必须**有 `test_files_not_found` → exit 2。
 
-### 改动 4 · 改 `tools/check-payload.mjs`（模式 C2 + 三条现成缺口）
+### 改动 4 · 改 `tools/check-payload.mjs` + `tools/gen-contract-examples.mjs`（模式 C2 + 模式 D + 四条现成缺口）
+
+**先修范例（`GROUND-TRUTH-example-violates-contract.md`）**：契约正文（`verify.md:185`）要求「对『函数返回值决定用户可见行为』的修复必须 `implementation_and_callsite`，否则须在 `notes` 说明」，而**框架给 agent 照抄的范例**（`gen-contract-examples.mjs:186-196`）用的是 `implementation_only`、`:195` 的 `notes` 一句解释都没有。那一行 `mutation_scope` 在 `tools/` 里是**唯一**一处（`grep -rn "mutation_scope" tools/*.mjs` → 1 命中），即零实现。
+`:243` 那个「已经过 check-payload 验证」的章是真的跑过校验器的（`:250-253` 不过就不写，`:273` 写章），**只是校验器不看这件事**——所以它是「按范例写的却违反正文」，`check-all` 全绿也拦不住。
 
 | 位置 | 改动 |
 |---|---|
-| `:1513-1520` 那一段 | 把「只 WARN」扩成完整校验：`mutation_check` ∈ `{performed, skipped}`（否则 `invalid_mutation_check` FAIL）；`mutation_scope` 在 `performed` 时必填且 ∈ `{implementation_only, implementation_and_callsite}`（否则 `missing_mutation_scope` FAIL）；`skipped` 时 `notes` 必须以 `harness_unsupported` 或 `unsafe_revert` 开头（否则 `invalid_mutation_skip_reason` FAIL）。依据：`wave5-verify.md:136-140` 的「其余一律视为 `CONTRACT_VIOLATION`」，今天零执行 |
+| `tools/gen-contract-examples.mjs:192` | `'implementation_only'` → `'implementation_and_callsite'`（范例应当示范强形态）；若刻意保留弱形态，则 `:195` 的 `notes` 必须写出「本范例不涉及函数返回值决定用户可见行为的情形」 |
+| `:1513-1520` 那一段 | 把「只 WARN」扩成完整校验：`mutation_check` ∈ `{performed, skipped}`（否则 `invalid_mutation_check` FAIL）；`performed` 时 `mutation_scope` 必填且 ∈ `{implementation_only, implementation_and_callsite}`（否则 `missing_mutation_scope` FAIL）；`skipped` 时 `notes` 必须以 `harness_unsupported` 或 `unsafe_revert` 开头（否则 `invalid_mutation_skip_reason` FAIL）。依据：`wave5-verify.md:136-140` 的「其余一律视为 `CONTRACT_VIOLATION`」，今天零执行 |
+| `:1513-1520` 新增一条 | `mutation_scope === 'implementation_only'` 且 `notes` 未说明理由 → `mutation_scope_weak_unexplained`。**级别取 WARN 起步**（`GROUND-TRUTH-example-violates-contract.md:164` 的建议），理由是「怎样才算『函数返回值决定用户可见行为』」需要语义判断，判 FAIL 会误拦。**若首轮实测零误报再升 ERROR**——这条升不升级必须由数据决定，不能由设计者决定 |
 | `:1464-1508` verify 分支 | 新增 `residual_risk_disposition` 覆盖校验：`flag` 去重后数量必须等于修复产物 `residual_risks` 的标记数。依据：`wave5-verify.md:207`「缺任一条目的后果：……主Agent判定为 `CONTRACT_VIOLATION`」，今天零执行 |
+| `:986-988` 必查清单 | 现在只判 `Array.isArray && length > 0`，且整段只在 `noEv.length > 0` 时执行（`:983-984`）——即「全是有发现的审计产物」连这一项都不查。**本方案不改它的内容要求**（`GROUND-TRUTH-checklist-not-gated.md:66-79` 论证了「冻结数量」会禁止合法的模式增删），只改两件：① 去掉「仅 `NO_EVIDENCE_FOUND` 时执行」的包裹，让 `searched_scope` 在有发现时也校验存在性；② 交给改动 0 的 `rules_ledger` 把「必须覆盖 8 条」标成 `PENDING` 或 `DISCRETIONARY`，让它成为一个**显式决策**而不是沉默降级 |
 | `:699` `ENUM_CHECKS` | 加 `residual_risk_disposition[].flag`、`evidence.mutation_check`、`evidence.mutation_scope`、`input_space_basis`。**理由**：`check-enum-consistency.mjs:47-58` 是从 `ENUM_CHECKS` 里抽枚举去和契约/示例比对的，不加进去 = 这条漂移永远不会被发现 |
+
+**改动 4 的验收标准（机械）**：改完后 `node tools/gen-contract-examples.mjs` 重新生成的 `framework/components/output-contract/examples/verify.md` 必须**通过**新增的 `mutation_scope` 规则；同时 `node tools/check-contract-examples.mjs` 仍 exit 0。这两条一起才证明「范例不再反向示范」。
+
 
 ### 改动 5 · 改 `framework/templates/wave4-fix.md`
 
@@ -328,23 +430,65 @@ F1/F7 的注释恰恰**不是 JSDoc 形态**（是 `//` 与 `/**` 混写的散�
 
 ### 改动 9 · 改 `tools/stop-hook.mjs`（挂载，见 Q3）
 
-在 `§3.7.6`（`:984-1571`）之后新增三段 `§3.7.7 / §3.7.8 / §3.7.9`，复用同一段外层的 `files` / `inferred.dir` / `repoDir` / `baselinePaths` / `claimedRaw`，**不重复 shell git**。
+在 `§3.7.6`（`:984-1571`）之后新增三段 `§3.7.7 / §3.7.8 / §3.7.9`，复用同一段外层的 `files` / `inferred.dir` / `repoDir` / `baselinePaths` / `claimedRaw`，**不重复 shell git**（`:1128` 已经拿过 `git status`、`:1329` 已经拿过 `git rev-parse HEAD`；本段新增的唯一一次 git 调用是 `git diff --name-only <ref>`，一次进程启动）。
+
+三段的分工：
+| 段 | 内容 | 依赖 |
+|---|---|---|
+| §3.7.7 | 调 `check-test-assertion-diff.mjs`（模式 A），FAIL→problems 推入 | `repoDir` + `baselinePaths`（`fix_baseline`）+ `claimedRaw` 所在产物的 `residual_risks` |
+| §3.7.8 | 调 `check-sample-claims.mjs`（模式 B 的启发式两条），只 WARN | 各 verify 产物的信封 |
+| §3.7.9 | 调 `check-source-guard-tests.mjs`（模式 C1），窄形态 FAIL、宽松形态 WARN | `repoDir` 里的测试文件 |
+
+**降级纪律（三段共用，措辞照 `:1094-1096`）**：拿不到 `repoDir` / `ref` / 测试文件 → 跳过判据，但**必须**在 stderr 里写「断言变更 / 样本声明 / 文本断言这三项本回合没有答案——不是通过，是没查」。`check-fix-artifacts-envelope.mjs` 的「降级纪律：无」风格（`:60-63`）适用于工具本身，hook 侧仍按既有惯例区分环境问题与账本问题。
+
+**不接 `--report-only`**：`stop-hook` 只接最终形态。模式 D 走 `check-all`（见 Q3）。
 
 ### 改动 10 · 改 `tools/check-all.mjs`
 
 在 `CHECKS` 数组（`:18` 起，尾部追加点在 `verify-postfix-snapshot.test.mjs` 那条之后）注册三个新自测：
 
 ```js
+{ name: '规则→校验器对账（元规则 D）', script: 'check-rule-validator-coverage.test.mjs',
+  desc: '用例：规则句无出口 FAIL / DISCRETIONARY 无理由 FAIL / 点名的规则名在 tools 里搜不到 FAIL / 全量 PENDING FAIL / --report-only 只统计不判' },
 { name: '测试断言反向/弱化检测（机械 A）', script: 'check-test-assertion-diff.test.mjs',
   desc: '用例：定标处1/2 未申报 FAIL、已申报 WARN / 定标处3 改名+包裹零命中 / F2F3 原样命中 / @Disabled / assumeTrue 不误报 / 纯重排不误报 / 无测试文件 exit 2' },
 { name: '样本数与声明自相矛盾检测（机械 B）', script: 'check-sample-claims.test.mjs', ... },
 { name: '源码守卫文本断言检测（机械 C1）', script: 'check-source-guard-tests.test.mjs', ... },
 ```
 
+**其中 `check-rule-validator-coverage.test.mjs` 必须有这三条反向用例**（照 `check-contract-examples.test.mjs:69-87` 的形态：破坏一个真实文件，看它是否报出，而不是构造一个玩具输入）：
+1. 在 `framework/templates/wave5-verify.md` 里插入一条「必须 XXX」且无任何出口 → 必须报 `rule_without_validator` 并**点名行号**；
+2. 把某条 `DISCRETIONARY` 的理由删掉 → 必须报 `discretionary_without_reason`；
+3. 构造一个 `rules_ledger.json`，其 `GATED` 条目点名一个不存在的规则名 → 必须报 `named_rule_not_in_tools`（或 `rules_ledger_stale`）。
+
 ### 改动 11 · 改 `CAPABILITIES.md`
 
-§二「现在能拦住的」表（`:41-54`）加三行；§三「拦不住的」（`:58-95`）把「注释承诺 vs 代码实际」明确列为**纯人工项**，并写明「B 的覆盖率实质仍然拦不住」。
-理由：这份文档的自我定位是「给你判断该不该用它、能信它到什么程度」（`:6-7`）。加了闸门却不同步它，就是制造 `README.md:240` 那类「声称有、实际没有」的缺口——正是模式 C 本身。
+§二「现在能拦住的」表（`:41-54`）加三行；§三「拦不住的」（`:58-95`）把「注释承诺 vs 代码实际」明确列为**纯人工项**，并写明「B 的覆盖率实质仍然拦不住、D 的规则句抽取仍是正则」。
+理由：这份文档的自我定位是「给你判断该不该用它、能信它到什么程度」（`:6-7`）。加了闸门却不同步它，就是制造 `README.md:375` 那类「声称有、实际没有」的缺口——原文：「纯提示词方案下，加载靠模型自律」。**这正是模式 C 本身。**
+
+### 改动 12 · 新增 `framework/rules-ledger.json`（元规则 D 的存量账）
+
+```json
+{
+  "schema": "rules-ledger-v1",
+  "entries": [
+    { "anchor": "templates/wave4-fix.md:200", "resolution": "GATED",
+      "rule_name": "assertion_reversed_unreported" },
+    { "anchor": "components/output-contract/verify.md:185", "resolution": "GATED",
+      "rule_name": "missing_mutation_scope" },
+    { "anchor": "templates/wave2-audit.md:629", "resolution": "DISCRETIONARY",
+      "reason": "模式 5 是「注释承诺 vs 代码实际」，无形式判定手段；见 PLAN-close-the-gap.md Q4-2" },
+    { "anchor": "templates/wave5-verify.md:129", "resolution": "PENDING",
+      "reason": "变异检验的深度无法机械观测；已由 mutation_check/mutation_scope 字段做弱校验，深度待人工" }
+  ]
+}
+```
+
+三条纪律（照 `stop-hook.mjs:472-480` 对 `legacy_artifacts` 的教训）：
+- **`PENDING` 必须有理由**，且 `PENDING` 占比 ≥ 全部条目数时 `rules_ledger_all_pending` **FAIL**（全量豁免等于关掉检查）；
+- **`GATED` 必须点名一个在 `tools/*.mjs` 里真实存在的规则名**，否则 `rules_ledger_stale`；
+- **`DISCRETIONARY` 必须写理由**，且首版只允许它覆盖「语义判定」类（注释是否说谎、样本是否选得好），不允许覆盖「事实比对」类（A、C2 那些能从 git/信封取到数据的）。
+  第三条是防止 `DISCRETIONARY` 变成万能挡箭牌——**能从数据判定的事，不许标成自觉项。**
 
 ---
 
@@ -361,7 +505,11 @@ F1/F7 的注释恰恰**不是 JSDoc 形态**（是 `//` 与 `/**` 混写的散�
 | **C1** 窄形态 `text_assertion_on_production_source` | 新 §3.7.9 | **FAIL** | 三条条件同时成立时该测试**不可能失败于行为变更**，与 `wave5-verify.md:117`「瞄准性」正面冲突，且判据纯结构 |
 | **C1** 宽松形态（读测试夹具 / 有多条断言） | 同 §3.7.9 | **WARN** | 注释/文档生成类测试合法地读生产源码 |
 | **C2** 变异申报字段 | **§3.7.5 内部**（`check-payload.mjs`） | **FAIL** | `wave5-verify.md:136-140` 已经写了「一律视为 `CONTRACT_VIOLATION`」，只是没执行。这不是新增严格度，是实现既有条款 |
+| **C2 的深度档**（`mutation_scope === 'implementation_only'` 且 `notes` 无解释） | 同 §3.7.5 | **WARN 起步**，实测零误报后才考虑升 ERROR | 「怎样才算『函数返回值决定用户可见行为』」需要语义判断。`GROUND-TRUTH-example-violates-contract.md:164` 也建议 WARN 起步。**升级必须由数据决定**，否则会误拦一次合法修复 |
+| **D** 元规则（规则→校验器对账） | **不进 `stop-hook`**，挂在 `check-all.mjs` | 首版 `--report-only` 只输出统计（WARN），ledger 建好后 FAIL | 这不是相位门，是**框架自身的 CI**。±3 行的正则出口检测必然有假阳/假阴（D.3），放进每轮闭合门会让每次交付都被它卡。放在 `check-all` 里，改框架的人跑，改被审仓库的人不受影响 |
 | **C 的核心**（注释是否说谎） | **不挂** | — | 见 Q4 |
+
+**为什么不把 D 挂进 `stop-hook`**：`stop-hook` 的每一道闸门都针对**某一轮的交付**；而 D 针对**框架文本本身**。把它塞进 `stop-hook` 会让「修别人代码」的回合因为「框架文档里有一条规则没接校验器」而无法闭合——那是**错误的对象**（`stop-hook.mjs:361-363` 对 §3.6b 的同一条纪律：「只支持 dsh 的判据不该在别处把流程卡死」）。
 
 **为什么不挂在验收派发前**：`wave5-verify.md:59-61` 的派发前判据只看 `state.json` 的 `fix_contracts`。而 A 需要的数据（fix 产物信封 + 仓库 diff）在波次五闭合时才齐；挂在派发前等于要求验收 Agent 自己跑，而它是**只读角色**（`wave5-verify.md:90`）且它的输入刻意不含这些（`:15`）。**唯一正确的位置是相位闭合门，由主 Agent / hook 侧运行。**
 
@@ -392,7 +540,15 @@ F1/F7 的注释恰恰**不是 JSDoc 形态**（是 `//` 与 `/**` 混写的散�
 
 5. **B/A 都抓不到「选一个好过的样本」这个动作本身**。样本数够、断言也强，只是恰好绕开了真正的攻击面（`finding-F2F3F4.md:282`「测试全部是『我以为的坏输入』」）。这是选择问题，不是可见行为问题。
 
-6. **所有闸门的共同上限仍然是 `CAPABILITIES.md:60-65` 那句**：「所有闸门验的是『流程合规』，不是『代码正确』」。本方案把 A 从「零检测」变成「有检测」，把 B/C 从「零检测」变成「矛盾检测 + 申报校验」，**没有**把「流程合规」变成「代码正确」。报告里必须保持这句话。
+6. **元规则 D 的「规则句」边界是模糊的。**
+   抽取靠「必须/不得/禁止/一律」四个词 + ±3 行出口检测。三类必然漏：
+   ① 硬判据写在**表格**里（`wave4-fix.md` 的标记表 `:239-247`、`wave5-verify.md` 的动作对照表 `:158-167`），一整个表可能是十条硬规则，但一行「必须」都没有；
+   ② 叙述性的「必须」只是措辞（「必须读懂这一节」）；
+   ③ 出口标记 `(a)` 的正则只认 `tools/xxx.mjs`，写「由校验器负责」这种不点名的说法会漏。
+   **结论：D 只能保证「没有完全没人管的规则句」，不能保证「每条规则都被正确执行」。** 它的真正价值不是覆盖率，而是**让那个差额变得可见且需要显式决策**（`DISCRETIONARY` 必须写理由）。
+   首版只统计、`PENDING` 有预算，就是为了不让它自己在第一个真实样本上崩掉。
+
+7. **所有闸门的共同上限仍然是 `CAPABILITIES.md:60-65` 那句**：「所有闸门验的是『流程合规』，不是『代码正确』」。本方案把 A 从「零检测」变成「有检测」，把 B/C 从「零检测」变成「矛盾检测 + 申报校验」，把 D 从「没人问」变成「必须表态」，**没有**把「流程合规」变成「代码正确」。报告里必须保持这句话，并补上 `DIAGNOSIS:121-126` 的下半句：**「而且闸门验不到的东西，框架不会告诉你它没验。」**
 
 ---
 
@@ -400,16 +556,22 @@ F1/F7 的注释恰恰**不是 JSDoc 形态**（是 `//` 与 `/**` 混写的散�
 
 | 序 | 内容 | 为什么这个顺序 |
 |---|---|---|
-| 0 | **先拿定标当验收标准**（已完成，`GROUND-TRUTH-assertion-diff.md`） | 定标证明直觉设计有 1/3–2/3 假阳性。**改动 1 的自测用例直接照抄那 3 处**：处 1/2 未申报→FAIL、已申报→WARN；处 3 零命中。没有这三条，改动 1 无法证明自己不会把这道闸门逼死 |
+| 0a | **改 `gen-contract-examples.mjs:192` + 加 `mutation_scope` 规则**（改动 4 的第一块） | 这是全方案**最便宜的一处**（改一个字符串 + 一条规则），而且它污染的是**两个方向**：向下 agent 照抄错的范例，向上「契约合规」这个结论不可信（`GROUND-TRUTH-example-violates-contract.md:150-152` 原文：「D 比 A/B/C 更值得先修」）。先做它，后面所有「契约合规」的结论才站得住 |
+| 0b | **拿定标当验收标准**（已完成，`GROUND-TRUTH-assertion-diff.md`） | 定标证明直觉设计有 1/3–2/3 假阳性。**改动 1 的自测用例直接照抄那 3 处**：处 1/2 未申报→FAIL、已申报→WARN；处 3 零命中。没有这三条，改动 1 无法证明自己不会把这道闸门逼死 |
+| 0c | **改动 0（元规则 D）以 `--report-only` 上线** | 先出统计，不闸门。它上线第一天就会红出 `wave5-verify.md` 的 50 条硬规则里绝大多数无出口。**先测量，再闸门**——这是 A/B/C/D 四条共同的落地前提 |
 | 1 | 改动 1（A）+ 改动 5/7/8 的文本/契约 + 改动 9 的 §3.7.7 + 改动 10 | A 是唯一能做成**非自述**判据的，且 review-7 里它出现了两次（`SUMMARY.md:83-88`）。规则已写好（`wave4-fix.md:200`），只差执行 |
-| 2 | 改动 4（C2：变异申报 + `residual_risk_disposition` 覆盖 + 枚举登记） | 纯补洞，无新算法，改动面最小，且 `wave5-verify.md:136-140`/`:207` 的条款已经写好，今天零执行 |
+| 2 | 改动 4 的其余部分（`residual_risk_disposition` 覆盖 + 枚举登记 + 必查清单去掉 `NO_EVIDENCE_FOUND` 包裹） | 纯补洞，无新算法，且 `wave5-verify.md:207` 的条款已经写好，今天零执行 |
 | 3 | 改动 2（B 的矛盾检测） | 需要新增契约字段（改动 7），必须先有 `input_space_basis` 才有东西可比 |
-| 4 | 改动 3（C1 源码守卫） | 窄，收益确定，但**恒有假阳性**（定标 §五的 `javadocStopsClaimingTheFalseInvariant` 是刻意的文本守卫），优先级低于上面三条 |
-| 5 | 改动 11（同步 `CAPABILITIES.md`） | 最后做，但**必须做**——它本身就是模式 C 的防治对象 |
+| 4 | 改动 3（C1 源码守卫） | 窄，收益确定，但**恒有假阳性**（`GROUND-TRUTH-assertion-diff.md:102-103` 里的 `javadocStopsClaimingTheFalseInvariant` 是刻意的文本守卫），优先级低于上面几条 |
+| 5 | 改动 12（`rules-ledger.json`）+ 改动 0 从 `--report-only` 切到闸门模式 | ledger 建不完就不能闸门；`PENDING` 预算要按真实存量标定 |
+| 6 | 改动 11（同步 `CAPABILITIES.md`） | 最后做，但**必须做**——它本身就是模式 C 的防治对象 |
 
 **定标同时纠正了本方案起草时的两个错误认知**（记录下来，因为它正是模式 C 的实例）：
-1. 我最初以为 F1 的 `not a mapping` 分支零覆盖——错，`ShopConfigCorruptFileTest.TRUNCATED_AT_ITEMS` 覆盖了它（`GROUND-TRUTH:100`）。
-2. 我最初以为 `items: []` 是纯误杀——定标指出 `items: {}` 被刻意判合法且仓库里有 5 处测试依赖它，任何截断检测都不能把它一起拦掉（`GROUND-TRUTH:101`）。
+1. 我最初以为 F1 的 `not a mapping` 分支零覆盖——错，`ShopConfigCorruptFileTest.TRUNCATED_AT_ITEMS` 覆盖了它（`GROUND-TRUTH-assertion-diff.md:100`）。
+2. 我最初以为 `items: []` 是纯误杀——定标指出 `items: {}` 被刻意判合法且仓库里有 5 处测试依赖它，任何截断检测都不能把它一起拦掉（`GROUND-TRUTH-assertion-diff.md:101`）。
+
 这两条都属于「我在没读测试文件之前就下了结论」。**它们是本方案自己被模式 B/C 命中的证据。**
+
+**还有一条更贵的过程教训**：本方案的第一稿把 A 设计成「极性翻转即 FAIL」，并按「方法内匹配」抽取断言四元组。**那份设计在定标出现之前就已经写完**，如果直接实施，它会在第一个真实样本上产生 2/3 的假阳性，然后被关掉。定标是**外部提供的事实**，不是我自己找的——这与 `SUMMARY.md:113` 那句「闸门能保证『没有静默跳过验证』，不能保证『验证本身是对的』」是同一件事的又一次实例：**设计者对设计的验证，不是独立验证。**
 
 每一步都必须同时落三处（模板 / 契约 / 校验器），否则就是 `output-contract/audit.md:229` 记的那句：「契约的每一条硬判据都必须有对应的测试用例，否则它只是一句愿望。这个框架里『三层闭环』（模板 / 契约 / 校验器）的第三条腿，正是最容易缺的那条。」

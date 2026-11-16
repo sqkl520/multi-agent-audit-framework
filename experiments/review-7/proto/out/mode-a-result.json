@@ -1,0 +1,1382 @@
+{
+  "summary": {
+    "repo": "<TARGET_REPO>",
+    "ref": "HEAD",
+    "files": 27,
+    "modified": 7,
+    "added": 20,
+    "totalOldPhysicalAssertLines": 272,
+    "totalNewPhysicalAssertLines": 593,
+    "oldCallSites": 274,
+    "newCallSites": 603,
+    "oldParsed": 274,
+    "newParsed": 602,
+    "oldUnparsable": 0,
+    "newUnparsable": 0,
+    "findings": []
+  },
+  "results": [
+    {
+      "rel": "src/test/java/com/hilltopvillage/ai/AirdropSpawnGoalTest.java",
+      "hasOld": true,
+      "stats": {
+        "old": {
+          "physicalAssertLines": 16,
+          "callSites": 17,
+          "parsed": 17,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 11
+        },
+        "new": {
+          "physicalAssertLines": 22,
+          "callSites": 25,
+          "parsed": 25,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 19
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": [
+        "goal.shouldActivate()",
+        "done.getInt(goal)",
+        "scanCooldown.getInt(goal)",
+        "verify(waveManager,org.mockito.Mockito.never())",
+        "afterAtCap",
+        "afterBelowCap>0",
+        "goal.shouldStayActive()",
+        "a.getTypes()",
+        "size(a.getTypes())",
+        "a.getKey().getNamespacedKey().toString()",
+        "b.getKey()"
+      ],
+      "subjectsNew": [
+        "goal.shouldActivate()",
+        "done.getInt(goal)",
+        "scanCooldown.getInt(goal)",
+        "verify(waveManager,org.mockito.Mockito.never())",
+        "afterAtCap",
+        "afterBelowCap>0",
+        "goal.shouldStayActive()",
+        "a.getTypes()",
+        "size(a.getTypes())",
+        "a.getKey().getNamespacedKey().toString()",
+        "b.getKey()",
+        "got",
+        "parseMobTypeLikeProduction(\"   \")",
+        "parseMobTypeLikeProduction(\"\\t\\n\")",
+        "parseMobTypeLikeProduction(\"ZOMBIE\")",
+        "parseMobTypeLikeProduction(\"zombie\")",
+        "parseMobTypeLikeProduction(\"ZOMBIE_TYPO\")",
+        "i>0",
+        "window.contains(\"mobTypeName == null\")||window.contains(\"mobTypeName.isBlank\")"
+      ],
+      "status": "M"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/ai/ExplodeBeetleGoalTest.java",
+      "hasOld": true,
+      "stats": {
+        "old": {
+          "physicalAssertLines": 15,
+          "callSites": 16,
+          "parsed": 16,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 9
+        },
+        "new": {
+          "physicalAssertLines": 21,
+          "callSites": 22,
+          "parsed": 22,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 12
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": [
+        "goal.shouldActivate()",
+        "goal.shouldStayActive()",
+        "verify(waveManager,org.mockito.Mockito.atLeastOnce())",
+        "verify(waveManager,never())",
+        "verify(nodeSystem,never())",
+        "a.getTypes()",
+        "size(a.getTypes())",
+        "a.getKey().getNamespacedKey().toString()",
+        "b.getKey()"
+      ],
+      "subjectsNew": [
+        "verify(world)",
+        "power.getValue()",
+        "verify(nodeSystem)",
+        "goal.shouldActivate()",
+        "goal.shouldStayActive()",
+        "verify(waveManager,org.mockito.Mockito.atLeastOnce())",
+        "verify(waveManager,never())",
+        "verify(nodeSystem,never())",
+        "a.getTypes()",
+        "size(a.getTypes())",
+        "a.getKey().getNamespacedKey().toString()",
+        "b.getKey()"
+      ],
+      "status": "M"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java",
+      "hasOld": true,
+      "stats": {
+        "old": {
+          "physicalAssertLines": 39,
+          "callSites": 39,
+          "parsed": 39,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 21
+        },
+        "new": {
+          "physicalAssertLines": 52,
+          "callSites": 52,
+          "parsed": 52,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 25
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": [
+        "config.getMonstersGate().load().usable()",
+        "config.getMonstersGate().isReadOnly()",
+        "config.hasUnsavedChanges()",
+        "saved",
+        "config.saveToFile()",
+        "MockBukkitTestBase.TestPaths.read(settingsFile(host)).contains(\"victory-waves: 7\")",
+        "config.getSettingsGate().isReadOnly()",
+        "config.getActiveConfig().getMinPlayers()",
+        "reloaded",
+        "reloaded.getTotalMobs()",
+        "wavesSection(settingsFile(host)).getConfigurationSection(\"42\")",
+        "wavesSection(settingsFile(host)).getConfigurationSection(\"1\")",
+        "wave42",
+        "wave42.getInt(\"total-mobs\")",
+        "logs.anyContains(\"unrecognized entries under waves\")",
+        "logs.anyContains(\"wave5\")",
+        "logs.anyContains(\"unrecognized top-level keys\")",
+        "logs.anyContains(\"victory-wave\")",
+        "config.getActiveConfig().getWaveTimeoutSeconds()",
+        "config.getActiveConfig().getHammerMaterial()",
+        "logs.anyContains(\"Invalid hammer material\")"
+      ],
+      "subjectsNew": [
+        "config.getMonstersGate().load().usable()",
+        "config.getMonstersGate().isReadOnly()",
+        "config.hasUnsavedChanges()",
+        "saved",
+        "config.saveToFile()",
+        "MockBukkitTestBase.TestPaths.read(settingsFile(host)).contains(\"victory-waves: 7\")",
+        "config.getSettingsGate().isReadOnly()",
+        "config.getActiveConfig().getMinPlayers()",
+        "reloaded",
+        "reloaded.getTotalMobs()",
+        "wavesSection(settingsFile(host)).getConfigurationSection(\"42\")",
+        "wavesSection(settingsFile(host)).getConfigurationSection(\"1\")",
+        "wave42",
+        "wave42.getInt(\"total-mobs\")",
+        "config.loadFromFile()",
+        "config.getActiveConfig().getVictoryWaves()",
+        "size(config.getActiveConfig().getWaves())",
+        "settingsFile(host).exists()",
+        "logs.anyContains(\"unrecognized entries under waves\")",
+        "logs.anyContains(\"wave5\")",
+        "logs.anyContains(\"unrecognized top-level keys\")",
+        "logs.anyContains(\"victory-wave\")",
+        "config.getActiveConfig().getWaveTimeoutSeconds()",
+        "config.getActiveConfig().getHammerMaterial()",
+        "logs.anyContains(\"Invalid hammer material\")"
+      ],
+      "status": "M"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java",
+      "hasOld": true,
+      "stats": {
+        "old": {
+          "physicalAssertLines": 65,
+          "callSites": 65,
+          "parsed": 65,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 38
+        },
+        "new": {
+          "physicalAssertLines": 70,
+          "callSites": 70,
+          "parsed": 70,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 42
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": [
+        "original",
+        "original.isCancelled()",
+        "field(\"scheduledPeriod\")",
+        "afterRestart",
+        "afterRestart.isCancelled()",
+        "second",
+        "replaced",
+        "task.isCancelled()",
+        "field(\"refreshTask\")",
+        "player.getPlayerListOrder()",
+        "player.playerListName()",
+        "firstName",
+        "firstOrder",
+        "lastName.get(player.getUniqueId())",
+        "lastOrder.get(player.getUniqueId())",
+        "size(cache(\"lastName\"))",
+        "size(cache(\"lastOrder\"))",
+        "size(server.getOnlinePlayers())",
+        "size(cache(\"lastHeader\"))",
+        "touched.getPlayerListOrder()",
+        "untouched.getPlayerListOrder()",
+        "invokeIsVisible(\"typo-condition\",running)",
+        "invokeIsVisible(\"running\",running)",
+        "invokeIsVisible(\"in-game\",viewFor(GameState.STARTING,false))",
+        "invokeIsVisible(\"in-game\",viewFor(GameState.RUNNING,false))",
+        "invokeIsVisible(\"in-game\",viewFor(GameState.WAVE_INTERMISSION,false))",
+        "invokeIsVisible(\"in-game\",viewFor(GameState.WAITING,false))",
+        "invokeIsVisible(\"finished\",viewFor(GameState.VICTORY,false))",
+        "invokeIsVisible(\"finished\",viewFor(GameState.DEFEAT,false))",
+        "invokeIsVisible(\"finished\",viewFor(GameState.ENDING,false))",
+        "invokeIsVisible(\"finished\",viewFor(GameState.RUNNING,false))",
+        "lobby>alive",
+        "alive>dead",
+        "dead>spectator",
+        "spectator>=0",
+        "invokeStateOf(player)",
+        "invokeContextOf(player)",
+        "cache(name).containsKey(id)"
+      ],
+      "subjectsNew": [
+        "original",
+        "original.isCancelled()",
+        "field(\"scheduledPeriod\")",
+        "afterRestart",
+        "afterRestart.isCancelled()",
+        "second",
+        "replaced",
+        "task.isCancelled()",
+        "field(\"refreshTask\")",
+        "player.getPlayerListOrder()",
+        "player.playerListName()",
+        "firstName",
+        "firstOrder",
+        "lastName.get(player.getUniqueId())",
+        "lastOrder.get(player.getUniqueId())",
+        "size(cache(\"lastName\"))",
+        "size(cache(\"lastOrder\"))",
+        "size(server.getOnlinePlayers())",
+        "size(cache(\"lastHeader\"))",
+        "before",
+        "before.isCancelled()",
+        "first",
+        "first.isCancelled()",
+        "touched.getPlayerListOrder()",
+        "untouched.getPlayerListOrder()",
+        "invokeIsVisible(\"typo-condition\",running)",
+        "invokeIsVisible(\"running\",running)",
+        "invokeIsVisible(\"in-game\",viewFor(GameState.STARTING,false))",
+        "invokeIsVisible(\"in-game\",viewFor(GameState.RUNNING,false))",
+        "invokeIsVisible(\"in-game\",viewFor(GameState.WAVE_INTERMISSION,false))",
+        "invokeIsVisible(\"in-game\",viewFor(GameState.WAITING,false))",
+        "invokeIsVisible(\"finished\",viewFor(GameState.VICTORY,false))",
+        "invokeIsVisible(\"finished\",viewFor(GameState.DEFEAT,false))",
+        "invokeIsVisible(\"finished\",viewFor(GameState.ENDING,false))",
+        "invokeIsVisible(\"finished\",viewFor(GameState.RUNNING,false))",
+        "lobby>alive",
+        "alive>dead",
+        "dead>spectator",
+        "spectator>=0",
+        "invokeStateOf(player)",
+        "invokeContextOf(player)",
+        "cache(name).containsKey(id)"
+      ],
+      "status": "M"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java",
+      "hasOld": true,
+      "stats": {
+        "old": {
+          "physicalAssertLines": 72,
+          "callSites": 72,
+          "parsed": 72,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 46
+        },
+        "new": {
+          "physicalAssertLines": 97,
+          "callSites": 97,
+          "parsed": 97,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 57
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": [
+        "config.getCurrencyMaterial()",
+        "config.getGuiSize()",
+        "config.getCurrencyName()",
+        "size(config.getItems())",
+        "bow",
+        "bow.getSlot()",
+        "bow.getPrice()",
+        "bow.getType()",
+        "bow.getIcon()",
+        "bow.getAmount()",
+        "bow.isUnbreakable()",
+        "arrow.getAmount()",
+        "sword",
+        "sword.getType()",
+        "sword.getLore()",
+        "size(sword.getLore())",
+        "throws:config.getItems().clear()",
+        "logs.anyContains(\"invalid currency material 'WATER'\")",
+        "logs.anyContains(\"invalid currency material\")",
+        "load(\"shop:\\n  gui:\\n    size: 30\\n\").getGuiSize()",
+        "load(\"shop:\\n  gui:\\n    size: 5\\n\").getGuiSize()",
+        "load(\"shop:\\n  gui:\\n    size: 60\\n\").getGuiSize()",
+        "load(\"shop:\\n  currency:\\n    material: EMERALD\\n\").getGuiSize()",
+        "logs.anyContains(\"invalid GUI size 30\")",
+        "logs.anyContains(\"9/18/27/36/45/54\")",
+        "logs.anyContains(\"unknown type 'WEAPON'\")",
+        "logs.anyContains(\"invalid icon material 'WATER'\")",
+        "config.getItems().get(0).getIcon()",
+        "logs.anyContains(\"is missing icon.material\")",
+        "logs.anyContains(\"out of GUI size 27\")",
+        "logs.anyContains(\"gui.size: 54\")",
+        "logs.anyContains(\"out of GUI size 54\")",
+        "logs.anyContains(\"gui.size: 54; check\")",
+        "logs.anyContains(\"conflicts with item 'first'\")",
+        "logs.anyContains(\"item 'second' slot 3\")",
+        "logs.anyContains(\"conflicts with item\")",
+        "config.getItems().get(0).getPrice()",
+        "logs.anyContains(\"negative price -5\")",
+        "logs.anyContains(\"negative price\")",
+        "item.getName()",
+        "item.getLore()",
+        "item.isUnbreakable()",
+        "item.getAmount()",
+        "item.getPrice()",
+        "item.getIcon()",
+        "size(second.getItems())"
+      ],
+      "subjectsNew": [
+        "config.getCurrencyMaterial()",
+        "config.getGuiSize()",
+        "config.getCurrencyName()",
+        "size(config.getItems())",
+        "bow",
+        "bow.getSlot()",
+        "bow.getPrice()",
+        "bow.getType()",
+        "bow.getIcon()",
+        "bow.getAmount()",
+        "bow.isUnbreakable()",
+        "arrow.getAmount()",
+        "sword",
+        "sword.getType()",
+        "sword.getLore()",
+        "size(sword.getLore())",
+        "throws:config.getItems().clear()",
+        "logs.anyContains(\"invalid currency material 'WATER'\")",
+        "logs.anyContains(\"invalid currency material\")",
+        "load(\"shop:\\n  gui:\\n    size: 30\\n\").getGuiSize()",
+        "load(\"shop:\\n  gui:\\n    size: 5\\n\").getGuiSize()",
+        "load(\"shop:\\n  gui:\\n    size: 60\\n\").getGuiSize()",
+        "load(\"shop:\\n  currency:\\n    material: EMERALD\\n\").getGuiSize()",
+        "logs.anyContains(\"invalid GUI size 30\")",
+        "logs.anyContains(\"9/18/27/36/45/54\")",
+        "logs.anyContains(\"unknown type 'WEAPON'\")",
+        "logs.anyContains(\"invalid icon material 'WATER'\")",
+        "config.getItems().get(0).getIcon()",
+        "logs.anyContains(\"MATERIAL item 'probe'\")",
+        "logs.anyContains(\"is missing icon.material\")",
+        "logs.anyContains(\"skipped\")",
+        "logs.anyContains(\"out of GUI size 27\")",
+        "logs.anyContains(\"gui.size: 54\")",
+        "logs.anyContains(\"out of GUI size 54\")",
+        "logs.anyContains(\"gui.size: 54; check\")",
+        "logs.anyContains(\"conflicts with item 'first'\")",
+        "logs.anyContains(\"item 'second' slot 3\")",
+        "logs.anyContains(\"conflicts with item\")",
+        "config.getItems().get(0).getPrice()",
+        "logs.anyContains(\"negative price -5\")",
+        "logs.anyContains(\"missing price\")",
+        "logs.anyContains(\"defaulting to 1\")",
+        "logs.anyContains(\"negative price\")",
+        "item.getName()",
+        "item.getLore()",
+        "item.isUnbreakable()",
+        "item.getAmount()",
+        "item.getPrice()",
+        "item.getIcon()",
+        "logs.anyContains(\"invalid amount 0\")",
+        "logs.anyContains(\"invalid amount -3\")",
+        "logs.anyContains(\"invalid amount\")",
+        "config.getItems().get(0).getAmount()",
+        "logs.anyContains(\"configuration warning(s)\")",
+        "logs.anyContains(\"'no_icon'\")",
+        "logs.anyContains(\"'no_price'\")",
+        "size(second.getItems())"
+      ],
+      "status": "M"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopOverflowPaidDropTest.java",
+      "hasOld": true,
+      "stats": {
+        "old": {
+          "physicalAssertLines": 31,
+          "callSites": 31,
+          "parsed": 31,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 26
+        },
+        "new": {
+          "physicalAssertLines": 31,
+          "callSites": 31,
+          "parsed": 31,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 26
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": [
+        "shop.countCurrency(player)",
+        "occupiedSlots(player)",
+        "size(drops)",
+        "dropped.getItemStack().getType()",
+        "isPaidDrop(dropped)",
+        "oversized-bow.getPrice()>64",
+        "spied.countCurrency(player)",
+        "size(player.getWorld().getEntitiesByClass(Item.class))",
+        "firstOfType(player,Material.BOW)",
+        "arena",
+        "world",
+        "size(world.getEntitiesByClass(Item.class))",
+        "size(remaining)",
+        "marked.isValid()",
+        "plain.isValid()",
+        "remaining.get(0).getItemStack().getType()",
+        "foreign.isValid()",
+        "arenaWorld",
+        "shop",
+        "player.getWorld().getName()",
+        "size(before)",
+        "paidBefore",
+        "size(after)",
+        "after.get(0).getItemStack().getType()",
+        "isPaidDrop(after.get(0))",
+        "junk.isValid()"
+      ],
+      "subjectsNew": [
+        "shop.countCurrency(player)",
+        "occupiedSlots(player)",
+        "size(drops)",
+        "dropped.getItemStack().getType()",
+        "isPaidDrop(dropped)",
+        "oversized-bow.getPrice()>64",
+        "spied.countCurrency(player)",
+        "size(player.getWorld().getEntitiesByClass(Item.class))",
+        "firstOfType(player,Material.BOW)",
+        "arena",
+        "world",
+        "size(world.getEntitiesByClass(Item.class))",
+        "size(remaining)",
+        "marked.isValid()",
+        "plain.isValid()",
+        "remaining.get(0).getItemStack().getType()",
+        "foreign.isValid()",
+        "arenaWorld",
+        "shop",
+        "player.getWorld().getName()",
+        "size(before)",
+        "paidBefore",
+        "size(after)",
+        "after.get(0).getItemStack().getType()",
+        "isPaidDrop(after.get(0))",
+        "junk.isValid()"
+      ],
+      "status": "M"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopOverflowPartialFitTest.java",
+      "hasOld": true,
+      "stats": {
+        "old": {
+          "physicalAssertLines": 34,
+          "callSites": 34,
+          "parsed": 34,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 23
+        },
+        "new": {
+          "physicalAssertLines": 34,
+          "callSites": 34,
+          "parsed": 34,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 23
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": [
+        "arrow.getAmount()",
+        "arrow.getPrice()",
+        "shop.countCurrency(player)",
+        "player.getInventory().getItem(0).getAmount()",
+        "countInBag(player,Material.ARROW)",
+        "size(player.getWorld().getEntitiesByClass(Item.class))",
+        "size(drops)",
+        "remainder.getItemStack().getType()",
+        "remainder.getItemStack().getAmount()",
+        "countInBag(player,Material.ARROW)+remainder.getItemStack().getAmount()",
+        "isPaidDrop(remainder)",
+        "refund.getItemStack().getType()",
+        "refund.getItemStack().getAmount()",
+        "isPaidDrop(refund)",
+        "offhand",
+        "(offhand-60)+remainder.getItemStack().getAmount()",
+        "size(player.getInventory().getContents())",
+        "size(player.getInventory().getStorageContents())",
+        "newItemStack(Material.BOW,1).getMaxStackSize()",
+        "newItemStack(Material.ARROW,1).getMaxStackSize()",
+        "newItemStack(Material.EMERALD,1).getMaxStackSize()",
+        "player.getInventory().getItem(40)",
+        "player.getInventory().getItem(40).getAmount()"
+      ],
+      "subjectsNew": [
+        "arrow.getAmount()",
+        "arrow.getPrice()",
+        "shop.countCurrency(player)",
+        "player.getInventory().getItem(0).getAmount()",
+        "countInBag(player,Material.ARROW)",
+        "size(player.getWorld().getEntitiesByClass(Item.class))",
+        "size(drops)",
+        "remainder.getItemStack().getType()",
+        "remainder.getItemStack().getAmount()",
+        "countInBag(player,Material.ARROW)+remainder.getItemStack().getAmount()",
+        "isPaidDrop(remainder)",
+        "refund.getItemStack().getType()",
+        "refund.getItemStack().getAmount()",
+        "isPaidDrop(refund)",
+        "offhand",
+        "(offhand-60)+remainder.getItemStack().getAmount()",
+        "size(player.getInventory().getContents())",
+        "size(player.getInventory().getStorageContents())",
+        "newItemStack(Material.BOW,1).getMaxStackSize()",
+        "newItemStack(Material.ARROW,1).getMaxStackSize()",
+        "newItemStack(Material.EMERALD,1).getMaxStackSize()",
+        "player.getInventory().getItem(40)",
+        "player.getInventory().getItem(40).getAmount()"
+      ],
+      "status": "M"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/admin/ArenaResetNodeRollbackTest.java",
+      "hasOld": false,
+      "stats": {
+        "old": null,
+        "new": {
+          "physicalAssertLines": 14,
+          "callSites": 14,
+          "parsed": 14,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 11
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": null,
+      "subjectsNew": [
+        "outcome",
+        "size(restored)",
+        "restored.get(0).getBlockX()",
+        "restored.get(1).getBlockX()",
+        "size(NodeSystem.readNodesForWorld(dataFolder.toFile(),\"lobby\"))",
+        "outcome.failStep()",
+        "outcome.reinstated()",
+        "outcome.nodesCleared()",
+        "verify(multi)",
+        "outcome.reinstateSkipped()",
+        "verify(multi,never())"
+      ],
+      "status": "A"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/ai/AirdropMobTypeNpeReachabilityTest.java",
+      "hasOld": false,
+      "stats": {
+        "old": null,
+        "new": {
+          "physicalAssertLines": 0,
+          "callSites": 0,
+          "parsed": 0,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 0
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": null,
+      "subjectsNew": [],
+      "status": "A"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/command/HilltopCommandReloadResultTest.java",
+      "hasOld": false,
+      "stats": {
+        "old": null,
+        "new": {
+          "physicalAssertLines": 7,
+          "callSites": 7,
+          "parsed": 7,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 5
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": null,
+      "subjectsNew": [
+        "messages.contains(failed)",
+        "messages.contains(success)",
+        "plugin.getConfigManager().getActiveConfig().getVictoryWaves()",
+        "plugin.getConfigManager().getSettingsGate().isReadOnly()",
+        "messages.contains(messagesReloaded)"
+      ],
+      "status": "A"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/config/AirdropMobTypeNullabilityTest.java",
+      "hasOld": false,
+      "stats": {
+        "old": null,
+        "new": {
+          "physicalAssertLines": 7,
+          "callSites": 9,
+          "parsed": 9,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 3
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": null,
+      "subjectsNew": [
+        "got",
+        "contains",
+        "npeCapable"
+      ],
+      "status": "A"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/config/ConfigLoadClampTest.java",
+      "hasOld": false,
+      "stats": {
+        "old": null,
+        "new": {
+          "physicalAssertLines": 23,
+          "callSites": 23,
+          "parsed": 23,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 12
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": null,
+      "subjectsNew": [
+        "config.getActiveConfig().getVictoryWaves()",
+        "config.getActiveConfig().getRepairCostAmount()",
+        "config.getActiveConfig().getMonsters().get(\"explode-beetle\").getExplodeDamageMultiplier()",
+        "config.hasUnsavedChanges()",
+        "positiveConfig.getActiveConfig().getMonsters().get(\"explode-beetle\").getExplodeDamageMultiplier()",
+        "positiveConfig.hasUnsavedChanges()",
+        "negativeConfig.getActiveConfig().getMonsters().get(\"explode-beetle\").getExplodeDamageMultiplier()",
+        "negativeConfig.hasUnsavedChanges()",
+        "config.saveToFile()",
+        "diskInt(settingsFile(host),\"victory-waves\")",
+        "diskInt(settingsFile(host),\"nodes.repair-cost-amount\")",
+        "diskDouble(settingsFile(host),\"monsters.explode-beetle.explode-damage-multiplier\")"
+      ],
+      "status": "A"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/config/YamlNullMechanismTest.java",
+      "hasOld": false,
+      "stats": {
+        "old": null,
+        "new": {
+          "physicalAssertLines": 0,
+          "callSites": 0,
+          "parsed": 0,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 0
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": null,
+      "subjectsNew": [],
+      "status": "A"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/config/menu/MainConfigMenuReloadResultTest.java",
+      "hasOld": false,
+      "stats": {
+        "old": null,
+        "new": {
+          "physicalAssertLines": 13,
+          "callSites": 13,
+          "parsed": 13,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 7
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": null,
+      "subjectsNew": [
+        "menu.clickActions.containsKey(RELOAD_SLOT)",
+        "admin.nextMessage()",
+        "size(admin.getHeardSounds())",
+        "admin.getHeardSounds().get(0).getSound()",
+        "config.getActiveConfig().getVictoryWaves()",
+        "config.getSettingsGate().isReadOnly()",
+        "menu.getInventory().getItem(RELOAD_SLOT)"
+      ],
+      "status": "A"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/doc/CommandsDocumentAtomicWriteTest.java",
+      "hasOld": false,
+      "stats": {
+        "old": null,
+        "new": {
+          "physicalAssertLines": 22,
+          "callSites": 21,
+          "parsed": 21,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 19
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": null,
+      "subjectsNew": [
+        "Files.readString(target,StandardCharsets.UTF_8)",
+        "listFileNames(dir)",
+        "moveStepType.isInterface()",
+        "throws:{try{writeAtomically.invoke(null,target,newContent,failingMoveStep);}catch(InvocationTargetExceptioninvocation){throwinvocation.getCause();}}",
+        "throwninstanceofIOException",
+        "sourceAtMove.get()",
+        "movedTo",
+        "movedFrom",
+        "movedFrom.getParent()",
+        "sourceContentAtMove.get()",
+        "targetContentAtMove.get()",
+        "start>=0",
+        "body.contains(\"message -> { }\")",
+        "body.contains(\"Logger.getLogger\")",
+        "source.contains(\"Files.write(docFile\")",
+        "source.contains(\"writeAtomically(\")",
+        "source.contains(\"ATOMIC_MOVE\")",
+        "source.contains(\"AtomicMoveNotSupportedException\")",
+        "found"
+      ],
+      "status": "A"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/doc/CommandsDocumentConcurrencyTest.java",
+      "hasOld": false,
+      "stats": {
+        "old": null,
+        "new": {
+          "physicalAssertLines": 9,
+          "callSites": 7,
+          "parsed": 7,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 7
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": null,
+      "subjectsNew": [
+        "ready.await(10,TimeUnit.SECONDS)",
+        "!thread.isAlive()",
+        "failures",
+        "movesCompleted.get()",
+        "maxObserved.get()",
+        "source.contains(\".lock()\")&&source.contains(\".unlock()\")",
+        "found"
+      ],
+      "status": "A"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/doc/CommandsDocumentFallbackTest.java",
+      "hasOld": false,
+      "stats": {
+        "old": null,
+        "new": {
+          "physicalAssertLines": 22,
+          "callSites": 25,
+          "parsed": 25,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 22
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": null,
+      "subjectsNew": [
+        "Files.readString(target,StandardCharsets.UTF_8)",
+        "Files.exists(staged)",
+        "size(warnings)",
+        "warnings.get(0).contains(\"ATOMIC_MOVE\")",
+        "throws:invokeMoveIntoPlace(staged,target,atomicMoverRejectingAtomicMove(),warnings)",
+        "throwninstanceofIOException",
+        "throwninstanceofAtomicMoveNotSupportedException",
+        "Files.isDirectory(target)",
+        "Files.readString(occupant,StandardCharsets.UTF_8)",
+        "throws:invokeMoveIntoPlace(staged,target,atomicMoverThrowing(injected),warnings)",
+        "thrown",
+        "warnings",
+        "source.contains(\"任何失败都保留旧目标\")",
+        "source.contains(\"非原子\")",
+        "source.contains(\"DeleteFile\")&&source.contains(\"先删除目标\")",
+        "source.contains(\"WARNING\")||source.contains(\"warning\")",
+        "capture.anyMatch(line->line.startsWith(\"WARNING|\")&&line.contains(\"ATOMIC_MOVE\"))",
+        "capture.countAt(java.util.logging.Level.SEVERE)",
+        "capture.anyContains(\"Command reference generated\")",
+        "Files.isRegularFile(docFile)",
+        "found",
+        "moverType.isInterface()"
+      ],
+      "status": "A"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/doc/CommandsDocumentationCleanupClaimTest.java",
+      "hasOld": false,
+      "stats": {
+        "old": null,
+        "new": {
+          "physicalAssertLines": 3,
+          "callSites": 3,
+          "parsed": 3,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 3
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": null,
+      "subjectsNew": [
+        "content.contains(\"### `/hilltop tps`\")",
+        "content.contains(\"DisplayEntity 清理队列\")",
+        "file.isFile()&&file.length()>0"
+      ],
+      "status": "A"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/mechanics/RepairSettlementTest.java",
+      "hasOld": false,
+      "stats": {
+        "old": null,
+        "new": {
+          "physicalAssertLines": 12,
+          "callSites": 12,
+          "parsed": 12,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 5
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": null,
+      "subjectsNew": [
+        "repairItem.getAmount()",
+        "player.getInventory().getItemInMainHand().getAmount()",
+        "outcome.remainingItems()",
+        "outcome.restoredHealth()",
+        "10-outcome.remainingItems()"
+      ],
+      "status": "A"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/mechanics/ScratchReloadProbeTest.java",
+      "hasOld": false,
+      "stats": {
+        "old": null,
+        "new": {
+          "physicalAssertLines": 0,
+          "callSites": 0,
+          "parsed": 0,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 0
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": null,
+      "subjectsNew": [],
+      "status": "A"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopConfigAmountValidationTest.java",
+      "hasOld": false,
+      "stats": {
+        "old": null,
+        "new": {
+          "physicalAssertLines": 21,
+          "callSites": 21,
+          "parsed": 21,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 11
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": null,
+      "subjectsNew": [
+        "probe",
+        "logs.anyContains(\"invalid amount 0\")",
+        "logs.anyContains(\"item 'probe'\")",
+        "logs.anyContains(\"invalid amount -5\")",
+        "probe.getAmount()",
+        "logs.anyContains(\"invalid amount\")",
+        "bad",
+        "good",
+        "good.getSlot()",
+        "good.getAmount()",
+        "logs.anyContains(\"conflicts with item 'bad'\")"
+      ],
+      "status": "A"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopConfigCorruptFileTest.java",
+      "hasOld": false,
+      "stats": {
+        "old": null,
+        "new": {
+          "physicalAssertLines": 14,
+          "callSites": 16,
+          "parsed": 16,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 12
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": null,
+      "subjectsNew": [
+        "throws:loader::load",
+        "message",
+        "message.contains(\"shop.yml\")",
+        "throws:shop::reload",
+        "shop.getShopConfig()",
+        "shop.getShopConfig().getCurrencyMaterial()",
+        "size(previous.getItems())",
+        "directFailure.getMessage()",
+        "directFailure.getMessage().contains(\"shop.yml\")",
+        "directFailure.getMessage().contains(\"shop.items\")",
+        "size(shop.getShopConfig().getItems())",
+        "size(loader.load().getItems())"
+      ],
+      "status": "A"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopConfigMaterialValidationTest.java",
+      "hasOld": false,
+      "stats": {
+        "old": null,
+        "new": {
+          "physicalAssertLines": 6,
+          "callSites": 7,
+          "parsed": 6,
+          "unparsable": 0,
+          "containers": 1,
+          "distinctSubjects": 6
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": [
+          {
+            "line": 72,
+            "fn": "assertAll"
+          }
+        ]
+      },
+      "subjectsOld": null,
+      "subjectsNew": [
+        "missingIcon",
+        "missingIcon.getIcon()",
+        "validIcon",
+        "validIcon.getType()",
+        "validIcon.getIcon()",
+        "logs.anyContains(\"MATERIAL item 'no_icon'\")"
+      ],
+      "status": "A"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopConfigPriceValidationTest.java",
+      "hasOld": false,
+      "stats": {
+        "old": null,
+        "new": {
+          "physicalAssertLines": 16,
+          "callSites": 16,
+          "parsed": 16,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 7
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": null,
+      "subjectsNew": [
+        "probe",
+        "probe.getPrice()",
+        "logs.anyContains(\"missing price\")",
+        "logs.anyContains(\"item 'probe'\")",
+        "logs.anyContains(\"defaulting to 1\")",
+        "logs.anyContains(\"negative price\")",
+        "logs.anyContains(\"negative price -5\")"
+      ],
+      "status": "A"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopConfigQuarantineRebuildTest.java",
+      "hasOld": false,
+      "stats": {
+        "old": null,
+        "new": {
+          "physicalAssertLines": 48,
+          "callSites": 49,
+          "parsed": 49,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 18
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": null,
+      "subjectsNew": [
+        "throws:loader::load",
+        "shopFile.exists()",
+        "corruptFile.exists()",
+        "throws:afterRestart::load",
+        "config.getCurrencyMaterial()",
+        "config.getGuiSize()",
+        "size(config.getItems())",
+        "corruptFile.delete()",
+        "config.getCurrencyName()",
+        "config.getNpcName()",
+        "config.getGuiTitle()",
+        "config.getItems().get(0).getId()",
+        "config.getItems().get(0).getPrice()",
+        "TestPaths.read(shopFile)",
+        "loader.load().getCurrencyMaterial()",
+        "message",
+        "message.contains(\"shop.yml\")",
+        "message.contains(\"corrupt\")"
+      ],
+      "status": "A"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopListenerPurchaseMessageTest.java",
+      "hasOld": false,
+      "stats": {
+        "old": null,
+        "new": {
+          "physicalAssertLines": 6,
+          "callSites": 6,
+          "parsed": 6,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 6
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": null,
+      "subjectsNew": [
+        "size(passed)",
+        "stack.getAmount()",
+        "product.getAmount()",
+        "size(capturedAmounts)",
+        "capturedAmounts",
+        "size(sentMessages)"
+      ],
+      "status": "A"
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopPaidDropMergeTest.java",
+      "hasOld": false,
+      "stats": {
+        "old": null,
+        "new": {
+          "physicalAssertLines": 23,
+          "callSites": 23,
+          "parsed": 23,
+          "unparsable": 0,
+          "containers": 0,
+          "distinctSubjects": 16
+        }
+      },
+      "findings": [],
+      "unparsable": {
+        "old": [],
+        "new": []
+      },
+      "containers": {
+        "old": [],
+        "new": []
+      },
+      "subjectsOld": null,
+      "subjectsNew": [
+        "isPaidDrop(paid)",
+        "isPaidDrop(plain)",
+        "arena",
+        "arenaWorld",
+        "size(remaining)",
+        "remaining.get(0).getItemStack().getType()",
+        "isPaidDrop(remaining.get(0))",
+        "isPaidDrop(a)||isPaidDrop(b)",
+        "isPaidDrop(b)",
+        "size(arenaWorld.getEntitiesByClass(Item.class))",
+        "buyer.getWorld().getName()",
+        "size(drops)",
+        "isPaidDrop(dropped)",
+        "size(after)",
+        "isPaidDrop(after.get(0))",
+        "plain.getPickupDelay()<32767"
+      ],
+      "status": "A"
+    }
+  ]
+}
