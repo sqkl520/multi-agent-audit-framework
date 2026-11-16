@@ -272,6 +272,21 @@ break-ai-fix-loops 的核心实践是：**在第一次编辑之前，记录精�
 
 **三次尝试预算**：修复Agent对同一个 `finding_id` 最多执行**三次修改尝试**。一次尝试从代码/配置/测试期望发生变更时开始。只读检查不消耗预算。三次尝试后仍未通过 `disproof_condition`，修复Agent**必须**停止，返回 `PERMANENT_FAILURE`，并在 `error` 中写入 `attempts_exhausted: true` 和每次尝试的 `hypothesis` 与 `result` 摘要，而不是无限 patch-and-retry[^ref12]。
 
+### 4.1 构建失败先分清「产物问题」和「环境问题」
+
+> **构建失败先分清「产物问题」和「环境问题」。**
+> 典型的环境问题：`Could not initialize plugin: interface org.mockito.plugins.MockMaker`
+> ——Mockito 的 inline mock maker 需要 self-attach，JDK 17+ 默认禁止。
+> 处理：`JAVA_TOOL_OPTIONS=-Djdk.attach.allowAttachSelf=true`（或 `JDK_JAVA_OPTIONS`）重跑。
+>
+> 判据：**报错发生在测试框架初始化阶段、且与你的改动无关** → 环境问题，换参数重跑；
+> **报错是断言失败或编译错误** → 产物问题，改代码。
+>
+> 2026-11-16 实战：某次修复的第一次全量构建 11 个 ERROR 全是 MockMaker，
+> 加参数后 905/0/0。**不要把环境问题当成「这个项目的测试跑不了」而跳过全量。**
+
+**为什么这条必须写进模板**：区分这两类失败，直接决定接下来该动代码还是动环境。判错的代价是双向的——把环境问题当产物问题会去改无关代码（并消耗掉三次尝试预算），把产物问题当环境问题会换参数重跑、换到第三次才承认失败。更糟的第三种结局是：判成「这个项目的测试跑不了」，然后在 `verification_commands` 里写 `not_run` 交出相位。**环境问题不是 `not_run` 的合法理由**——它有一个确定的重跑方式，就在上面。
+
 
 ## 第 5 节：与 `handoff-schema` 的精确对接
 

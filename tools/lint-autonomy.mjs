@@ -1008,7 +1008,19 @@ for (const d of docs) {
     'wrappers/recon-scout.md':      1250,
     'wrappers/sweep-scout.md':      1450,
     'wrappers/verifier.md':         1200,
-    'wrappers/planner.md':           550,
+    // 550 → 570（2026-11-16）。上调 20 行，理由是**架构正确的取舍**：
+    // R22 把「递归上限」改成 triage 里的单一事实来源（结构化表格 + 校验器），
+    // planner 不再自己写死数字而是引用它。这让 planner 的启动加载多算进了
+    // triage 相应章节的行数，从 538 涨到 561。
+    //
+    // 也可以反过来把上限硬压回去，但那只有两条路，都比现在差：
+    //   (a) planner 继续自己写 2/3 这类数字 → 正是实战暴露的那个矛盾的成因，
+    //       而且 check-enum-consistency 会因此需要两处维护；
+    //   (b) 把 triage 的表格挪出 planner 的加载范围 → 那 planner 就看不到权威表了。
+    //
+    // 570 留给后续微调 9 行余量。真正的解法仍是下面那条注释说的按角色拆节，
+    // 但那是技术债，不该由「修一个文档矛盾」顺带承担。
+    'wrappers/planner.md':           570,
   };
   const FW_DIR = FW;
   for (const w of docs.filter((d) => d.rel.startsWith('wrappers/'))) {

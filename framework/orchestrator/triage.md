@@ -173,17 +173,20 @@ score ≥ 2  → TIER-2（复杂）
 | T1 | 2 |
 | T2 | 3 |
 
-> **上面这张表是「递归上限」的唯一事实来源。** `wrappers/planner.md` 的
-> `recursion.max_depth` 约束、`tools/check-plan.mjs` 的运行时门槛、本节下方的说明，
-> 全部以它为准。改这里的数字必须同时改 `wrappers/planner.md` 的同名表——
-> `tools/check-enum-consistency.mjs` 会逐 TIER 比对，不一致直接红。
+> **本表是「递归上限」的唯一事实来源**（`§3` 那张 TIER 表的同名列与本表数值相同）。
+> `wrappers/planner.md` 的 `recursion.max_depth` 引用它，不另写数字；
+> `tools/check-plan.mjs` 的运行时门槛按它执行；`check-enum-consistency.mjs` 逐 TIER 比对，不一致直接红。
 
-**为什么 T0 是 1 层而不是 0**：简单任务也常需要一层助手（执行者派一个查文件的）。
-0 层等于「执行者不许再派」，与「极限多 agent」相悖。
+**为什么 T0 是 1 而不是 0**：简单任务也常需要一层助手。0 层等于「执行者不许再派」。
 
-**为什么 T2 是 3 层而不是 2**：见下表「官方限制」一行——harness 本身允许 3 层，
-把框架的自限压到 2 只会让复杂任务拆不细。**harness 更低时由 `compatibility.md`
-§2.2 统一降级（L-B = 2 层、L-C = 无递归），而不是在这里写小。**
+**为什么 T2 是 3 而不是 2**：harness 本身允许 3 层。harness 更低时由 `compatibility.md`
+§2.2 统一降级（L-B = 2 层、L-C = 无递归）——**降级在兼容层做，不在这里写小**。
+
+<!-- 2026-11-16 修正痕迹：本节此前只有散文，而 planner.md:137 写的是 T0=0/T1=1/T2=2
+     ——同一框架两套数字。实战 field-test-1 里 agent 按 planner 的 2 保守执行，
+     并在收尾报告里报告了这个矛盾。结论：triage 的 3 是对的（有 check-plan.mjs:77
+     的运行时闸门 + 本节 2026-11-09 的修订记录双重佐证），planner 的 2 是漏改的旧副本。 -->
+
 
 每层派生必须继承：零写入、证据标准、失败分类规则
 
