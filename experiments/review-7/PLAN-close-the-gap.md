@@ -9,13 +9,13 @@
 `tools/check-fix-artifacts-envelope.mjs`（424 行，读前 120 行 + 文件头）、`tools/stop-hook.mjs`（1598 行，读 §2/§3/§3.5/§3.6b/§3.7 全段）、
 `tools/check-payload.mjs`（1557 行，读 §3/§4/§5 关键段）、`tools/check-files-touched-harness.mjs`（1112 行，读 §6–§7）、
 `tools/check-promises.mjs`、`tools/check-blindspots.mjs`、`tools/check-all.mjs`、`tools/check-enum-consistency.mjs`、
-`experiments/review-7/{SUMMARY.md, finding-F1.md, finding-F2F3F4.md, finding-F6F7.md, fix-F2F3F4-contract.md, fix-F7.md, LESSON-track-vs-eliminate.md}`、`CAPABILITIES.md`。
+`experiments/review-7/{SUMMARY.md, finding-F1.md, finding-F2F3F4.md, finding-F6F7.md, fix-F2F3F4-contract.md, fix-F7.md, LESSON-track-vs-eliminate.md, GROUND-TRUTH-assertion-diff.md}`、`CAPABILITIES.md`。
 
 ---
 
 ## 0. 先把「现在到底缺什么」钉死在代码上
 
-三条阻断性事实，全部来自本轮回读，不是推断：
+**四条阻断性事实，全部来自本轮回读或本轮实测，不是推断：**
 
 1. **规则存在、检测不存在。** `wave4-fix.md:200` 逐字写着「不得通过删除、跳过、弱化或重写测试断言来让检查"通过"……必须在 `residual_risks` 中标记 `TEST_CONFLICT`」。
    而 `grep -rn "TEST_CONFLICT" tools/` 的命中数是 **0**（连注释都没有）。
@@ -30,6 +30,9 @@
    `wave5-verify.md:124` 甚至已经写出了模式 A 的判据文字——「测试被修复Agent修改过（对照 `files_touched` 与测试文件清单）」——**但括号里那件事没有任何工具做**。
 
 所以本方案的立足点不是「加更多文本规则」，而是：**把已经写好、但只有人在读的三条判据，换成从被审仓库 git 里取的事实。**
+
+4. **定标先于设计，而且它推翻了设计的初稿。** `experiments/review-7/GROUND-TRUTH-assertion-diff.md` 直接读被审仓库的测试 diff，得到 **3 处删除 / 58 处新增**（`:11-16`），逐处人工判定后：**2 处是合法的断言反转**（`TabListManagerTest` 的两条，原断言编码的前提经反编译证伪），**1 处是行级 diff 的假象**（方法改名 + 原断言原样保留，`:20-24`）。
+   **结论：按「极性翻转即 FAIL」或「按方法名匹配」设计，在这个真实样本上的假阳性率是 1/3 到 2/3。** 本方案的 A 章按这份定标重写过（见 A.2）。
 
 ---
 
@@ -56,7 +59,7 @@
 
 ### A.2 判定算法（具体到比较什么）
 
-**先定标，再设计。** 被审仓库本轮全部测试改动实测（`experiments/review-7/GROUND-TRUTH-assertion-diff.md:11-14`）：
+**先定标，再设计。** 被审仓库本轮全部测试改动实测（`experiments/review-7/GROUND-TRUTH-assertion-diff.md:11-16`）：
 **删除的断言行 3 条，新增 58 条。** 这 3 条的逐处人工判定是：
 
 | # | 位置 | 变更 | 判定 |
@@ -205,10 +208,13 @@ F1 的根因可以精确表述成一句可比较的话：**证据是 1 个样本
 2. 被读取的路径字符串解析后落在**生产源码树**（`src/main/`、`app/`、`lib/`、`src/`，且不属于 test 目录）；
 3. 断言是 `assertTrue(<var>.contains("<literal>"))` / `assertIn("<literal>", <var>)` / `assertThat(<var>).contains("<literal>")`，且 `<literal>` 是一个**标识符或异常类名**（匹配 `^[A-Za-z_$][\w$.]*(Exception|Error|Policy|Mode)?$` 或含 `.` 的全限定名）。
 
-→ `text_assertion_on_production_source` **FAIL**。
+→ `text_assertion_on_production_source` **FAIL** 仅当该测试方法里**没有其他任何非文本断言**；否则 **WARN**。
 理由：这三条同时成立时，那个测试**在逻辑上不可能失败于行为变更**——它只钉住了「这几行字还在」。它给出的是 `wave5-verify.md:117` 所要求的「瞄准性」的反面。
 
-**误拦**：注释/文档生成类的测试会合法地读生产源码并断言包含某字符串（例如校验生成的文档里有某个 API 名）。缓解：只在「被断言的 needle 是一个标识符且整个测试方法里**没有任何其他断言**」时判 FAIL，否则 WARN。这一条让误拦面缩到很窄。
+**定标给的两条硬约束（`GROUND-TRUTH-assertion-diff.md:102-103`）**：
+- 被审仓库里这种测试共 **4 处 / 3 文件**：`AirdropSpawnGoalTest:287`、`CommandsDocumentConcurrencyTest:137`、`CommandsDocumentAtomicWriteTest:163,179`、`CommandsDocumentFallbackTest`。
+- 其中 `javadocStopsClaimingTheFalseInvariant` 是**刻意的**文本守卫（它守的对象就是注释本身，F7 的修复正是「删掉假承诺」）。**这类测试是对的，判 FAIL 就是误拦。**
+  缓解：命中时检查被断言的 needle 是否是**注释**（needle 出现在 `//` 或 `/* */` 里）——守注释的测试一律降 WARN。这不能完全分开「守注释」与「用注释代替行为断言」，所以 C1 恒有假阳性，**这是它只能做窄形态的原因**。
 
 ### C.2 能做的第二块：变异检验的申报字段（今天完全没校验）
 
@@ -259,7 +265,7 @@ F1/F7 的注释恰恰**不是 JSDoc 形态**（是 `//` 与 `/**` 混写的散�
 - **分母为 0 必须是 exit 2**，不是通过——照 `check-fix-artifacts-envelope.mjs:44-46` 的 `no_fix_artifacts`（「配置错误，绝不等于通过」）。
 - **不接受 `--skip-file` 之类的开关**——照 `check-fix-artifacts-envelope.mjs:60-63` 的「降级纪律：无」。
 - **一次 `git diff --name-only`，不逐文件起进程**（`stop-hook.mjs:822-823` 已有 `MAX_PAYLOAD_FILES = 50` / `PAYLOAD_TIMEOUT_MS = 10_000` 的性能前提；本工具对测试文件数加上限 200 并 WARN）。
-- **自测用例必须包含定标的 3 处真实形态**（`GROUND-TRUTH-assertion-diff.md:19-27`）：
+- **自测用例必须包含定标的 3 处真实形态**（`GROUND-TRUTH-assertion-diff.md:20-24`）：
   - 处 1、2（`assertNull(field("refreshTask"))` → `assertSame(before, ...)`）：**未申报** → `assertion_reversed_unreported` FAIL；**已申报** → WARN。这条用例是这道闸门能否落地的唯一证明。
   - 处 3（方法改名 + 原断言保留 + 新增 3 条）：**一条规则都不许命中**（按 subject_key 匹配时 `getItems().get(0).getPrice()` 两侧期望值都是 1）。
   - F2/F3 原样复刻（`assertEquals(1, cfg.getItems().size())` → `assertTrue(cfg.getItems().isEmpty())`，`fix-F2F3F4-contract.md:88-92`/`:111-116`）：必须命中 `assertion_reversed_unreported`。
@@ -372,10 +378,12 @@ F1/F7 的注释恰恰**不是 JSDoc 形态**（是 `//` 与 `/**` 混写的散�
    `check-promises.mjs:15-18` 已自认三类做不到，F1/F7 的注释正落在第一类（散文而非 JSDoc）。
    **替代（且是唯一有效的）**：`wave5-verify.md:129-148` 已强制的变异检验 —— F7 的「`moveIntoPlace` 一次都没执行过」（`finding-F6F7.md:222`）只要做一次实现变异就会暴露。所以 C 的补法不是「检查注释」，而是**让变异检验真的发生**（C2）。以及：把 review-7 这套「5 个独立 agent 红队」写进流程，而不是假装能自动化。
 
-3. **模式 A 的残余（三条，都只能 WARN）**
-   - 断言被搬进 helper 方法后再弱化（`unparsed` 或 `assertion_removed_unnamed`）；
-   - 测试文件在本轮之前就是脏的：`fix_baseline` 只存路径不存内容（`run-state.md:506` 自己列了这个假阴性），无法取到可信的「改动前」→ 只能 `assertion_baseline_unavailable`。修法是 `run-state.md:521-523` 的路标（内容哈希基线），本轮不做；
-   - 非 JS/Java 断言方言（Kotlin `shouldBe`、Go 手写 `if got != want`）——只做「能解析的才算」，其余显式 WARN。
+3. **模式 A 的残余（四条，都只能 WARN）**
+   - **合法反转会被推到「待人工裁决」，即使它真的修对了。** 定标处 1、2 就是这种：修复者按正确语义改了断言，`TEST_CONFLICT` 一申报，该条就**不记为已修复**（`wave4-fix.md:301`、`wave5-verify.md:163`）。这比「误拦」轻，但确实是代价：一个修对了的缺陷要人工点头才算数。**这是本方案主动接受的唯一偏严项**，因为框架对这类变更本就只指定了这一条出口。
+   - 断言被搬进同一文件（或跨文件）的 helper 方法后再弱化：同文件 helper 会被算作「断言还在」（保守选择，见 A.2），跨文件 helper 会命中 `assertion_target_dropped` 但**指向的是被删的那个 subject，不是 helper 里的弱化**——人要自己顺着查。
+   - 测试文件在本轮之前就是脏的：`fix_baseline` 只存路径不存内容（`run-state.md:506` 自己列了这个假阴性），取不到可信的「改动前」→ 只能 `assertion_baseline_unavailable`。修法是 `run-state.md:521-523` 的路标（内容哈希基线），本轮不做。
+   - 非 JS/Java 断言方言（Kotlin `shouldBe`、Go 手写 `if got != want`、JUnit 4 的 `assertThat(x, is(...))`）：只做「能解析的才算」，其余显式 WARN。**定标只覆盖了 Java/JUnit5，其他语言的抽取规则未经真实样本验证——这一点必须在工具文件头写明，不要假装它是通用的。**
+   - 新增测试文件里的反向断言：`old` 为空 → 无对照基线 → 抓不到。
 
 4. **A 抓不到「测试在更早的轮次被改」**。`fix_baseline` 是「本轮开始时的状态」，不是「缺陷注入时的状态」。跨轮累积的弱化只看得到最后一层。**承认这一点，不要把它说成能查。**
 
@@ -389,10 +397,16 @@ F1/F7 的注释恰恰**不是 JSDoc 形态**（是 `//` 与 `/**` 混写的散�
 
 | 序 | 内容 | 为什么这个顺序 |
 |---|---|---|
-| 1 | 改动 1（A）+ 改动 5/7/8 的文本/契约 + 改动 9 的 §3.7.7 + 改动 10 | A 是唯一能做成强判据的，且 review-7 里它出现了两次（`SUMMARY.md:83-88`）。规则已写好（`wave4-fix.md:200`），只差执行 |
+| 0 | **先拿定标当验收标准**（已完成，`GROUND-TRUTH-assertion-diff.md`） | 定标证明直觉设计有 1/3–2/3 假阳性。**改动 1 的自测用例直接照抄那 3 处**：处 1/2 未申报→FAIL、已申报→WARN；处 3 零命中。没有这三条，改动 1 无法证明自己不会把这道闸门逼死 |
+| 1 | 改动 1（A）+ 改动 5/7/8 的文本/契约 + 改动 9 的 §3.7.7 + 改动 10 | A 是唯一能做成**非自述**判据的，且 review-7 里它出现了两次（`SUMMARY.md:83-88`）。规则已写好（`wave4-fix.md:200`），只差执行 |
 | 2 | 改动 4（C2：变异申报 + `residual_risk_disposition` 覆盖 + 枚举登记） | 纯补洞，无新算法，改动面最小，且 `wave5-verify.md:136-140`/`:207` 的条款已经写好，今天零执行 |
 | 3 | 改动 2（B 的矛盾检测） | 需要新增契约字段（改动 7），必须先有 `input_space_basis` 才有东西可比 |
-| 4 | 改动 3（C1 源码守卫） | 窄，收益确定，但优先级低于上面三条 |
+| 4 | 改动 3（C1 源码守卫） | 窄，收益确定，但**恒有假阳性**（定标 §五的 `javadocStopsClaimingTheFalseInvariant` 是刻意的文本守卫），优先级低于上面三条 |
 | 5 | 改动 11（同步 `CAPABILITIES.md`） | 最后做，但**必须做**——它本身就是模式 C 的防治对象 |
+
+**定标同时纠正了本方案起草时的两个错误认知**（记录下来，因为它正是模式 C 的实例）：
+1. 我最初以为 F1 的 `not a mapping` 分支零覆盖——错，`ShopConfigCorruptFileTest.TRUNCATED_AT_ITEMS` 覆盖了它（`GROUND-TRUTH:100`）。
+2. 我最初以为 `items: []` 是纯误杀——定标指出 `items: {}` 被刻意判合法且仓库里有 5 处测试依赖它，任何截断检测都不能把它一起拦掉（`GROUND-TRUTH:101`）。
+这两条都属于「我在没读测试文件之前就下了结论」。**它们是本方案自己被模式 B/C 命中的证据。**
 
 每一步都必须同时落三处（模板 / 契约 / 校验器），否则就是 `output-contract/audit.md:229` 记的那句：「契约的每一条硬判据都必须有对应的测试用例，否则它只是一句愿望。这个框架里『三层闭环』（模板 / 契约 / 校验器）的第三条腿，正是最容易缺的那条。」
