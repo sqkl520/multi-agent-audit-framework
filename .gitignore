@@ -13,3 +13,10 @@
 # 其他会话的工作目录（不属于本仓库内容）
 sqcoola-archive/
 experiments/hilltop-dsh/repair-work/project/
+
+# 被审仓库的源码副本（2026-11-17 事故：git add -A 把 219 个 .java 扫了进来）
+# 判据同 repair-work/CLEANUP.md：删副本，留记录。副本能重建，记录不能。
+experiments/*/proto/out/snapshot/
+experiments/*/proto/out/fulltree/
+experiments/*/*/post-fix/
+experiments/*/*/project/

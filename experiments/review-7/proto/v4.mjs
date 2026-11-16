@@ -22,12 +22,20 @@ const manifest = JSON.parse(readFileSync(path.join(snap, 'manifest.json'), 'utf8
 export function detectV4(oldSrc, newSrc, { reported = false } = {}) {
   const newP = parseAssertions(newSrc);
   const findings = [];
-  // test_disabled: unconditional-only, per the plan's known-false-positive note
-  // (@Disabled with an argument is conditional-ish in spirit; Assumptions.* is deliberately excluded)
-  const dis = (s) => (s ?? '').match(/@Disabled\s*(?:\(\s*\))?\s*(?=\n|$|\r)|@Ignore\b(?!\s*\()/g)?.length ?? 0;
+  // test_disabled: EVERY @Disabled / @Ignore disables the test, with or without a reason argument.
+  // (The plan's "@Disabled(无参)" restriction is a factual error: @Disabled("reason") is equally
+  // disabling in JUnit 5 — value() is an optional reason, not a condition. Verified against the
+  // JUnit 5 API docs.) Assumptions.assume* stays excluded: it is a legitimate conditional skip.
+  // @DisabledIf* / @EnabledOnOs are conditional and are NOT counted here (they are WARN-only in the
+  // spec, matched but reported separately).
+  const dis = (s) => (s ?? '').match(/@Disabled\b|@Ignore\b/g)?.length ?? 0;
   if (dis(newSrc) > dis(oldSrc)) {
-    findings.push({ rule: 'test_disabled', severity: 'FAIL', subject: '@Disabled/@Ignore (unconditional)' });
+    findings.push({ rule: 'test_disabled', severity: 'FAIL', subject: '@Disabled/@Ignore' });
   }
+  const cond = (s) => (s ?? '').match(/@DisabledIf\w*|@EnabledIf\w*|@EnabledOnOs/g)?.length ?? 0;
+  const assume = (s) => (s ?? '').match(/Assumptions\.assume\w+/g)?.length ?? 0;
+  if (cond(newSrc) > cond(oldSrc)) findings.push({ rule: 'test_conditionally_disabled', severity: 'WARN', subject: '@DisabledIf/@EnabledIf/@EnabledOnOs' });
+  if (assume(newSrc) > assume(oldSrc)) findings.push({ rule: 'test_assumption_added', severity: 'INFO', subject: 'Assumptions.assume*' });
   if (oldSrc === null || oldSrc === '') return { findings, hasOld: false };
   const oldP = parseAssertions(oldSrc);
 
