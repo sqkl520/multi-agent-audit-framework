@@ -1,0 +1,354 @@
+{
+  "total": 38,
+  "caught": 21,
+  "withAsserts": 38,
+  "caughtWithAsserts": 21,
+  "rows": [
+    {
+      "rel": "src/test/java/com/hilltopvillage/ai/AirdropSpawnGoalTest.java",
+      "methods": [
+        {
+          "method": "zeroMaxPerDropperDisablesAirdrops",
+          "assertionsInMethod": 1,
+          "caught": false,
+          "findings": []
+        },
+        {
+          "method": "doesNotAirdropWhenMobCapReached",
+          "assertionsInMethod": 1,
+          "caught": false,
+          "findings": []
+        },
+        {
+          "method": "backsOffWhenNoDropLocationFound",
+          "assertionsInMethod": 3,
+          "caught": false,
+          "findings": []
+        },
+        {
+          "method": "inactiveWhenGameStopped",
+          "assertionsInMethod": 1,
+          "caught": false,
+          "findings": []
+        },
+        {
+          "method": "shouldStayActiveFalseWithoutTarget",
+          "assertionsInMethod": 1,
+          "caught": true,
+          "findings": [
+            "assertion_target_dropped:goal.shouldStayActive()"
+          ]
+        },
+        {
+          "method": "goalIdentityContract",
+          "assertionsInMethod": 4,
+          "caught": true,
+          "findings": [
+            "assertion_target_dropped:a.getTypes()",
+            "assertion_target_dropped:size(a.getTypes())",
+            "assertion_target_dropped:a.getKey().getNamespacedKey().toString()",
+            "assertion_target_dropped:b.getKey()"
+          ]
+        },
+        {
+          "method": "nullMobTypeFallsBackToZombie",
+          "assertionsInMethod": 1,
+          "caught": false,
+          "findings": []
+        },
+        {
+          "method": "blankMobTypeFallsBackToZombie",
+          "assertionsInMethod": 2,
+          "caught": false,
+          "findings": []
+        },
+        {
+          "method": "validAndTypoStillHandled",
+          "assertionsInMethod": 3,
+          "caught": false,
+          "findings": []
+        }
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/ai/ExplodeBeetleGoalTest.java",
+      "methods": [
+        {
+          "method": "explosionPowerIsIndependentFromNodeDamageMultiplier",
+          "assertionsInMethod": 3,
+          "caught": false,
+          "findings": []
+        },
+        {
+          "method": "zeroMultiplierKeepsExplosionPowerless",
+          "assertionsInMethod": 3,
+          "caught": false,
+          "findings": []
+        },
+        {
+          "method": "staysActiveEvenWithoutAnyNodeTarget",
+          "assertionsInMethod": 2,
+          "caught": false,
+          "findings": []
+        },
+        {
+          "method": "selfDestructsAfterNoTargetGracePeriod",
+          "assertionsInMethod": 2,
+          "caught": true,
+          "findings": [
+            "assertion_target_dropped:verify(waveManager,org.mockito.Mockito.atLeastOnce())"
+          ]
+        },
+        {
+          "method": "doesNotSelfDestructBeforeGracePeriodElapses",
+          "assertionsInMethod": 2,
+          "caught": false,
+          "findings": []
+        },
+        {
+          "method": "doesNotSelfDestructWhenNodeTargetExists",
+          "assertionsInMethod": 2,
+          "caught": false,
+          "findings": []
+        },
+        {
+          "method": "inactiveWhenGameStopped",
+          "assertionsInMethod": 2,
+          "caught": false,
+          "findings": []
+        },
+        {
+          "method": "inactiveWhenBeetleInvalid",
+          "assertionsInMethod": 1,
+          "caught": false,
+          "findings": []
+        },
+        {
+          "method": "zeroRadiusSkipsNodeScan",
+          "assertionsInMethod": 1,
+          "caught": true,
+          "findings": [
+            "assertion_target_dropped:verify(nodeSystem,never())"
+          ]
+        },
+        {
+          "method": "goalIdentityContract",
+          "assertionsInMethod": 4,
+          "caught": true,
+          "findings": [
+            "assertion_target_dropped:a.getTypes()",
+            "assertion_target_dropped:size(a.getTypes())",
+            "assertion_target_dropped:a.getKey().getNamespacedKey().toString()",
+            "assertion_target_dropped:b.getKey()"
+          ]
+        }
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java",
+      "methods": [
+        {
+          "method": "loadFromFileRebuildsAdminCreatedWaveFromDisk",
+          "assertionsInMethod": 3,
+          "caught": true,
+          "findings": [
+            "assertion_target_dropped:reloaded",
+            "assertion_target_dropped:reloaded.getTotalMobs()"
+          ]
+        },
+        {
+          "method": "loadFromFileReturnsTrueOnSuccess",
+          "assertionsInMethod": 2,
+          "caught": false,
+          "findings": []
+        },
+        {
+          "method": "shippedTemplateLoadsWithoutUnknownKeyWarnings",
+          "assertionsInMethod": 4,
+          "caught": true,
+          "findings": [
+            "assertion_target_dropped:logs.anyContains(\"unrecognized top-level keys\")",
+            "assertion_target_dropped:logs.anyContains(\"victory-wave\")"
+          ]
+        }
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java",
+      "methods": [
+        {
+          "method": "emptyCacheRestoresNothing",
+          "assertionsInMethod": 4,
+          "caught": true,
+          "findings": [
+            "assertion_reversed_unreported:field(\"scheduledPeriod\")",
+            "assertion_reversed_unreported:field(\"refreshTask\")"
+          ]
+        }
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java",
+      "methods": [
+        {
+          "method": "factoryTemplateParsesCleanly",
+          "assertionsInMethod": 16,
+          "caught": true,
+          "findings": [
+            "assertion_target_dropped:bow",
+            "assertion_target_dropped:bow.getSlot()",
+            "assertion_target_dropped:bow.getPrice()",
+            "assertion_target_dropped:bow.getType()",
+            "assertion_target_dropped:bow.getIcon()",
+            "assertion_target_dropped:bow.getAmount()",
+            "assertion_target_dropped:bow.isUnbreakable()",
+            "assertion_target_dropped:arrow.getAmount()",
+            "assertion_target_dropped:sword",
+            "assertion_target_dropped:sword.getType()",
+            "assertion_target_dropped:sword.getLore()",
+            "assertion_target_dropped:size(sword.getLore())"
+          ]
+        },
+        {
+          "method": "itemsListIsUnmodifiable",
+          "assertionsInMethod": 1,
+          "caught": true,
+          "findings": [
+            "assertion_target_dropped:throws:config.getItems().clear()"
+          ]
+        },
+        {
+          "method": "shopConfigCopiesItemList",
+          "assertionsInMethod": 1,
+          "caught": false,
+          "findings": []
+        }
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopOverflowPaidDropTest.java",
+      "methods": [
+        {
+          "method": "purchaseOverflowDropsTheProduct",
+          "assertionsInMethod": 5,
+          "caught": true,
+          "findings": [
+            "assertion_target_dropped:shop.countCurrency(player)",
+            "assertion_target_dropped:occupiedSlots(player)"
+          ]
+        },
+        {
+          "method": "refundOverflowDropsTheCurrency",
+          "assertionsInMethod": 5,
+          "caught": true,
+          "findings": [
+            "assertion_target_dropped:oversized-bow.getPrice()>64",
+            "assertion_target_dropped:spied.countCurrency(player)"
+          ]
+        },
+        {
+          "method": "noOverflowMeansNoDrop",
+          "assertionsInMethod": 2,
+          "caught": true,
+          "findings": [
+            "assertion_target_dropped:size(player.getWorld().getEntitiesByClass(Item.class))",
+            "assertion_target_dropped:firstOfType(player,Material.BOW)"
+          ]
+        },
+        {
+          "method": "markedDropSurvivesWhileUnmarkedIsRemoved",
+          "assertionsInMethod": 5,
+          "caught": true,
+          "findings": [
+            "assertion_target_dropped:size(remaining)",
+            "assertion_target_dropped:marked.isValid()",
+            "assertion_target_dropped:plain.isValid()",
+            "assertion_target_dropped:remaining.get(0).getItemStack().getType()"
+          ]
+        },
+        {
+          "method": "dropWithSomeOtherPdcKeyIsStillRemoved",
+          "assertionsInMethod": 2,
+          "caught": true,
+          "findings": [
+            "assertion_target_dropped:foreign.isValid()"
+          ]
+        },
+        {
+          "method": "shopOverflowDropSurvivesArenaReset",
+          "assertionsInMethod": 6,
+          "caught": true,
+          "findings": [
+            "assertion_target_dropped:size(before)",
+            "assertion_target_dropped:paidBefore",
+            "assertion_target_dropped:size(after)",
+            "assertion_target_dropped:after.get(0).getItemStack().getType()",
+            "assertion_target_dropped:isPaidDrop(after.get(0))",
+            "assertion_target_dropped:junk.isValid()"
+          ]
+        }
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopOverflowPartialFitTest.java",
+      "methods": [
+        {
+          "method": "exactFitIntoHalfFullStackDropsNothing",
+          "assertionsInMethod": 6,
+          "caught": true,
+          "findings": [
+            "assertion_target_dropped:arrow.getAmount()",
+            "assertion_target_dropped:arrow.getPrice()"
+          ]
+        },
+        {
+          "method": "partialFitDropsOnlyTheRemainder",
+          "assertionsInMethod": 7,
+          "caught": true,
+          "findings": [
+            "assertion_target_dropped:countInBag(player,Material.ARROW)+remainder.getItemStack().getAmount()"
+          ]
+        },
+        {
+          "method": "refundFullyOverflowsInOnePiece",
+          "assertionsInMethod": 5,
+          "caught": true,
+          "findings": [
+            "assertion_target_dropped:refund.getItemStack().getType()",
+            "assertion_target_dropped:refund.getItemStack().getAmount()",
+            "assertion_target_dropped:isPaidDrop(refund)"
+          ]
+        },
+        {
+          "method": "refundPartialFitSplitsBetweenBagAndGround",
+          "assertionsInMethod": 6,
+          "caught": true,
+          "findings": [
+            "assertion_target_dropped:offhand",
+            "assertion_target_dropped:(offhand-60)+remainder.getItemStack().getAmount()"
+          ]
+        },
+        {
+          "method": "whenItFitsNothingDrops",
+          "assertionsInMethod": 3,
+          "caught": false,
+          "findings": []
+        },
+        {
+          "method": "fixtureSanity",
+          "assertionsInMethod": 7,
+          "caught": true,
+          "findings": [
+            "assertion_target_dropped:size(player.getInventory().getContents())",
+            "assertion_target_dropped:size(player.getInventory().getStorageContents())",
+            "assertion_target_dropped:newItemStack(Material.BOW,1).getMaxStackSize()",
+            "assertion_target_dropped:newItemStack(Material.ARROW,1).getMaxStackSize()",
+            "assertion_target_dropped:newItemStack(Material.EMERALD,1).getMaxStackSize()",
+            "assertion_target_dropped:player.getInventory().getItem(40)",
+            "assertion_target_dropped:player.getInventory().getItem(40).getAmount()"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "strict": [],
+  "classSet": [
+    {
+      "rule": "reversed",
+      "subject": "config.getSettingsGate().isReadOnly()",
+      "oldClasses": [
+        "existence_only"
+      ],
+      "newClasses": [
+        "existence_only",
+        "negative"
+      ],
+      "file": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java"
+    },
+    {
+      "rule": "reversed",
+      "subject": "field(\"refreshTask\")",
+      "oldClasses": [
+        "negative",
+        "existence_only"
+      ],
+      "newClasses": [
+        "negative",
+        "existence_only",
+        "exact"
+      ],
+      "file": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java"
+    }
+  ],
+  "widening": []
+}

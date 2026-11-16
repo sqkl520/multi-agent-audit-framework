@@ -22,7 +22,13 @@ const manifest = JSON.parse(readFileSync(path.join(snap, 'manifest.json'), 'utf8
 export function detectV4(oldSrc, newSrc, { reported = false } = {}) {
   const newP = parseAssertions(newSrc);
   const findings = [];
-  if (oldSrc === null) return { findings, hasOld: false };
+  // test_disabled: unconditional-only, per the plan's known-false-positive note
+  // (@Disabled with an argument is conditional-ish in spirit; Assumptions.* is deliberately excluded)
+  const dis = (s) => (s ?? '').match(/@Disabled\s*(?:\(\s*\))?\s*(?=\n|$|\r)|@Ignore\b(?!\s*\()/g)?.length ?? 0;
+  if (dis(newSrc) > dis(oldSrc)) {
+    findings.push({ rule: 'test_disabled', severity: 'FAIL', subject: '@Disabled/@Ignore (unconditional)' });
+  }
+  if (oldSrc === null || oldSrc === '') return { findings, hasOld: false };
   const oldP = parseAssertions(oldSrc);
 
   const methodBodies = (p) => p.methods; // Map<method, Set<subject>>

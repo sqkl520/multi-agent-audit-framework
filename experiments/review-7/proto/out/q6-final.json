@@ -1,0 +1,36 @@
+{
+  "rows": [
+    {
+      "id": "Q6-a",
+      "what": "append the F1 test to an existing NEW file (no HEAD blob)",
+      "baseline": "",
+      "file": "src/test/java/com/hilltopvillage/shop/ShopConfigCorruptFileTest.java",
+      "findings": [],
+      "reported": false,
+      "assertions": "16 -> 17",
+      "subjects": "12 -> 12"
+    },
+    {
+      "id": "Q6-b",
+      "what": "append the F1 test AND delete nothing (control: is a pure +addition ever visible?)",
+      "baseline": null,
+      "file": "src/test/java/com/hilltopvillage/shop/ShopConfigCorruptFileTest.java",
+      "findings": [],
+      "reported": false,
+      "assertions": "16 -> 17",
+      "subjects": "12 -> 12"
+    },
+    {
+      "id": "Q6-c",
+      "what": "the same F1 text appended to a file that DOES have a HEAD blob (ConfigManagerTest)",
+      "file": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java",
+      "baseline": "head",
+      "findings": [],
+      "reported": false,
+      "assertions": "52 -> 53",
+      "subjects": "25 -> 25"
+    }
+  ],
+  "cutPoints": 0,
+  "truncatedFixture": 2
+}

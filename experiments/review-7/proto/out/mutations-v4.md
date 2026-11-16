@@ -54,9 +54,6 @@ ConfigManagerTest.java  note: the M5-style deletion that hybrid silently swallow
 ## M8 delete a whole pre-existing @Test method
 ShopOverflowPaidDropTest.java  note: removes an old test entirely; subjects that survive elsewhere in the file are invisible to rule 1
   [FAIL] assertion_target_dropped  foreign.isValid()
-  [FAIL] assertion_target_dropped  arenaWorld
-  [FAIL] assertion_target_dropped  shop
-  [FAIL] assertion_target_dropped  player.getWorld().getName()
 
 ## M9 wrap unique subject in if(true)-style dead branch
 ConfigManagerTest.java  note: assertion still textually present, but only runs conditionally — text-level detection cannot see it

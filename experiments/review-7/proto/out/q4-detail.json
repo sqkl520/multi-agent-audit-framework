@@ -1,0 +1,370 @@
+{
+  "dist": {
+    "negative": 467,
+    "exact": 1131,
+    "existence_only": 810,
+    "zero_or_empty": 192,
+    "interaction": 48,
+    "non_empty": 21,
+    "exact_existence": 2
+  },
+  "eoShapes": [
+    [
+      "literal-laden",
+      184
+    ],
+    [
+      "bare-identifier",
+      139
+    ],
+    [
+      "method-call",
+      220
+    ],
+    [
+      "comparison",
+      77
+    ],
+    [
+      "other",
+      177
+    ],
+    [
+      "boolean-combinator",
+      13
+    ]
+  ],
+  "classFlips": [
+    {
+      "rel": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java",
+      "subj": "config.getSettingsGate().isReadOnly()",
+      "old": [
+        "existence_only"
+      ],
+      "new": [
+        "existence_only",
+        "negative"
+      ],
+      "oldExp": [
+        "true"
+      ],
+      "newExp": [
+        "true",
+        "false",
+        "true",
+        "true"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java",
+      "subj": "field(\"refreshTask\")",
+      "old": [
+        "negative",
+        "existence_only"
+      ],
+      "new": [
+        "negative",
+        "existence_only",
+        "exact"
+      ],
+      "oldExp": [
+        "null",
+        "null",
+        "notnull",
+        "null",
+        "null",
+        "null",
+        "null",
+        "notnull"
+      ],
+      "newExp": [
+        "null",
+        "null",
+        "notnull",
+        "before",
+        "first",
+        "null",
+        "null",
+        "null",
+        "notnull"
+      ]
+    }
+  ],
+  "minusOneCount": 5,
+  "samples": {
+    "negative": [
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/ArenaAdminServiceTest.java",
+        "subj": "service.describe(\"ghost\")",
+        "subject": "service.describe(\"ghost\")",
+        "expected": "null",
+        "pclass": "negative",
+        "kind": "assertNull",
+        "line": 137,
+        "method": "unknownArenaYieldsEmptyNotNull"
+      },
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/ArenaAdminServiceTest.java",
+        "subj": "service.shopNpc(\"ghost\")",
+        "subject": "service.shopNpc(\"ghost\")",
+        "expected": "null",
+        "pclass": "negative",
+        "kind": "assertNull",
+        "line": 142,
+        "method": "unknownArenaYieldsEmptyNotNull"
+      },
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/ArenaAdminServiceTest.java",
+        "subj": "deployed.hasInstance()",
+        "subject": "deployed.hasInstance()",
+        "expected": "false",
+        "pclass": "negative",
+        "kind": "assertFalse",
+        "line": 187,
+        "method": "flagsComeFromTheirOwnSource"
+      },
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/ArenaAdminServiceTest.java",
+        "subj": "bare.hasCore()",
+        "subject": "bare.hasCore()",
+        "expected": "false",
+        "pclass": "negative",
+        "kind": "assertFalse",
+        "line": 190,
+        "method": "flagsComeFromTheirOwnSource"
+      }
+    ],
+    "exact": [
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/ArenaAdminServiceTest.java",
+        "subj": "service.spawnPoints(\"ghost\")",
+        "subject": "service.spawnPoints(\"ghost\")",
+        "expected": "List.of()",
+        "pclass": "exact",
+        "kind": "assertEquals",
+        "line": 138,
+        "method": "unknownArenaYieldsEmptyNotNull"
+      },
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/ArenaAdminServiceTest.java",
+        "subj": "service.mobSpawnPoints(\"ghost\")",
+        "subject": "service.mobSpawnPoints(\"ghost\")",
+        "expected": "List.of()",
+        "pclass": "exact",
+        "kind": "assertEquals",
+        "line": 139,
+        "method": "unknownArenaYieldsEmptyNotNull"
+      },
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/ArenaAdminServiceTest.java",
+        "subj": "service.villagers(\"ghost\")",
+        "subject": "service.villagers(\"ghost\")",
+        "expected": "List.of()",
+        "pclass": "exact",
+        "kind": "assertEquals",
+        "line": 140,
+        "method": "unknownArenaYieldsEmptyNotNull"
+      },
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/ArenaAdminServiceTest.java",
+        "subj": "service.nodes(\"ghost\")",
+        "subject": "service.nodes(\"ghost\")",
+        "expected": "List.of()",
+        "pclass": "exact",
+        "kind": "assertEquals",
+        "line": 141,
+        "method": "unknownArenaYieldsEmptyNotNull"
+      }
+    ],
+    "existence_only": [
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/ArenaAdminServiceTest.java",
+        "subj": "service.describe(\"ARENA1\")",
+        "subject": "service.describe(\"ARENA1\")",
+        "expected": "notnull",
+        "pclass": "existence_only",
+        "kind": "assertNotNull",
+        "line": 150,
+        "method": "describeIsCaseInsensitive"
+      },
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/ArenaAdminServiceTest.java",
+        "subj": "view",
+        "subject": "view",
+        "expected": "notnull",
+        "pclass": "existence_only",
+        "kind": "assertNotNull",
+        "line": 161,
+        "method": "blankDisplayNameFallsBackToId"
+      },
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/ArenaAdminServiceTest.java",
+        "subj": "deployed.hasCore()",
+        "subject": "deployed.hasCore()",
+        "expected": "true",
+        "pclass": "existence_only",
+        "kind": "assertTrue",
+        "line": 185,
+        "method": "flagsComeFromTheirOwnSource"
+      },
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/ArenaAdminServiceTest.java",
+        "subj": "deployed.configuredEnabled()",
+        "subject": "deployed.configuredEnabled()",
+        "expected": "true",
+        "pclass": "existence_only",
+        "kind": "assertTrue",
+        "line": 186,
+        "method": "flagsComeFromTheirOwnSource"
+      }
+    ],
+    "zero_or_empty": [
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/ArenaAdminServiceTest.java",
+        "subj": "view.spawnCount()",
+        "subject": "view.spawnCount()",
+        "expected": "0",
+        "pclass": "zero_or_empty",
+        "kind": "assertEquals",
+        "line": 229,
+        "method": "corruptYamlSetsDataUnavailable"
+      },
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/ArenaAdminServiceTest.java",
+        "subj": "view.spawnCount()",
+        "subject": "view.spawnCount()",
+        "expected": "0",
+        "pclass": "zero_or_empty",
+        "kind": "assertEquals",
+        "line": 248,
+        "method": "absentFileIsNotDataUnavailable"
+      },
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/ArenaResetServiceTest.java",
+        "subj": "got.get(0).blocksPendingBefore()",
+        "subject": "got.get(0).blocksPendingBefore()",
+        "expected": "0",
+        "pclass": "zero_or_empty",
+        "kind": "assertEquals",
+        "line": 289,
+        "method": "nullWorldNameYieldsZeroPending"
+      },
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/LocationParticlePreviewTest.java",
+        "subj": "size(spawns)",
+        "subject": "size(spawns)",
+        "expected": "0",
+        "pclass": "zero_or_empty",
+        "kind": "assertTrue",
+        "line": 207,
+        "method": "stopAllCancelsEverything"
+      }
+    ],
+    "interaction": [
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/ArenaAdminServiceTest.java",
+        "subj": "verify(definitions,never())",
+        "subject": "verify(definitions,never())",
+        "expected": "called",
+        "pclass": "interaction",
+        "kind": "verify",
+        "line": 340,
+        "method": "invalidParamsAreRejectedBeforeAnyWrite"
+      },
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/ArenaAdminServiceTest.java",
+        "subj": "verify(multi)",
+        "subject": "verify(multi)",
+        "expected": "called",
+        "pclass": "interaction",
+        "kind": "verify",
+        "line": 369,
+        "method": "successfulWriteRefreshesDeploymentData"
+      },
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/ArenaAdminServiceTest.java",
+        "subj": "verify(live)",
+        "subject": "verify(live)",
+        "expected": "called",
+        "pclass": "interaction",
+        "kind": "verify",
+        "line": 382,
+        "method": "successfulWritePushesParamsIntoLiveInstance"
+      },
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/ArenaResetNodeRollbackTest.java",
+        "subj": "verify(multi)",
+        "subject": "verify(multi)",
+        "expected": "called",
+        "pclass": "interaction",
+        "kind": "verify",
+        "line": 135,
+        "method": "deploymentFailureRestoresNodesBeforeReinstate"
+      }
+    ],
+    "non_empty": [
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/LocationParticlePreviewTest.java",
+        "subj": "size(spawns)",
+        "subject": "size(spawns)",
+        "expected": ">0",
+        "pclass": "non_empty",
+        "kind": "assertFalse",
+        "line": 189,
+        "method": "stopOnlyAffectsThatViewer"
+      },
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/LocationParticlePreviewTest.java",
+        "subj": "size(spawns)",
+        "subject": "size(spawns)",
+        "expected": ">0",
+        "pclass": "non_empty",
+        "kind": "assertFalse",
+        "line": 240,
+        "method": "pointsInOtherWorldsAreSkipped"
+      },
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/LocationParticlePreviewTest.java",
+        "subj": "size(spawns)",
+        "subject": "size(spawns)",
+        "expected": ">0",
+        "pclass": "non_empty",
+        "kind": "assertFalse",
+        "line": 260,
+        "method": "pointsWithNullWorldAreSkipped"
+      },
+      {
+        "rel": "src_test/java/com/hilltopvillage/admin/LocationParticlePreviewTest.java",
+        "subj": "size(spawns)",
+        "subject": "size(spawns)",
+        "expected": ">0",
+        "pclass": "non_empty",
+        "kind": "assertFalse",
+        "line": 283,
+        "method": "pointsBeyondViewDistanceAreSkipped"
+      }
+    ],
+    "exact_existence": [
+      {
+        "rel": "src_test/java/com/hilltopvillage/config/menu/WaveMenusLeftWhitelistTest.java",
+        "subj": "holder",
+        "subject": "holder",
+        "expected": "WaveSettingsMenu.WaveDetailMenu.class",
+        "pclass": "exact_existence",
+        "kind": "assertInstanceOf",
+        "line": 349,
+        "method": "leftStillOpensDetailMenu"
+      },
+      {
+        "rel": "src_test/java/com/hilltopvillage/testsupport/TestInfrastructureProbeTest.java",
+        "subj": "world",
+        "subject": "world",
+        "expected": "WorldMock.class",
+        "pclass": "exact_existence",
+        "kind": "assertInstanceOf",
+        "line": 199,
+        "method": "for"
+      }
+    ]
+  }
+}

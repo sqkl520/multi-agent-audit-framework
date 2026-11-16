@@ -204,30 +204,6 @@
         "old": [
           "negative(false)"
         ]
-      },
-      {
-        "rule": "assertion_target_dropped",
-        "severity": "FAIL",
-        "subject": "arenaWorld",
-        "old": [
-          "existence_only(notnull)"
-        ]
-      },
-      {
-        "rule": "assertion_target_dropped",
-        "severity": "FAIL",
-        "subject": "shop",
-        "old": [
-          "existence_only(notnull)"
-        ]
-      },
-      {
-        "rule": "assertion_target_dropped",
-        "severity": "FAIL",
-        "subject": "player.getWorld().getName()",
-        "old": [
-          "exact(\"hilltop_arena1\")"
-        ]
       }
     ],
     "severity": "FAIL",

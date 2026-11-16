@@ -1,0 +1,272 @@
+{
+  "total": 38,
+  "caughtV4": 21,
+  "caughtV5": 23,
+  "real": [
+    {
+      "rel": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java",
+      "findings": [
+        {
+          "rule": "assertion_reversed_unreported",
+          "severity": "FAIL",
+          "subject": "field(\"scheduledPeriod\")",
+          "method": "refreshFailureIsContained",
+          "old": [
+            "negative(-1)"
+          ],
+          "new": [
+            "exact(20)"
+          ],
+          "lost": [
+            "negative(-1)"
+          ]
+        },
+        {
+          "rule": "assertion_reversed_unreported",
+          "severity": "FAIL",
+          "subject": "field(\"refreshTask\")",
+          "method": "refreshFailureIsContained",
+          "old": [
+            "negative(null)"
+          ],
+          "new": [
+            "exact(before)"
+          ],
+          "lost": [
+            "negative(null)"
+          ]
+        }
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "file": "AirdropSpawnGoalTest.java",
+      "method": "zeroMaxPerDropperDisablesAirdrops",
+      "v4": false,
+      "v5": false
+    },
+    {
+      "file": "AirdropSpawnGoalTest.java",
+      "method": "doesNotAirdropWhenMobCapReached",
+      "v4": false,
+      "v5": false
+    },
+    {
+      "file": "AirdropSpawnGoalTest.java",
+      "method": "backsOffWhenNoDropLocationFound",
+      "v4": false,
+      "v5": false
+    },
+    {
+      "file": "AirdropSpawnGoalTest.java",
+      "method": "inactiveWhenGameStopped",
+      "v4": false,
+      "v5": false
+    },
+    {
+      "file": "AirdropSpawnGoalTest.java",
+      "method": "shouldStayActiveFalseWithoutTarget",
+      "v4": true,
+      "v5": true
+    },
+    {
+      "file": "AirdropSpawnGoalTest.java",
+      "method": "goalIdentityContract",
+      "v4": true,
+      "v5": true
+    },
+    {
+      "file": "AirdropSpawnGoalTest.java",
+      "method": "nullMobTypeFallsBackToZombie",
+      "v4": false,
+      "v5": false
+    },
+    {
+      "file": "AirdropSpawnGoalTest.java",
+      "method": "blankMobTypeFallsBackToZombie",
+      "v4": false,
+      "v5": false
+    },
+    {
+      "file": "AirdropSpawnGoalTest.java",
+      "method": "validAndTypoStillHandled",
+      "v4": false,
+      "v5": false
+    },
+    {
+      "file": "ExplodeBeetleGoalTest.java",
+      "method": "explosionPowerIsIndependentFromNodeDamageMultiplier",
+      "v4": false,
+      "v5": false
+    },
+    {
+      "file": "ExplodeBeetleGoalTest.java",
+      "method": "zeroMultiplierKeepsExplosionPowerless",
+      "v4": false,
+      "v5": false
+    },
+    {
+      "file": "ExplodeBeetleGoalTest.java",
+      "method": "staysActiveEvenWithoutAnyNodeTarget",
+      "v4": false,
+      "v5": false
+    },
+    {
+      "file": "ExplodeBeetleGoalTest.java",
+      "method": "selfDestructsAfterNoTargetGracePeriod",
+      "v4": true,
+      "v5": true
+    },
+    {
+      "file": "ExplodeBeetleGoalTest.java",
+      "method": "doesNotSelfDestructBeforeGracePeriodElapses",
+      "v4": false,
+      "v5": true
+    },
+    {
+      "file": "ExplodeBeetleGoalTest.java",
+      "method": "doesNotSelfDestructWhenNodeTargetExists",
+      "v4": false,
+      "v5": true
+    },
+    {
+      "file": "ExplodeBeetleGoalTest.java",
+      "method": "inactiveWhenGameStopped",
+      "v4": false,
+      "v5": false
+    },
+    {
+      "file": "ExplodeBeetleGoalTest.java",
+      "method": "inactiveWhenBeetleInvalid",
+      "v4": false,
+      "v5": false
+    },
+    {
+      "file": "ExplodeBeetleGoalTest.java",
+      "method": "zeroRadiusSkipsNodeScan",
+      "v4": true,
+      "v5": true
+    },
+    {
+      "file": "ExplodeBeetleGoalTest.java",
+      "method": "goalIdentityContract",
+      "v4": true,
+      "v5": true
+    },
+    {
+      "file": "ConfigManagerTest.java",
+      "method": "loadFromFileRebuildsAdminCreatedWaveFromDisk",
+      "v4": true,
+      "v5": true
+    },
+    {
+      "file": "ConfigManagerTest.java",
+      "method": "loadFromFileReturnsTrueOnSuccess",
+      "v4": false,
+      "v5": false
+    },
+    {
+      "file": "ConfigManagerTest.java",
+      "method": "shippedTemplateLoadsWithoutUnknownKeyWarnings",
+      "v4": true,
+      "v5": true
+    },
+    {
+      "file": "TabListManagerTest.java",
+      "method": "emptyCacheRestoresNothing",
+      "v4": true,
+      "v5": true
+    },
+    {
+      "file": "ShopConfigLoaderTest.java",
+      "method": "factoryTemplateParsesCleanly",
+      "v4": true,
+      "v5": true
+    },
+    {
+      "file": "ShopConfigLoaderTest.java",
+      "method": "itemsListIsUnmodifiable",
+      "v4": true,
+      "v5": true
+    },
+    {
+      "file": "ShopConfigLoaderTest.java",
+      "method": "shopConfigCopiesItemList",
+      "v4": false,
+      "v5": false
+    },
+    {
+      "file": "ShopOverflowPaidDropTest.java",
+      "method": "purchaseOverflowDropsTheProduct",
+      "v4": true,
+      "v5": true
+    },
+    {
+      "file": "ShopOverflowPaidDropTest.java",
+      "method": "refundOverflowDropsTheCurrency",
+      "v4": true,
+      "v5": true
+    },
+    {
+      "file": "ShopOverflowPaidDropTest.java",
+      "method": "noOverflowMeansNoDrop",
+      "v4": true,
+      "v5": true
+    },
+    {
+      "file": "ShopOverflowPaidDropTest.java",
+      "method": "markedDropSurvivesWhileUnmarkedIsRemoved",
+      "v4": true,
+      "v5": true
+    },
+    {
+      "file": "ShopOverflowPaidDropTest.java",
+      "method": "dropWithSomeOtherPdcKeyIsStillRemoved",
+      "v4": true,
+      "v5": true
+    },
+    {
+      "file": "ShopOverflowPaidDropTest.java",
+      "method": "shopOverflowDropSurvivesArenaReset",
+      "v4": true,
+      "v5": true
+    },
+    {
+      "file": "ShopOverflowPartialFitTest.java",
+      "method": "exactFitIntoHalfFullStackDropsNothing",
+      "v4": true,
+      "v5": true
+    },
+    {
+      "file": "ShopOverflowPartialFitTest.java",
+      "method": "partialFitDropsOnlyTheRemainder",
+      "v4": true,
+      "v5": true
+    },
+    {
+      "file": "ShopOverflowPartialFitTest.java",
+      "method": "refundFullyOverflowsInOnePiece",
+      "v4": true,
+      "v5": true
+    },
+    {
+      "file": "ShopOverflowPartialFitTest.java",
+      "method": "refundPartialFitSplitsBetweenBagAndGround",
+      "v4": true,
+      "v5": true
+    },
+    {
+      "file": "ShopOverflowPartialFitTest.java",
+      "method": "whenItFitsNothingDrops",
+      "v4": false,
+      "v5": false
+    },
+    {
+      "file": "ShopOverflowPartialFitTest.java",
+      "method": "fixtureSanity",
+      "v4": true,
+      "v5": true
+    }
+  ]
+}

@@ -102,26 +102,68 @@
     ]
   ],
   "changeset": {
-    "files": 0,
-    "modified": 0,
-    "added": 0,
-    "calls": 0,
-    "parsed": 0,
+    "files": 26,
+    "modified": 7,
+    "added": 19,
+    "calls": 877,
+    "parsed": 876,
     "unparsable": 0,
-    "sites": 0
+    "sites": 33
   },
   "changeset_unparsable_rate_pct": 0,
-  "findings_count": 0,
-  "findings_by_rule": {},
-  "findings": [],
-  "predicate_classes": {},
+  "findings_count": 2,
+  "findings_by_rule": {
+    "assertion_reversed_unreported": 2
+  },
+  "findings": [
+    {
+      "rule": "assertion_reversed_unreported",
+      "severity": "FAIL",
+      "subject": "field(\"scheduledPeriod\")",
+      "method": "refreshFailureIsContained",
+      "old": [
+        "negative(-1)"
+      ],
+      "new": [
+        "exact(20)"
+      ],
+      "lost": [
+        "negative(-1)"
+      ],
+      "file": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java"
+    },
+    {
+      "rule": "assertion_reversed_unreported",
+      "severity": "FAIL",
+      "subject": "field(\"refreshTask\")",
+      "method": "refreshFailureIsContained",
+      "old": [
+        "negative(null)"
+      ],
+      "new": [
+        "exact(before)"
+      ],
+      "lost": [
+        "negative(null)"
+      ],
+      "file": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java"
+    }
+  ],
+  "predicate_classes": {
+    "negative": 153,
+    "exact": 359,
+    "zero_or_empty": 61,
+    "interaction": 16,
+    "existence_only": 280,
+    "non_empty": 7
+  },
   "raw_diff": {
-    "removed": 0,
-    "added": 0
+    "removed": 5,
+    "added": 334
   },
   "q5": {
-    "addedFiles": 0,
-    "assertionsInAdded": 0,
+    "addedFiles": 19,
+    "assertionsInAdded": 271,
     "findingsOnAdded": 0
   },
   "q6": {

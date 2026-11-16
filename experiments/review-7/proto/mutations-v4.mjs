@@ -78,7 +78,12 @@ const MUTS = [
     apply: (s) => {
       const start = s.indexOf('        @Test\n        @DisplayName("对照：带「别的」PDC 键的掉落物仍被删除');
       if (start < 0) return s;
-      const end = s.indexOf('        @Test', start + 12);
+      // cut to the start of the NEXT @Test or @BeforeEach, whichever comes first: the previous cut
+      // ran to the next '@Test' and swallowed setUp(), which inflated the finding count
+      const nextTest = s.indexOf('        @Test', start + 12);
+      const nextBefore = s.indexOf('        @BeforeEach', start + 12);
+      const cands = [nextTest, nextBefore].filter((x) => x > 0);
+      const end = cands.length ? Math.min(...cands) : -1;
       return end < 0 ? s : s.slice(0, start) + s.slice(end);
     },
   },
