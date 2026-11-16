@@ -1,0 +1,246 @@
+[
+  {
+    "id": "M1 value flip, same method",
+    "base": "work",
+    "file": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java",
+    "expect": "FAIL",
+    "note": "assertEquals(20, field(\"scheduledPeriod\")) -> 60",
+    "findings": [
+      {
+        "rule": "assertion_reversed_unreported",
+        "severity": "FAIL",
+        "subject": "field(\"scheduledPeriod\")",
+        "method": "cancelledHandleIsReplaced",
+        "old": [
+          "exact(20)"
+        ],
+        "new": [
+          "exact(60)"
+        ],
+        "lost": [
+          "exact(20)"
+        ]
+      },
+      {
+        "rule": "assertion_reversed_unreported",
+        "severity": "FAIL",
+        "subject": "field(\"scheduledPeriod\")",
+        "method": "refreshFailureIsContained",
+        "old": [
+          "negative(-1)"
+        ],
+        "new": [
+          "exact(20)"
+        ],
+        "lost": [
+          "negative(-1)"
+        ]
+      },
+      {
+        "rule": "assertion_reversed_unreported",
+        "severity": "FAIL",
+        "subject": "field(\"refreshTask\")",
+        "method": "refreshFailureIsContained",
+        "old": [
+          "negative(null)"
+        ],
+        "new": [
+          "exact(before)"
+        ],
+        "lost": [
+          "negative(null)"
+        ]
+      }
+    ],
+    "severity": "FAIL",
+    "reported": true
+  },
+  {
+    "id": "M2 polarity flip on a boolean",
+    "base": "work",
+    "file": "src/test/java/com/hilltopvillage/ai/ExplodeBeetleGoalTest.java",
+    "expect": "FAIL",
+    "note": "assertTrue(goal.shouldStayActive()) -> assertFalse(...)",
+    "findings": [
+      {
+        "rule": "assertion_reversed_unreported",
+        "severity": "FAIL",
+        "subject": "goal.shouldStayActive()",
+        "method": "staysActiveEvenWithoutAnyNodeTarget",
+        "old": [
+          "existence_only(true)"
+        ],
+        "new": [
+          "negative(false)"
+        ],
+        "lost": [
+          "existence_only(true)"
+        ]
+      }
+    ],
+    "severity": "FAIL",
+    "reported": true
+  },
+  {
+    "id": "M3 remove ONE of two same-subject asserts in a method",
+    "base": "head",
+    "file": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java",
+    "expect": "none",
+    "note": "not a weakening: a duplicate value remains in the same method",
+    "findings": [
+      {
+        "rule": "assertion_moved_out_of_method",
+        "severity": "WARN",
+        "subject": "field(\"refreshTask\")",
+        "method": "stopCancelsAndResetsPeriod",
+        "old": [
+          "negative(null)"
+        ],
+        "foundIn": [
+          "disabledTabStopsInsteadOfStarting",
+          "nonPositivePeriodFallsBackToDefault",
+          "refreshFailureIsContained",
+          "restoreClearsCachesAndStops",
+          "constructionDoesNotScheduleAnything",
+          "applySelfHealsTheTask"
+        ]
+      }
+    ],
+    "severity": "WARN",
+    "reported": true
+  },
+  {
+    "id": "M4 rename method AND flip value",
+    "base": "round2",
+    "file": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java",
+    "expect": "none-or-miss",
+    "note": "the exact rename+reverse combination; HEAD-vs-work rename also means the method disappears",
+    "findings": [],
+    "severity": "none",
+    "reported": false
+  },
+  {
+    "id": "M5 broaden assertEquals -> assertTrue(expr)",
+    "base": "round2",
+    "file": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java",
+    "expect": "WARN",
+    "note": "assertEquals(7, X) -> assertTrue(X > 0) — the \"broadened\" predicate class",
+    "findings": [
+      {
+        "rule": "assertion_moved_out_of_method",
+        "severity": "WARN",
+        "subject": "config.getActiveConfig().getVictoryWaves()",
+        "method": "loadFromFileReturnsFalseAndKeepsMemoryWhenSettingsUnusable",
+        "old": [
+          "exact(7)"
+        ],
+        "foundIn": [
+          "loadFromFileReturnsFalseWhenFileIsAbsentEvenAfterGateReset"
+        ]
+      }
+    ],
+    "severity": "WARN",
+    "reported": true
+  },
+  {
+    "id": "M6 move assertion into a private helper (same file)",
+    "base": "round2",
+    "file": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java",
+    "expect": "none",
+    "note": "plan explicitly wants this to count as \"still there\"",
+    "findings": [
+      {
+        "rule": "assertion_moved_out_of_method",
+        "severity": "WARN",
+        "subject": "config.getActiveConfig().getVictoryWaves()",
+        "method": "loadFromFileReturnsFalseAndKeepsMemoryWhenSettingsUnusable",
+        "old": [
+          "exact(7)"
+        ],
+        "foundIn": [
+          "loadFromFileReturnsFalseWhenFileIsAbsentEvenAfterGateReset"
+        ]
+      }
+    ],
+    "severity": "WARN",
+    "reported": true
+  },
+  {
+    "id": "M7 delete one assertion (subject survives elsewhere)",
+    "base": "round2",
+    "file": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java",
+    "expect": "WARN",
+    "note": "the M5-style deletion that hybrid silently swallowed",
+    "findings": [
+      {
+        "rule": "assertion_moved_out_of_method",
+        "severity": "WARN",
+        "subject": "config.getSettingsGate().isReadOnly()",
+        "method": "loadFromFileReturnsFalseAndKeepsMemoryWhenSettingsUnusable",
+        "old": [
+          "existence_only(true)"
+        ],
+        "foundIn": [
+          "saveToFileRefusesWhenSettingsUnwritable",
+          "loadFromFileReturnsTrueOnSuccess",
+          "loadFromFileReturnsFalseWhenGateIsReadOnlyEvenIfFileIsAbsent"
+        ]
+      }
+    ],
+    "severity": "WARN",
+    "reported": true
+  },
+  {
+    "id": "M8 delete a whole pre-existing @Test method",
+    "base": "head",
+    "file": "src/test/java/com/hilltopvillage/shop/ShopOverflowPaidDropTest.java",
+    "expect": "FAIL",
+    "note": "removes an old test entirely; subjects that survive elsewhere in the file are invisible to rule 1",
+    "findings": [
+      {
+        "rule": "assertion_target_dropped",
+        "severity": "FAIL",
+        "subject": "foreign.isValid()",
+        "old": [
+          "negative(false)"
+        ]
+      },
+      {
+        "rule": "assertion_target_dropped",
+        "severity": "FAIL",
+        "subject": "arenaWorld",
+        "old": [
+          "existence_only(notnull)"
+        ]
+      },
+      {
+        "rule": "assertion_target_dropped",
+        "severity": "FAIL",
+        "subject": "shop",
+        "old": [
+          "existence_only(notnull)"
+        ]
+      },
+      {
+        "rule": "assertion_target_dropped",
+        "severity": "FAIL",
+        "subject": "player.getWorld().getName()",
+        "old": [
+          "exact(\"hilltop_arena1\")"
+        ]
+      }
+    ],
+    "severity": "FAIL",
+    "reported": true
+  },
+  {
+    "id": "M9 wrap unique subject in if(true)-style dead branch",
+    "base": "head",
+    "file": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java",
+    "expect": "WARN-or-MISS",
+    "note": "assertion still textually present, but only runs conditionally — text-level detection cannot see it",
+    "findings": [],
+    "severity": "none",
+    "reported": false
+  }
+]

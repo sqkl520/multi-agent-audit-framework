@@ -1,0 +1,34 @@
+[
+  {
+    "rule": "assertion_reversed_unreported",
+    "severity": "FAIL",
+    "subject": "field(\"scheduledPeriod\")",
+    "method": "refreshFailureIsContained",
+    "old": [
+      "negative(-1)"
+    ],
+    "new": [
+      "exact(20)"
+    ],
+    "lost": [
+      "negative(-1)"
+    ],
+    "file": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java"
+  },
+  {
+    "rule": "assertion_reversed_unreported",
+    "severity": "FAIL",
+    "subject": "field(\"refreshTask\")",
+    "method": "refreshFailureIsContained",
+    "old": [
+      "negative(null)"
+    ],
+    "new": [
+      "exact(before)"
+    ],
+    "lost": [
+      "negative(null)"
+    ],
+    "file": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java"
+  }
+]

@@ -196,6 +196,9 @@ function classifyCall(fn, argTexts, argMasks) {
   } else if (fn === 'assertArrayEquals') {
     if (N < 2) return { error: 'assertArrayEquals needs 2 args' };
     expected = at(0); target = at(1); pclass = 'exact';
+  } else if (fn === 'assertInstanceOf' || fn === 'assertInstanceOfExactly') {
+    if (N < 2) return { error: 'assertInstanceOf needs (Class, actual)' };
+    expected = at(0); target = at(1); pclass = 'exact_existence';
   } else {
     return { error: `unknown assertion helper: ${fn}` };
   }

@@ -1,0 +1,73 @@
+{
+  "counts": {
+    "assertion_reversed_unreported": 2
+  },
+  "results": [
+    {
+      "rule": "assertion_reversed_unreported",
+      "severity": "FAIL",
+      "subject": "field(\"scheduledPeriod\")",
+      "method": "refreshFailureIsContained",
+      "oldAssertions": [
+        {
+          "subject": "field(\"scheduledPeriod\")",
+          "expected": "-1",
+          "pclass": "negative",
+          "kind": "assertEquals",
+          "line": 341,
+          "method": "refreshFailureIsContained"
+        }
+      ],
+      "newAssertions": [
+        {
+          "subject": "field(\"scheduledPeriod\")",
+          "expected": "20",
+          "pclass": "exact",
+          "kind": "assertEquals",
+          "line": 361,
+          "method": "refreshFailureIsContained"
+        }
+      ],
+      "lost": [
+        "negative(-1)"
+      ],
+      "gained": [
+        "exact(20)"
+      ],
+      "file": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java"
+    },
+    {
+      "rule": "assertion_reversed_unreported",
+      "severity": "FAIL",
+      "subject": "field(\"refreshTask\")",
+      "method": "refreshFailureIsContained",
+      "oldAssertions": [
+        {
+          "subject": "field(\"refreshTask\")",
+          "expected": "null",
+          "pclass": "negative",
+          "kind": "assertNull",
+          "line": 338,
+          "method": "refreshFailureIsContained"
+        }
+      ],
+      "newAssertions": [
+        {
+          "subject": "field(\"refreshTask\")",
+          "expected": "before",
+          "pclass": "exact",
+          "kind": "assertSame",
+          "line": 358,
+          "method": "refreshFailureIsContained"
+        }
+      ],
+      "lost": [
+        "negative(null)"
+      ],
+      "gained": [
+        "exact(before)"
+      ],
+      "file": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java"
+    }
+  ]
+}

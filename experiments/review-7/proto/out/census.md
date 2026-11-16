@@ -1,23 +1,23 @@
 # parse census (whole src/test tree)
-files: 98
-physical assert lines: 2638
-assert call sites    : 2744
-parsed               : 2670 (97.85 of call sites)
-unparsable           : 59 (2.15%)
+files: 97
+physical assert lines: 2636
+assert call sites    : 2742
+parsed               : 2671 (97.96 of call sites)
+unparsable           : 56 (2.04%)
 assertAll containers : 15 (recursed into, not counted as subjects)
 
 ## subject shape buckets
   dottedPath         1322  (49.5%)
   literalCoupled     519  (19.4%)
-  compositeExpr      301  (11.3%)
-  bareIdentifier     246  (9.2%)
+  compositeExpr      300  (11.2%)
+  bareIdentifier     248  (9.3%)
   sizeForm           234  (8.8%)
   interaction        48  (1.8%)
 
 ## top bare-identifier subjects (collision risk)
   got: 18
+  world: 10
   probe: 10
-  world: 9
   reason: 7
   after: 7
   out: 7
@@ -31,6 +31,7 @@ assertAll containers : 15 (recursed into, not counted as subjects)
   ending: 3
   wave7: 3
   wave1: 3
+  holder: 3
   restored: 3
   host: 3
   found: 3
@@ -39,9 +40,8 @@ assertAll containers : 15 (recursed into, not counted as subjects)
   saved: 2
   reloaded: 2
   defaultWave: 2
-  snapshot: 2
 
-## files with unparsable assertions: 9
+## files with unparsable assertions: 6
 
 ### src/test/java/com/hilltopvillage/config/WavesKeySetAlignmentTest.java
   L94 fail: fail() is not a subject assertion :: fail("waves.1 根本没进内存表（当前键集 " + waves.keySet() + "）。" + " 若这里红而 getWaveConfig(1) 看起来「有值」，那是回落到了 defau
@@ -59,9 +59,6 @@ assertAll containers : 15 (recursed into, not counted as subjects)
   L173 assertNonWhitelistClicksAreInert: unknown assertion helper: assertNonWhitelistClicksAreInert :: assertNonWhitelistClicksAreInert(menu, 19, () -> monster("explode-beetle").getHealth(), 
   L197 assertNonWhitelistClicksAreInert: unknown assertion helper: assertNonWhitelistClicksAreInert :: assertNonWhitelistClicksAreInert(menu, slot, () -> monster("hook-claw-hunter").getCooldownTicks(), 
 
-### src/test/java/com/hilltopvillage/config/menu/WaveMenusLeftWhitelistTest.java
-  L349 assertInstanceOf: unknown assertion helper: assertInstanceOf :: assertInstanceOf(WaveSettingsMenu.WaveDetailMenu.class, holder, "对照半：LEFT 仍然打开波次详情菜单。若这条也红，说明分支被整段删除
-
 ### src/test/java/com/hilltopvillage/config/menu/WavePaginationClampTest.java
   L122 assertWaveRowsRendered: unknown assertion helper: assertWaveRowsRendered :: assertWaveRowsRendered(WaveSettingsMenu menu, String when)
   L169 assertWaveRowsRendered: unknown assertion helper: assertWaveRowsRendered :: assertWaveRowsRendered(menu, "末页删波次后重开")
@@ -70,9 +67,6 @@ assertAll containers : 15 (recursed into, not counted as subjects)
 
 ### src/test/java/com/hilltopvillage/mechanics/MapRestoreManagerTest.java
   L347 fail: fail() is not a subject assertion :: fail("世界不存在时不应调用完成回调（那会让调用方以为回滚成功了）")
-
-### src/test/java/com/hilltopvillage/testsupport/TestInfrastructureProbeTest.java
-  L199 assertInstanceOf: unknown assertion helper: assertInstanceOf :: assertInstanceOf(WorldMock.class, world, "世界不是 WorldMock：" + name)
 
 ### src/test/java/com/hilltopvillage/util/YamlFilesTest.java
   L176 assertFactoryOk: unknown assertion helper: assertFactoryOk :: assertFactoryOk(dir, "/game-settings.yml", YamlFiles.gameSettingsValidator())
@@ -116,6 +110,3 @@ assertAll containers : 15 (recursed into, not counted as subjects)
   L535 assertOk: unknown assertion helper: assertOk :: assertOk(java.util.function.Function<YamlConfiguration, String> validator, String text)
   L536 assertOk: unknown assertion helper: assertOk :: assertOk(validator, text, "")
   L539 assertOk: unknown assertion helper: assertOk :: assertOk(java.util.function.Function<YamlConfiguration, String> validator, String text, 
-
-### src/test/java/com/hilltopvillage/mechanics/ScratchReloadProbeTest.java
-  L88 assertTrue: boolean literal as target :: assertTrue(true)

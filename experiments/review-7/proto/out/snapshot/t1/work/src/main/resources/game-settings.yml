@@ -1,0 +1,323 @@
+# ============================================================
+#  Hilltop Village — 游戏参数配置文件
+#  game-settings.yml
+# ============================================================
+#  此文件存储所有可通过 GUI 或命令修改的游戏参数。
+#  使用 /hilltop config 在游戏内通过 GUI 界面编辑。
+#  使用 /hilltop reloadconfig 重新加载此文件。
+# ============================================================
+
+# 游戏世界名称
+world-name: world
+
+# 村庄核心坐标
+core:
+  x: 0.0
+  y: 100.0
+  z: 0.0
+
+# 最少/最多玩家数
+min-players: 2
+max-players: 6
+# 胜利所需波次
+victory-waves: 20
+# 波次间隔（秒）
+wave-interval-seconds: 30
+# 波次超时保险（秒）：某波持续超过此时长仍未清波（例如残怪卡地形 / 木桩怪 / 节点不可达），
+# 先把全部残存怪物传送到最近玩家身边并高亮，再宽限约 15 秒后强制清除，打破任何形态的卡死。
+# 0 或负数 = 禁用该保险（fix4 起为默认值，追求纯净体验；卡住时可用
+# /hilltop wave clear 手动强清清怪并推进波次）。改回正数（如 120）即可重新启用自动保险。
+wave-timeout-seconds: 0
+
+# 失败结算倒计时（秒）：显示本局战报后传送回大厅的等待时间
+defeat-countdown-seconds: 20
+# 待保护村民的最大生命值（村民全部阵亡 = 游戏失败）
+villager-health: 20.0
+# 掉线重连窗口（秒）：对局中掉线后保留位置的时长，0 = 关闭重连
+rejoin-timeout-seconds: 60
+# 空置自动结束（秒）：对局进行中在线成员为 0 持续此时长后自动结束本局（走正常结束路径），
+# 0 或负数 = 禁用（不推荐）；建议大于 rejoin-timeout-seconds，先留足重连窗口再判空置
+empty-arena-end-seconds: 120
+
+# 地图恢复：对局结束时回滚本局被破坏/放置的方块
+map-restore:
+  enabled: true
+
+# 侧边栏记分板
+scoreboard:
+  enabled: true
+
+# ============================================================
+#  重锤系统 (Hammer)
+# ============================================================
+hammer:
+  # 重锤使用的物品材料（原版 Material 名称）
+  material: IRON_AXE
+  # ItemsAdder 物品命名空间ID（格式: namespace:id）
+  # 仅当 use-itemsadder 为 true 时生效
+  itemsadder-id: ""
+  # 自定义模型数据值（配合资源包使用，0 表示不使用）
+  custom-model-data: 0
+  # 是否启用 ItemsAdder 模型（true/false）
+  use-itemsadder: false
+  # 基础伤害值（已废弃：v1.1+ 由 tier 三档直接定伤害，不再读取）
+  base-damage: 20.0
+  # AOE 效果半径（已废弃：v1.1+ 由 tier 三档直接定范围，不再读取）
+  effect-radius: 5.0
+  # 余震减速持续时长（tick，20 tick = 1 秒）
+  aftershock-ticks: 60
+  # 猛击激活超时时间（tick，超时未落地则取消）
+  smash-timeout-ticks: 600
+  # 铁砧特效显示时长（tick）
+  visual-display-ticks: 20
+  # 每次猛击后的冷却时长（秒，0 表示无冷却）
+  cooldown-seconds: 8.0
+  # 重锤总可用次数（耗尽碎裂需商店回购，0 表示无限）
+  max-uses: 30
+  # === 三档独立配置（每档设定自己的蓄力距离 / 伤害 / 范围） ===
+  # 注意：低档无 charge 阈值 —— 下落距离 < medium.charge 即判低档
+  tier:
+    low:
+      damage: 20.0    # 低档造成伤害（甲虫 40 血需两下低档，中心命中）
+      radius: 4.0     # 低档AOE范围（格）
+    medium:
+      charge: 5.0     # 触发中档所需的下落距离（格）
+      damage: 40.0    # 中档造成伤害
+      radius: 5.0     # 中档AOE范围（格）
+    high:
+      charge: 10.0    # 触发高档所需的下落距离（格）
+      damage: 60.0    # 高档造成伤害
+      radius: 6.5     # 高档AOE范围（格）
+  # 旧版倍率字段（向后兼容，已废弃：v1.1+ 由 tier 三档直接定伤害/范围，不再读取）
+  damage-low-threshold: 5.0
+  damage-medium-threshold: 10.0
+  damage-low-multiplier: 1.5
+  damage-medium-multiplier: 2.0
+  damage-high-multiplier: 3.0
+
+# ============================================================
+#  烈焰蛋系统 (Fireball)
+# ============================================================
+fireball:
+  # 烈焰蛋使用的物品材料
+  material: FIRE_CHARGE
+  # 投射物飞行速度
+  speed: 1.5
+  # 爆炸伤害值
+  damage: 15.0
+  # 爆炸半径（格）
+  explosion-radius: 4.0
+  # 冷却时间（tick，20 tick = 1 秒，0 = 无冷却）
+  cooldown-ticks: 3
+  # 最大飞行时长（tick，超时自动消失）
+  max-travel-ticks: 100
+  # 击退强度（对怪物和自身均生效）
+  knockback: 5.0
+  # 近炸检测半径（格，0=禁用，投射物附近进入此范围的实体会触发爆炸）
+  proximity-fuse: 1.5
+
+# ============================================================
+#  能量节点系统 (Nodes)
+# ============================================================
+nodes:
+  # 节点基础生命值
+  base-health: 100.0
+  # 修复节点消耗的物品（默认恶魂之泪，击杀下界恶魂获得，也可在商店购买）
+  repair-cost-item: GHAST_TEAR
+  # 单次修复最多消耗几个（按实际缺口取最少，够修就不多扣）
+  repair-cost-amount: 1
+  # 每消耗一个恢复多少节点血量
+  repair-amount-per-cost: 50.0
+  # 修复物品显示名（留空则使用 messages.yml 的 item.repair-cost-name）
+  repair-cost-name: ""
+  # 节点增益效果作用半径（格）
+  buff-radius: 20.0
+  # 节点增益效果（格式 "效果名:等级"，0 = I 级，1 = II 级，以此类推）
+  buff-effects:
+    - "RESISTANCE:0"
+    - "REGENERATION:0"
+  # 增益刷新周期（tick）
+  buff-refresh-ticks: 60
+  # 多个节点叠加时的最大等级
+  buff-stack-cap: 3
+  # 单次增益持续时间（tick）
+  buff-duration-ticks: 100
+  # 自爆对节点伤害倍率
+  self-destruct-multiplier: 3.0
+  # 节点扫描搜索半径（距核心水平距离，格；垂直方向为全高度扫描）
+  search-radius: 128
+
+# ============================================================
+#  村民商店货币掉落 (Shop)
+#  货币物品（默认能量水晶 EMERALD）与商品价格见 shop.yml
+#  fix4 起为「每杀必掉、数量浮动」：每次击杀掉落 [min, max] 区间内的随机数量。
+#  掉落实体数 = 每只怪 1 堆（数量体现在单堆 amount 上），同位置相邻掉落物
+#  原版会自动合并；竞技场重置时也会统一清理残留掉落物，量大不会堆积卡服。
+# ============================================================
+shop:
+  # 掉落概率门（0~1）：默认 1.0 = 每杀必掉；改为 0.5 即恢复「50% 概率掉」
+  currency-drop-chance: 1.0
+  # 每次掉落数量区间（含两端，运行时在区间内随机；0/0 = 关闭掉落）
+  currency-drop-min: 1
+  currency-drop-max: 2
+
+# ============================================================
+#  开局初始套装 (starter-kit, STORY-1.2)
+#  开局传送后向每名在场玩家发放（背包在 join 时已清空快照，不会污染玩家原有物品）。
+#  背包放不下的部分掉在玩家脚下；离场时整包清空、快照归还，套装不会被带出竞技场。
+# ============================================================
+starter-kit:
+  # 总开关：false = 开局不发放任何物品
+  enabled: true
+  # 物品列表：每项 material（原版 Material 名）+ amount（数量，超单叠上限自动拆叠）
+  # 默认：石剑 + 皮革四件套 + 面包x16 + 火把x8（烈焰蛋/任务锤默认不给，需在商店购买）
+  items:
+    - material: STONE_SWORD
+      amount: 1
+    - material: LEATHER_HELMET
+      amount: 1
+    - material: LEATHER_CHESTPLATE
+      amount: 1
+    - material: LEATHER_LEGGINGS
+      amount: 1
+    - material: LEATHER_BOOTS
+      amount: 1
+    - material: BREAD
+      amount: 16
+    - material: TORCH
+      amount: 8
+
+# ============================================================
+#  怪物生成设置 (Spawning)
+# ============================================================
+spawning:
+  # 生成半径最小值（距核心，格）
+  spawn-radius-min: 20
+  # 生成半径最大值（距核心，格）
+  spawn-radius-max: 40
+  # 生成高度偏移（生成点 Y 坐标的偏移量，0 = 与生成点同高）
+  spawn-y-offset: 0
+  # 全局怪物数量上限
+  global-mob-cap: 80
+  # 每名玩家的怪物数量上限
+  mob-cap-per-player: 15
+  # 单个飞行抛投者整局最多执行多少轮空投（防止抛投者无限空投导致实体数指数膨胀卡服）
+  # 每轮空投受 global-mob-cap 与 mob-cap-per-player 双重限制；0 或负数 = 禁用空投
+  airdrop-max-per-dropper: 3
+
+# ============================================================
+#  特殊怪物属性 (Monsters)
+#  每个怪物的独立属性配置
+#  按怪种掉落（drop-min/drop-max，可选键）：该怪种击杀时掉落 [min,max] 区间内随机
+#  数量（含两端）。三特殊怪出厂带各自数值（见下）；其它怪种不写该两键 = 回退全局
+#  shop.currency-drop-min/max（默认 1~2）。任一端写 -1 = 该端回退全局值；写 0/0 =
+#  该怪种不掉币。空投小怪（抛投者空投出的僵尸）恒为 0，不受此表影响。
+# ============================================================
+monsters:
+  # 自爆甲虫：靠近能量节点后自爆
+  explode-beetle:
+    display-egg: CAVE_SPIDER_SPAWN_EGG
+    health: 40.0
+    speed: 0.3
+    hook-velocity: 1.0
+    # 显示名留空时使用 messages.yml 的 mob.explode-beetle（随玩家语言切换）
+    display-name: ""
+    explode-damage-multiplier: 3.0
+    # 自爆是否附带原版实体爆炸（false 时只结算节点伤害 + 纯视觉效果，不炸伤村民/玩家）
+    entity-explosion: true
+    cooldown-ticks: 0
+    stun-duration-ticks: 0
+    airdrop-mob-count: 0
+    # 掉落：1 个（量多好打，与抛投者拉开差距）
+    drop-min: 1
+    drop-max: 1
+  # 钩爪猎手：远程射击将玩家拖拽到身边
+  hook-claw-hunter:
+    display-egg: SKELETON_SPAWN_EGG
+    health: 60.0
+    speed: 0.25
+    hook-velocity: 1.8
+    # 显示名留空时使用 messages.yml 的 mob.hook-claw-hunter（随玩家语言切换）
+    display-name: ""
+    explode-damage-multiplier: 0
+    cooldown-ticks: 60
+    stun-duration-ticks: 40
+    airdrop-mob-count: 8
+    # 掉落：1~2 个
+    drop-min: 1
+    drop-max: 2
+  # 飞行抛投者：飞行中向地面空投小怪
+  flying-dropper:
+    display-egg: PHANTOM_SPAWN_EGG
+    health: 80.0
+    speed: 0.3
+    hook-velocity: 0
+    # 显示名留空时使用 messages.yml 的 mob.airdrop-dropper（随玩家语言切换）
+    display-name: ""
+    explode-damage-multiplier: 0
+    cooldown-ticks: 160
+    stun-duration-ticks: 3
+    airdrop-mob-count: 10
+    # 掉落：2~3 个（飞在 +8 高度最难打，打难打的怪更值钱）
+    drop-min: 2
+    drop-max: 3
+
+# ============================================================
+#  波次配置 (Waves)
+#  数字键 = 波次编号
+#  default = 未特别配置的波次使用此模板
+#
+#  刷怪语义（STORY-1.4 精确配比）：
+#    - count = 每人只数：该类型实际刷出 count × 在场人数 只。
+#      示例：第 1 波配 甲虫 6 / 猎手 2，2 人局实际刷出 12 只甲虫 + 4 只猎手。
+#    - total-mobs = 每人精确总数上限：sum(count) × 人数 超过它时按比例裁剪，不足不补齐。
+#    - weight = 兼容权重：仅当本波所有 count 全 0/缺失时回退旧权重随机路径；正常路径忽略。
+#    - 另有两层全局裁剪：spawning.mob-cap-per-player（人均上限）与
+#      spawning.global-mob-cap（全局上限，含上一波残留）；三层取最小。
+# ============================================================
+waves:
+  default:
+    total-mobs: 10
+    compositions:
+      explode-beetle:
+        count: 4
+        weight: 3
+      hook-claw-hunter:
+        count: 3
+        weight: 2
+      flying-dropper:
+        count: 3
+        weight: 1
+  "1":
+    total-mobs: 8
+    compositions:
+      explode-beetle:
+        count: 6
+        weight: 5
+      hook-claw-hunter:
+        count: 2
+        weight: 1
+  "5":
+    total-mobs: 14
+    compositions:
+      explode-beetle:
+        count: 5
+        weight: 3
+      hook-claw-hunter:
+        count: 4
+        weight: 4
+      flying-dropper:
+        count: 5
+        weight: 2
+  "10":
+    total-mobs: 20
+    compositions:
+      explode-beetle:
+        count: 8
+        weight: 4
+      hook-claw-hunter:
+        count: 6
+        weight: 5
+      flying-dropper:
+        count: 6
+        weight: 3

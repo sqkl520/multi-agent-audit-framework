@@ -1,0 +1,688 @@
+{
+  "bucketCount": {
+    "dottedPath": 373,
+    "mockitoVerify": 16,
+    "bareIdentifier": 87,
+    "compositeExpr": 81,
+    "sizeForm": 110,
+    "literalCoupled": 187,
+    "throws": 22
+  },
+  "collisions": [
+    {
+      "k": "src/test/java/com/hilltopvillage/ai/ExplodeBeetleGoalTest.java::old::goal.shouldActivate()",
+      "v": [
+        "existence_only(true)",
+        "negative(false)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/ai/ExplodeBeetleGoalTest.java::old::goal.shouldStayActive()",
+      "v": [
+        "existence_only(true)",
+        "negative(false)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/ai/ExplodeBeetleGoalTest.java::new::power.getValue()",
+      "v": [
+        "exact(3.0f±1e-6)",
+        "exact(0.0f±1e-6)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/ai/ExplodeBeetleGoalTest.java::new::goal.shouldActivate()",
+      "v": [
+        "existence_only(true)",
+        "negative(false)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/ai/ExplodeBeetleGoalTest.java::new::goal.shouldStayActive()",
+      "v": [
+        "existence_only(true)",
+        "negative(false)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java::old::config.hasUnsavedChanges()",
+      "v": [
+        "existence_only(true)",
+        "negative(false)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java::old::config.saveToFile()",
+      "v": [
+        "existence_only(true)",
+        "negative(false)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java::old::config.getActiveConfig().getMinPlayers()",
+      "v": [
+        "exact(nonDefault)",
+        "exact(defaultValue)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java::old::wavesSection(settingsFile(host)).getConfigurationSection(\"42\")",
+      "v": [
+        "existence_only(notnull)",
+        "negative(null)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java::old::logs.anyContains(\"unrecognized entries under waves\")",
+      "v": [
+        "existence_only(true)",
+        "negative(false)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java::old::logs.anyContains(\"unrecognized top-level keys\")",
+      "v": [
+        "existence_only(true)",
+        "negative(false)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java::old::config.getActiveConfig().getWaveTimeoutSeconds()",
+      "v": [
+        "zero_or_empty(0)",
+        "exact(121)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java::new::config.hasUnsavedChanges()",
+      "v": [
+        "existence_only(true)",
+        "negative(false)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java::new::config.saveToFile()",
+      "v": [
+        "existence_only(true)",
+        "negative(false)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java::new::config.getSettingsGate().isReadOnly()",
+      "v": [
+        "existence_only(true)",
+        "negative(false)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java::new::config.getActiveConfig().getMinPlayers()",
+      "v": [
+        "exact(nonDefault)",
+        "exact(defaultValue)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java::new::wavesSection(settingsFile(host)).getConfigurationSection(\"42\")",
+      "v": [
+        "existence_only(notnull)",
+        "negative(null)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java::new::config.loadFromFile()",
+      "v": [
+        "existence_only(true)",
+        "negative(false)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java::new::logs.anyContains(\"unrecognized entries under waves\")",
+      "v": [
+        "existence_only(true)",
+        "negative(false)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java::new::logs.anyContains(\"unrecognized top-level keys\")",
+      "v": [
+        "existence_only(true)",
+        "negative(false)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java::new::config.getActiveConfig().getWaveTimeoutSeconds()",
+      "v": [
+        "zero_or_empty(0)",
+        "exact(121)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java::old::original.isCancelled()",
+      "v": [
+        "existence_only(true)",
+        "negative(false)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java::old::field(\"scheduledPeriod\")",
+      "v": [
+        "exact(20)",
+        "negative(-1)",
+        "exact(DisplayConfig.DEFAULT_TAB_REFRESH_TICKS)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java::old::afterRestart",
+      "v": [
+        "existence_only(notnull)",
+        "negative(original)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java::old::task.isCancelled()",
+      "v": [
+        "existence_only(true)",
+        "negative(false)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java::old::field(\"refreshTask\")",
+      "v": [
+        "negative(null)",
+        "existence_only(notnull)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java::old::player.getPlayerListOrder()",
+      "v": [
+        "exact(3000)",
+        "exact(1234)",
+        "exact(4321)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java::old::size(cache(\"lastName\"))",
+      "v": [
+        "non_empty(>0)",
+        "zero_or_empty(0)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java::old::invokeStateOf(player)",
+      "v": [
+        "exact(\"LOBBY\")",
+        "exact(\"ALIVE\")",
+        "exact(\"DEAD\")",
+        "exact(\"SPECTATOR\")"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java::old::invokeContextOf(player)",
+      "v": [
+        "exact(\"LOBBY\")",
+        "exact(\"ARENA\")",
+        "exact(\"SPECTATOR\")"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java::new::original.isCancelled()",
+      "v": [
+        "existence_only(true)",
+        "negative(false)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java::new::field(\"scheduledPeriod\")",
+      "v": [
+        "exact(20)",
+        "negative(-1)",
+        "exact(DisplayConfig.DEFAULT_TAB_REFRESH_TICKS)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java::new::afterRestart",
+      "v": [
+        "existence_only(notnull)",
+        "negative(original)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java::new::task.isCancelled()",
+      "v": [
+        "existence_only(true)",
+        "negative(false)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java::new::field(\"refreshTask\")",
+      "v": [
+        "negative(null)",
+        "existence_only(notnull)",
+        "exact(before)",
+        "exact(first)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java::new::player.getPlayerListOrder()",
+      "v": [
+        "exact(3000)",
+        "exact(1234)",
+        "exact(4321)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java::new::size(cache(\"lastName\"))",
+      "v": [
+        "non_empty(>0)",
+        "zero_or_empty(0)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java::new::invokeStateOf(player)",
+      "v": [
+        "exact(\"LOBBY\")",
+        "exact(\"ALIVE\")",
+        "exact(\"DEAD\")",
+        "exact(\"SPECTATOR\")"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java::new::invokeContextOf(player)",
+      "v": [
+        "exact(\"LOBBY\")",
+        "exact(\"ARENA\")",
+        "exact(\"SPECTATOR\")"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java::old::config.getCurrencyMaterial()",
+      "v": [
+        "exact(Material.EMERALD)",
+        "exact(Material.DIAMOND)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java::old::config.getGuiSize()",
+      "v": [
+        "exact(54)",
+        "exact(size)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java::old::config.getCurrencyName()",
+      "v": [
+        "exact(\"&a能量水晶\")",
+        "negative(null)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java::old::size(config.getItems())",
+      "v": [
+        "exact(16)",
+        "exact(1)",
+        "zero_or_empty(0)",
+        "exact(5)",
+        "exact(2)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java::old::config.getItems().get(0).getIcon()",
+      "v": [
+        "exact(Material.DIAMOND)",
+        "exact(Material.BARRIER)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java::old::config.getItems().get(0).getPrice()",
+      "v": [
+        "zero_or_empty(0)",
+        "exact(1)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java::old::item.getName()",
+      "v": [
+        "negative(null)",
+        "exact(\"&bDiamond Blade\")"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java::old::item.getLore()",
+      "v": [
+        "negative(null)",
+        "exact(List.of(\"&7line one\",\"&7line two\"))"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java::new::config.getCurrencyMaterial()",
+      "v": [
+        "exact(Material.EMERALD)",
+        "exact(Material.DIAMOND)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java::new::config.getGuiSize()",
+      "v": [
+        "exact(54)",
+        "exact(size)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java::new::config.getCurrencyName()",
+      "v": [
+        "exact(\"&a能量水晶\")",
+        "negative(null)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java::new::size(config.getItems())",
+      "v": [
+        "exact(16)",
+        "exact(1)",
+        "zero_or_empty(0)",
+        "exact(5)",
+        "exact(2)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java::new::config.getItems().get(0).getIcon()",
+      "v": [
+        "exact(Material.DIAMOND)",
+        "exact(Material.BARRIER)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java::new::config.getItems().get(0).getPrice()",
+      "v": [
+        "zero_or_empty(0)",
+        "exact(1)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java::new::item.getName()",
+      "v": [
+        "negative(null)",
+        "exact(\"&bDiamond Blade\")"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java::new::item.getLore()",
+      "v": [
+        "negative(null)",
+        "exact(List.of(\"&7line one\",\"&7line two\"))"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java::new::logs.anyContains(\"configuration warning(s)\")",
+      "v": [
+        "existence_only(true)",
+        "negative(false)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopOverflowPaidDropTest.java::old::dropped.getItemStack().getType()",
+      "v": [
+        "exact(Material.BOW)",
+        "exact(Material.EMERALD)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopOverflowPaidDropTest.java::old::size(world.getEntitiesByClass(Item.class))",
+      "v": [
+        "exact(2)",
+        "zero_or_empty(0)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopOverflowPaidDropTest.java::new::dropped.getItemStack().getType()",
+      "v": [
+        "exact(Material.BOW)",
+        "exact(Material.EMERALD)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopOverflowPaidDropTest.java::new::size(world.getEntitiesByClass(Item.class))",
+      "v": [
+        "exact(2)",
+        "zero_or_empty(0)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopOverflowPartialFitTest.java::old::player.getInventory().getItem(0).getAmount()",
+      "v": [
+        "exact(64)",
+        "exact(70)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopOverflowPartialFitTest.java::old::countInBag(player,Material.ARROW)",
+      "v": [
+        "exact(64)",
+        "exact(arrow.getAmount())"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopOverflowPartialFitTest.java::old::remainder.getItemStack().getType()",
+      "v": [
+        "exact(Material.ARROW)",
+        "exact(Material.EMERALD)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopOverflowPartialFitTest.java::old::remainder.getItemStack().getAmount()",
+      "v": [
+        "exact(4)",
+        "exact(11)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopOverflowPartialFitTest.java::new::player.getInventory().getItem(0).getAmount()",
+      "v": [
+        "exact(64)",
+        "exact(70)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopOverflowPartialFitTest.java::new::countInBag(player,Material.ARROW)",
+      "v": [
+        "exact(64)",
+        "exact(arrow.getAmount())"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopOverflowPartialFitTest.java::new::remainder.getItemStack().getType()",
+      "v": [
+        "exact(Material.ARROW)",
+        "exact(Material.EMERALD)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopOverflowPartialFitTest.java::new::remainder.getItemStack().getAmount()",
+      "v": [
+        "exact(4)",
+        "exact(11)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/admin/ArenaResetNodeRollbackTest.java::new::outcome.reinstated()",
+      "v": [
+        "existence_only(true)",
+        "negative(false)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/command/HilltopCommandReloadResultTest.java::new::messages.contains(success)",
+      "v": [
+        "negative(false)",
+        "existence_only(true)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/command/HilltopCommandReloadResultTest.java::new::plugin.getConfigManager().getActiveConfig().getVictoryWaves()",
+      "v": [
+        "exact(7)",
+        "exact(33)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/AirdropMobTypeNullabilityTest.java::new::got",
+      "v": [
+        "existence_only(notnull)",
+        "negative(null)",
+        "exact(\"null\")"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/AirdropMobTypeNullabilityTest.java::new::contains",
+      "v": [
+        "negative(false)",
+        "existence_only(true)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/ConfigLoadClampTest.java::new::config.getActiveConfig().getVictoryWaves()",
+      "v": [
+        "exact(1)",
+        "exact(37)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/ConfigLoadClampTest.java::new::config.getActiveConfig().getRepairCostAmount()",
+      "v": [
+        "exact(1)",
+        "exact(5)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/ConfigLoadClampTest.java::new::config.getActiveConfig().getMonsters().get(\"explode-beetle\").getExplodeDamageMultiplier()",
+      "v": [
+        "exact(0.0±1e-9)",
+        "exact(10.0±1e-9)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/ConfigLoadClampTest.java::new::config.hasUnsavedChanges()",
+      "v": [
+        "existence_only(true)",
+        "negative(false)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/menu/MainConfigMenuReloadResultTest.java::new::admin.nextMessage()",
+      "v": [
+        "exact(\"config.menu.main.reload-failed\")",
+        "exact(null)",
+        "exact(\"config.menu.main.reloaded-msg\")"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/menu/MainConfigMenuReloadResultTest.java::new::admin.getHeardSounds().get(0).getSound()",
+      "v": [
+        "exact(Sound.BLOCK_ANVIL_LAND.getKey().getKey())",
+        "exact(Sound.BLOCK_NOTE_BLOCK_PLING.getKey().getKey())"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/config/menu/MainConfigMenuReloadResultTest.java::new::config.getActiveConfig().getVictoryWaves()",
+      "v": [
+        "exact(7)",
+        "exact(12)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/doc/CommandsDocumentAtomicWriteTest.java::new::Files.readString(target,StandardCharsets.UTF_8)",
+      "v": [
+        "exact(newDocument)",
+        "exact(oldDocument)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/doc/CommandsDocumentFallbackTest.java::new::Files.readString(target,StandardCharsets.UTF_8)",
+      "v": [
+        "exact(newDocument)",
+        "exact(oldDocument)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/mechanics/RepairSettlementTest.java::new::outcome.remainingItems()",
+      "v": [
+        "exact(9)",
+        "exact(10)",
+        "zero_or_empty(0)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/mechanics/RepairSettlementTest.java::new::outcome.restoredHealth()",
+      "v": [
+        "exact(30.0±1e-9)",
+        "exact(250.0±1e-9)",
+        "exact(0.0±1e-9)",
+        "exact(100.0±1e-9)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigAmountValidationTest.java::new::probe",
+      "v": [
+        "negative(null)",
+        "existence_only(notnull)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigAmountValidationTest.java::new::probe.getAmount()",
+      "v": [
+        "exact(1)",
+        "exact(3)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigPriceValidationTest.java::new::probe.getPrice()",
+      "v": [
+        "exact(1)",
+        "zero_or_empty(0)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigPriceValidationTest.java::new::logs.anyContains(\"missing price\")",
+      "v": [
+        "existence_only(true)",
+        "negative(false)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigQuarantineRebuildTest.java::new::shopFile.exists()",
+      "v": [
+        "negative(false)",
+        "existence_only(true)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigQuarantineRebuildTest.java::new::corruptFile.exists()",
+      "v": [
+        "existence_only(true)",
+        "negative(false)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigQuarantineRebuildTest.java::new::config.getCurrencyMaterial()",
+      "v": [
+        "exact(Material.EMERALD)",
+        "exact(Material.DIAMOND)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopConfigQuarantineRebuildTest.java::new::size(config.getItems())",
+      "v": [
+        "exact(16)",
+        "exact(1)"
+      ]
+    },
+    {
+      "k": "src/test/java/com/hilltopvillage/shop/ShopPaidDropMergeTest.java::new::isPaidDrop(plain)",
+      "v": [
+        "negative(false)",
+        "existence_only(true)"
+      ]
+    }
+  ],
+  "rejectedSamples": []
+}

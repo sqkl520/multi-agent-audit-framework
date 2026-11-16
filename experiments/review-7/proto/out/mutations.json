@@ -1,0 +1,128 @@
+[
+  {
+    "id": "M1 flip expected value in place",
+    "file": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java",
+    "shouldCatch": true,
+    "why": "assertEquals(20, field(\"scheduledPeriod\")) -> 60 in the same method",
+    "caught": true,
+    "findings": [
+      {
+        "rule": "reversed",
+        "subject": "field(\"scheduledPeriod\")",
+        "method": "cancelledHandleIsReplaced",
+        "lost": [
+          "exact(20)"
+        ],
+        "gained": [
+          "exact(60)"
+        ]
+      },
+      {
+        "rule": "reversed",
+        "subject": "field(\"scheduledPeriod\")",
+        "method": "refreshFailureIsContained",
+        "lost": [
+          "negative(-1)"
+        ],
+        "gained": [
+          "exact(20)"
+        ]
+      },
+      {
+        "rule": "reversed",
+        "subject": "field(\"refreshTask\")",
+        "method": "refreshFailureIsContained",
+        "lost": [
+          "negative(null)"
+        ],
+        "gained": [
+          "exact(before)"
+        ]
+      }
+    ],
+    "findingsNoBase": [],
+    "correct": true
+  },
+  {
+    "id": "M2 negate a boolean assertion in place",
+    "file": "src/test/java/com/hilltopvillage/ai/ExplodeBeetleGoalTest.java",
+    "shouldCatch": true,
+    "why": "assertTrue(...) -> assertFalse(...) for a subject pinned only in that method",
+    "caught": true,
+    "findings": [
+      {
+        "rule": "reversed",
+        "subject": "goal.shouldStayActive()",
+        "method": "staysActiveEvenWithoutAnyNodeTarget",
+        "lost": [
+          "existence_only(true)"
+        ],
+        "gained": [
+          "negative(false)"
+        ]
+      }
+    ],
+    "findingsNoBase": [],
+    "correct": true
+  },
+  {
+    "id": "M3 delete one assertion from a method that asserts the same subject twice",
+    "file": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java",
+    "shouldCatch": false,
+    "why": "drop one of two assertEquals(1, config.getItems().size()) in the same method",
+    "caught": false,
+    "findings": [],
+    "findingsNoBase": [],
+    "correct": true
+  },
+  {
+    "id": "M4 rename method AND flip its expected value",
+    "file": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java",
+    "shouldCatch": true,
+    "why": "the exact \"rename + reverse\" combination: method scope loses the pair, file scope sees the subject elsewhere",
+    "caught": false,
+    "findings": [],
+    "findingsNoBase": [],
+    "correct": false
+  },
+  {
+    "id": "M5 broaden equals -> assertTrue(expr)",
+    "file": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java",
+    "shouldCatch": true,
+    "why": "assertEquals(7, config.getActiveConfig().getVictoryWaves()) -> assertTrue(config.getActiveConfig().getVictoryWaves() > 0)",
+    "caught": false,
+    "findings": [],
+    "findingsNoBase": [],
+    "correct": false
+  },
+  {
+    "id": "M6 move assertion into a private helper (same file)",
+    "file": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java",
+    "shouldCatch": false,
+    "why": "the plan says moving into a helper counts as \"still there\" — verify that is true",
+    "caught": false,
+    "findings": [],
+    "findingsNoBase": [],
+    "correct": true
+  },
+  {
+    "id": "M7 drop an assertion line entirely (unique subject)",
+    "file": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java",
+    "shouldCatch": true,
+    "why": "delete one assertFalse(config.getSettingsGate().isReadOnly(), ...) where the file has both polarities",
+    "caught": false,
+    "findings": [],
+    "findingsNoBase": [],
+    "correct": false
+  },
+  {
+    "id": "M8 delete an entire @Test method",
+    "file": "src/test/java/com/hilltopvillage/ai/AirdropSpawnGoalTest.java",
+    "shouldCatch": true,
+    "why": "the most common real weakening: remove the test that would fail",
+    "caught": false,
+    "findings": [],
+    "findingsNoBase": [],
+    "correct": false
+  }
+]

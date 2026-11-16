@@ -1,0 +1,188 @@
+{
+  "addedFiles": 19,
+  "addedAsserts": 271,
+  "addedSubjects": 170,
+  "addedNoAssert": [
+    "src/test/java/com/hilltopvillage/ai/AirdropMobTypeNpeReachabilityTest.java",
+    "src/test/java/com/hilltopvillage/config/YamlNullMechanismTest.java"
+  ],
+  "overlap": [
+    {
+      "rel": "src/test/java/com/hilltopvillage/config/AirdropMobTypeNullabilityTest.java",
+      "subj": "got",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/ai/AirdropSpawnGoalTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/config/ConfigLoadClampTest.java",
+      "subj": "config.getActiveConfig().getVictoryWaves()",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/config/ConfigLoadClampTest.java",
+      "subj": "config.hasUnsavedChanges()",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/config/ConfigLoadClampTest.java",
+      "subj": "config.saveToFile()",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/config/menu/MainConfigMenuReloadResultTest.java",
+      "subj": "config.getActiveConfig().getVictoryWaves()",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/config/menu/MainConfigMenuReloadResultTest.java",
+      "subj": "config.getSettingsGate().isReadOnly()",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopConfigAmountValidationTest.java",
+      "subj": "logs.anyContains(\"invalid amount 0\")",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopConfigAmountValidationTest.java",
+      "subj": "logs.anyContains(\"invalid amount\")",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopConfigPriceValidationTest.java",
+      "subj": "logs.anyContains(\"missing price\")",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopConfigPriceValidationTest.java",
+      "subj": "logs.anyContains(\"defaulting to 1\")",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopConfigPriceValidationTest.java",
+      "subj": "logs.anyContains(\"negative price\")",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopConfigPriceValidationTest.java",
+      "subj": "logs.anyContains(\"negative price -5\")",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopConfigQuarantineRebuildTest.java",
+      "subj": "config.getCurrencyMaterial()",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopConfigQuarantineRebuildTest.java",
+      "subj": "config.getGuiSize()",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopConfigQuarantineRebuildTest.java",
+      "subj": "size(config.getItems())",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopConfigQuarantineRebuildTest.java",
+      "subj": "config.getCurrencyName()",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopConfigQuarantineRebuildTest.java",
+      "subj": "config.getItems().get(0).getPrice()",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopPaidDropMergeTest.java",
+      "subj": "arena",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/shop/ShopOverflowPaidDropTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopPaidDropMergeTest.java",
+      "subj": "arenaWorld",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/shop/ShopOverflowPaidDropTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopPaidDropMergeTest.java",
+      "subj": "size(remaining)",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/shop/ShopOverflowPaidDropTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopPaidDropMergeTest.java",
+      "subj": "remaining.get(0).getItemStack().getType()",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/shop/ShopOverflowPaidDropTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopPaidDropMergeTest.java",
+      "subj": "size(drops)",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/shop/ShopOverflowPaidDropTest.java",
+        "src/test/java/com/hilltopvillage/shop/ShopOverflowPartialFitTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopPaidDropMergeTest.java",
+      "subj": "isPaidDrop(dropped)",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/shop/ShopOverflowPaidDropTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopPaidDropMergeTest.java",
+      "subj": "size(after)",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/shop/ShopOverflowPaidDropTest.java"
+      ]
+    },
+    {
+      "rel": "src/test/java/com/hilltopvillage/shop/ShopPaidDropMergeTest.java",
+      "subj": "isPaidDrop(after.get(0))",
+      "alsoIn": [
+        "src/test/java/com/hilltopvillage/shop/ShopOverflowPaidDropTest.java"
+      ]
+    }
+  ],
+  "hideFindingsA": []
+}

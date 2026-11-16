@@ -1,0 +1,108 @@
+{
+  "calRows": [
+    {
+      "n": 1,
+      "file": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java",
+      "method": "refreshFailureIsContained",
+      "subject": "field(\"refreshTask\")",
+      "what": "assertNull(field(\"refreshTask\")) -> assertSame(before, field(\"refreshTask\"))",
+      "truth": "legit reversal (encoded premise was disproved by decompilation)",
+      "expect": "should hit reversed",
+      "r1": [],
+      "r2": [
+        {
+          "rule": "assertion_reversed_unreported",
+          "severity": "FAIL",
+          "subject": "field(\"refreshTask\")",
+          "method": "refreshFailureIsContained",
+          "old": [
+            "negative(null)"
+          ],
+          "new": [
+            "exact(before)"
+          ],
+          "lost": [
+            "negative(null)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 2,
+      "file": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java",
+      "method": "refreshFailureIsContained",
+      "subject": "field(\"scheduledPeriod\")",
+      "what": "assertEquals(-1, field(\"scheduledPeriod\")) -> assertEquals(20, ...)",
+      "truth": "legit reversal (same root cause)",
+      "expect": "should hit reversed",
+      "r1": [],
+      "r2": [
+        {
+          "rule": "assertion_reversed_unreported",
+          "severity": "FAIL",
+          "subject": "field(\"scheduledPeriod\")",
+          "method": "refreshFailureIsContained",
+          "old": [
+            "negative(-1)"
+          ],
+          "new": [
+            "exact(20)"
+          ],
+          "lost": [
+            "negative(-1)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 3,
+      "file": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java",
+      "method": "missingPriceDefaultsToOne -> missingPriceDefaultsToOneWithWarning",
+      "subject": "config.getItems().get(0).getPrice()",
+      "what": "method renamed, original assertEquals(1, ...getPrice()) kept verbatim, 3 added",
+      "truth": "FALSE POSITIVE if flagged",
+      "expect": "must NOT hit",
+      "r1": [],
+      "r2": []
+    }
+  ],
+  "r1": [],
+  "r2": [
+    {
+      "rel": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java",
+      "hasOld": true,
+      "findings": [
+        {
+          "rule": "assertion_reversed_unreported",
+          "severity": "FAIL",
+          "subject": "field(\"scheduledPeriod\")",
+          "method": "refreshFailureIsContained",
+          "old": [
+            "negative(-1)"
+          ],
+          "new": [
+            "exact(20)"
+          ],
+          "lost": [
+            "negative(-1)"
+          ]
+        },
+        {
+          "rule": "assertion_reversed_unreported",
+          "severity": "FAIL",
+          "subject": "field(\"refreshTask\")",
+          "method": "refreshFailureIsContained",
+          "old": [
+            "negative(null)"
+          ],
+          "new": [
+            "exact(before)"
+          ],
+          "lost": [
+            "negative(null)"
+          ]
+        }
+      ]
+    }
+  ]
+}
