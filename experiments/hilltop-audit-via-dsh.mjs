@@ -36,6 +36,9 @@ const TARGET = '<TARGET_REPO>';
 const DSH_BIN = '<HOME>/.dsh-win/versions/0.2.1-rc.2/node_modules/@deepseek-ai/dsh/lib/bin.js';
 
 const args = process.argv.slice(2);
+// 上游凭据从环境变量读，不写进源码：这个仓库是公开的，写进源码的 key 会随 git 历史永久留存。
+//   PROBE_KEYS='{"scnet":"sk-...","mfawa":"sk-..."}' node hilltop-audit-via-dsh.mjs
+const PROBE_KEYS = JSON.parse(process.env.PROBE_KEYS || '{}');
 const has = (f) => args.includes(f);
 const opt = (f, d = null) => {
   const i = args.indexOf(f);
@@ -43,18 +46,20 @@ const opt = (f, d = null) => {
 };
 
 // ── 探活：逐个上游发一个最小对话请求 ──
+// 凭据从环境变量读 —— 这个仓库是公开的，写进源码的 key 会随 git 历史永久留存，
+// 后续提交里删掉也没用。用 PROBE_KEYS='{"scnet":"sk-...",...}' 传入。
 const UPSTREAMS = [
   {
     name: 'scnet',
     url: 'https://api.scnet.cn/api/llm/anthropic/v1/messages',
-    key: 'sk-REDACTED-USE-ENV-VAR',
+    key: PROBE_KEYS.scnet ?? null,
     model: 'DeepSeek-V4.1-Flash-1017',
     api: 'anthropic-messages',
   },
   {
     name: 'mfawa',
     url: 'https://gs.mfawa.top/v1/messages',
-    key: 'sk-REDACTED-USE-ENV-VAR',
+    key: PROBE_KEYS.mfawa ?? null,
     model: 'deepseek-ai/deepseek-v4.1-flash',
     api: 'anthropic-messages',
   },

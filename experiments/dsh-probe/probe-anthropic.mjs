@@ -1,10 +1,16 @@
-// 探测本机可用的 Anthropic 兼容上游，判断现在能不能跑真实 agent 派发。
-// 只发一个极短的请求，避免浪费额度。
+// 探测配置好的 Anthropic 兼容上游现在能不能跑真实 agent 派发。
+// 只发一个极短的请求（max_tokens: 8），避免浪费额度。
+//
+// 凭据从环境变量读 —— 这个仓库是公开的，写进源码的 key 会随 git 历史永久留存。
+//
+//   PROBE_KEYS='{"proxy":"...","endpoint-b":"..."}' node probe-anthropic.mjs
+const KEYS = JSON.parse(process.env.PROBE_KEYS || '{}');
+
 const targets = [
-  { label: 'cc-switch proxy', url: 'http://127.0.0.1:15721/v1/messages', key: 'proxy', model: 'claude-sonnet-5-5' },
-  { label: 'mfawa', url: 'https://gs.mfawa.top/v1/messages', key: 'sk-REDACTED-USE-ENV-VAR', model: 'deepseek-ai/deepseek-v4.1-flash' },
-  { label: 'scnet', url: 'https://api.scnet.cn/api/llm/anthropic/v1/messages', key: 'sk-REDACTED-USE-ENV-VAR', model: 'DeepSeek-V4.1-Flash-1017' },
-];
+  { label: 'local proxy', url: 'http://127.0.0.1:15721/v1/messages', key: KEYS.proxy ?? 'proxy', model: 'claude-sonnet-5-5' },
+  { label: 'endpoint-b', url: 'https://llm.example.net/v1/messages', key: KEYS['endpoint-b'] ?? null, model: 'example-model' },
+  { label: 'endpoint-c', url: 'https://gateway.example.org/api/llm/anthropic/v1/messages', key: KEYS['endpoint-c'] ?? null, model: 'example-model' },
+].filter((t) => t.key);
 
 const body = (model) => JSON.stringify({
   model,

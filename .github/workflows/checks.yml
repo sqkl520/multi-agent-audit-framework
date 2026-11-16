@@ -1,0 +1,61 @@
+name: checks
+
+# 这个仓库没有 build 步骤、没有 npm install —— 只有 Node.js 和几十个自测套件。
+# 所以 CI 就是「跑一遍 check-all」。它是唯一能区分「规则存在」和「规则被强制执行」的东西。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-all:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu 是主要目标；windows 也跑，因为框架里有若干处 git 调用在不同平台上行为不同
+        # （本轮真的踩过：Windows 上每个 node 进程启动约 1.8s，把某个套件从 11s 拖到 51s）。
+        os: [ubuntu-latest, windows-latest]
+        node: ['20', '22']
+        exclude:
+          # 只在一个组合上跑两遍没有意义，用一个 linux + 一个 windows 覆盖平台差异即可
+          - os: windows-latest
+            node: '22'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Report environment
+        run: |
+          node --version
+          git --version
+
+      - name: Run all mechanical checks
+        # 无 npm install：本仓库刻意保持零运行时依赖。
+        run: node tools/check-all.mjs
+
+      - name: Rule → validator ledger (report only)
+        # 仪表，不是闸门：存量规则里绝大多数没有机器出口，这里只打印比例，不判失败。
+        # 想知道为什么它不 FAIL，读 tools/check-rule-ledger.mjs 的文件头。
+        run: node tools/check-rule-ledger.mjs
+        continue-on-error: true
+
+      - name: Secret scan (history)
+        # 本仓库发生过一次真实的密钥入库事故（四个 provider key 进了 14 个提交），
+        # 后经全历史重写清除。这道检查防止再犯：任何 sk- 形态的长串都会让它变红。
+        shell: bash
+        run: |
+          set -e
+          if git log --all -p | grep -oE '\bsk-[A-Za-z0-9_-]{20,}' | grep -v 'REDACTED'; then
+            echo "::error::发现疑似 API key 进入 git 历史"
+            exit 1
+          fi
+          echo "✓ git 历史中没有疑似密钥"

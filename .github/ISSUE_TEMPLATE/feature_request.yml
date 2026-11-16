@@ -1,0 +1,67 @@
+name: Feature request
+description: A problem the framework doesn't solve yet
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please start from the **problem**, not the feature. This project has a specific
+        failure mode it keeps repeating: a rule gets written into the Markdown, everyone
+        assumes it is handled, and nothing ever checks it. A feature proposal that says
+        "add a rule saying X" will be met with "what enforces it?".
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What goes wrong today?
+      description: |
+        Describe the failure you actually hit, not the mechanism you want added.
+        If you have a concrete example — an audit run, a diff, a report — include it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: current_workaround
+    attributes:
+      label: What do you do instead right now?
+      description: Even "nothing, I accept the risk" is a valid and useful answer — it tells us the cost.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Where would this belong?
+      description: The framework has a three-layer rule — a rule must exist in the template, the contract, AND a validator. Only the third layer has teeth.
+      options:
+        - New validator (something a script can check)
+        - Contract / schema field (something an artifact must declare)
+        - Prompt template change (something an agent must do)
+        - Documentation only
+        - Not sure — that's part of the question
+    validations:
+      required: true
+
+  - type: textarea
+    id: enforceability
+    attributes:
+      label: How could a machine check this?
+      description: |
+        If it can't be machine-checked, say so — that is a legitimate answer and the
+        repo already documents several such cases (`CAPABILITIES.md` §3). What is not
+        acceptable is proposing a rule that *looks* enforced but isn't.
+      placeholder: |
+        Either: "a validator can read X and compare it to Y"
+        Or: "it can't — it needs a human reading the diff, and here's why"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked CAPABILITIES.md §3 ("what it cannot do") — this isn't already a known limitation
+          required: true
+        - label: I have removed all credentials and private data from this request
+          required: true
