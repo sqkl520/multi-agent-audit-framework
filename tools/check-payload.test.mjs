@@ -2079,6 +2079,91 @@ console.log('case 140: files_touched 的条目没有 path → FAIL（省略不�
     JSON.stringify(r.r?.errors?.map((x) => x.rule)));
 }
 
+// ── 2026-11-17：变异检验两个字段此前零实现 ──
+// 实测依据：`grep -rn "mutation_scope" tools/*.mjs` 的唯一命中是范例生成器
+// （gen-contract-examples.mjs:192），不是校验器。于是框架给 agent 照抄的标准范例
+// 自己违反了 verify.md:184-185，却因为生成时跑了本校验器（它不看这两个字段）
+// 盖上了「已经过 check-payload.mjs 验证」的章。实战产出用的是那个写法并拿到 PASS。
+const verifyEnv = (evidence, notes = '') => ({
+  schema_version: 'output-contract-v1', agent_id: 'v1', role: 'verify',
+  status: 'SUCCESS', contract_valid: true, artifact_path: '<OUTDIR>/v.md',
+  payload: {
+    finding_id: 'F1', verdict: 'PASS', escalation_required: false,
+    evidence, notes,
+  },
+  error: null,
+});
+
+console.log('case 141: verify 缺 mutation_check → 必须报 missing_mutation_check');
+{
+  // 关键：这个字段缺失时，下面所有 scope 检查都会被静默跳过。
+  // 本仓库自己的契约范例就是这种形态。
+  const r = run(wrap(JSON.stringify(verifyEnv({
+    method: 'mutating_call_site',
+    mutation_scope: 'implementation_only',
+    observed: 'x',
+  }, '修复有效。'), null, 2)));
+  expect('报 missing_mutation_check', hasRule(r, 'missing_mutation_check'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+}
+
+console.log('case 142: mutation_check 取闭集外的值 → 必须报 invalid_mutation_check');
+{
+  const r = run(wrap(JSON.stringify(verifyEnv({
+    mutation_check: 'done', mutation_scope: 'implementation_only', observed: 'x',
+  }, 'x'), null, 2)));
+  expect('报 invalid_mutation_check', hasRule(r, 'invalid_mutation_check'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+}
+
+console.log('case 143: performed 但缺 mutation_scope → 必须报 missing_mutation_scope');
+{
+  const r = run(wrap(JSON.stringify(verifyEnv({
+    mutation_check: 'performed', observed: 'x',
+  }, 'x'), null, 2)));
+  expect('报 missing_mutation_scope', hasRule(r, 'missing_mutation_scope'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+}
+
+console.log('case 144: skipped 且 notes 没写 harness_unsupported/unsafe_revert → 必须报 invalid_mutation_skip_reason');
+{
+  const r = run(wrap(JSON.stringify(verifyEnv({
+    mutation_check: 'skipped', observed: 'x',
+  }, '时间不够所以跳过了'), null, 2)));
+  expect('报 invalid_mutation_skip_reason', hasRule(r, 'invalid_mutation_skip_reason'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+}
+
+console.log('case 145: skipped 且 notes 写明 harness_unsupported → 不得报错');
+{
+  const r = run(wrap(JSON.stringify(verifyEnv({
+    mutation_check: 'skipped', observed: 'x',
+  }, 'harness_unsupported：该 harness 无写权限，无法做变异检验'), null, 2)));
+  expect('没有 invalid_mutation_skip_reason', !hasRule(r, 'invalid_mutation_skip_reason'),
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+}
+
+console.log('case 146: implementation_only 且 notes 不解释为何未做调用点变异 → 必须 WARN');
+{
+  // 这正是本仓库契约范例的原文：陈述了结论，没回答「为什么不做调用点变异」
+  const r = run(wrap(JSON.stringify(verifyEnv({
+    mutation_check: 'performed', mutation_scope: 'implementation_only', observed: 'x',
+  }, '修复有效，且只在实现层回退即可复现，说明修复点正确。'), null, 2)));
+  expect('报 mutation_scope_weak_unexplained',
+    r.r?.warnings?.some((x) => x.rule === 'mutation_scope_weak_unexplained'),
+    JSON.stringify(r.r?.warnings?.map((x) => x.rule)));
+}
+
+console.log('case 147: implementation_only 且 notes 解释了未做调用点变异的理由 → 不得 WARN');
+{
+  const r = run(wrap(JSON.stringify(verifyEnv({
+    mutation_check: 'performed', mutation_scope: 'implementation_only', observed: 'x',
+  }, '未做调用点变异：该函数只被一处调用，且调用点无分支，回退调用点与回退实现等价。'), null, 2)));
+  expect('没有 mutation_scope_weak_unexplained',
+    !r.r?.warnings?.some((x) => x.rule === 'mutation_scope_weak_unexplained'),
+    JSON.stringify(r.r?.warnings?.map((x) => x.rule)));
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

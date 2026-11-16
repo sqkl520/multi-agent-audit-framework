@@ -1520,6 +1520,100 @@ if (envelope && envelope.role === 'verify' && envelope.payload?.evidence?.mutati
 }
 
 // ────────────────────────────────────────────────────────────────────
+// 5b · 变异检验的强制性与深度（2026-11-17 补）
+// ────────────────────────────────────────────────────────────────────
+// 契约 `output-contract/verify.md` 对这两个字段写得很硬：
+//   · `mutation_check`：除 harness_unsupported / unsafe_revert 外**强制为 performed**，
+//     skipped 时必须在 notes 写明属于哪一种，「其余理由一律不接受」
+//   · `mutation_scope`：对「函数返回值决定用户可见行为」的修复**必须为
+//     implementation_and_callsite**，否则须在 notes 说明为何未做调用点变异
+//
+// 但在补这一段之前，`grep -rn "mutation_scope" tools/*.mjs` 的**唯一命中**是
+// `gen-contract-examples.mjs:192` —— 那是范例生成器，不是校验器。
+// 后果不是假设的：`gen-contract-examples.mjs:243` 会真的把范例喂给本校验器，
+// 通过后在生成物里写「这份示例已经过 check-payload.mjs 验证，可以直接照抄再改」
+// （`:273`），而那份范例用的正是 `implementation_only`、notes 一句解释都没有。
+// **框架给 agent 照抄的标准范例自己违反正文，还盖了「已验证」的章。**
+// 实战产出 `field-test-1/.../round1-05-verify-1.md` 用的就是这个写法，
+// 拿到 verdict: PASS + escalation_required: false。
+//
+// 级别选择：`mutation_check` 缺失/非法 → ERROR（契约说「一律不接受」）；
+// scope 偏弱但没有解释 → WARNING 起步，因为它需要一个判断——是否属于
+// 「函数返回值决定用户可见行为」。把它判 ERROR 会把合法情形误拦成硬失败。
+if (envelope && envelope.role === 'verify') {
+  const ev = envelope.payload?.evidence ?? {};
+  const notes = String(envelope.payload?.notes ?? '');
+  const mc = ev.mutation_check;
+
+  // 契约 `verify.md:184` 把 `evidence.mutation_check` 的必填性写死为「是」，
+  // 只有 harness_unsupported / unsafe_revert 两种情形可以是 skipped。
+  // 所以**整个字段缺失也是违规**——而在补这一条之前，缺失会让下面所有
+  // scope 检查静默跳过：`mutation_scope` 写了什么都不再被看。
+  // 这正是本仓库反复出现的形态：判据指向的字段可以不存在，于是判据变成可选。
+  if (mc === undefined || mc === null || mc === '') {
+    errors.push({
+      field: 'payload.evidence.mutation_check', rule: 'missing_mutation_check',
+      msg: 'evidence.mutation_check 必填（performed | skipped）。'
+        + '它缺失时，下面所有关于变异深度（mutation_scope）的检查都会被静默跳过——'
+        + '「字段不存在」与「检查通过」必须可区分。',
+    });
+  } else if (!['performed', 'skipped'].includes(mc)) {
+    errors.push({
+      field: 'payload.evidence.mutation_check', rule: 'invalid_mutation_check',
+      msg: `mutation_check 只能取 performed | skipped，实际是 ${JSON.stringify(mc)}`,
+    });
+  }
+
+  if (mc === 'skipped') {
+    // 只有两种理由被接受：harness_unsupported / unsafe_revert
+    const okReason = /harness_unsupported|unsafe_revert/.test(notes);
+    if (!okReason) {
+      errors.push({
+        field: 'payload.evidence.mutation_scope', rule: 'invalid_mutation_skip_reason',
+        msg: 'mutation_check=skipped 时 notes 必须写明属于 harness_unsupported 或 unsafe_revert。'
+          + '契约原话是「其余理由一律不接受」——变异检验是唯一能证明「检查瞄准了这个缺陷」的手段，'
+          + '随便一个理由就能跳过它，等于这道验收没有。',
+      });
+    }
+  }
+
+  if (mc === 'performed') {
+    const ms = ev.mutation_scope;
+    if (ms === undefined || ms === null || ms === '') {
+      errors.push({
+        field: 'payload.evidence.mutation_scope', rule: 'missing_mutation_scope',
+        msg: 'mutation_check=performed 时 mutation_scope 必填'
+          + '（implementation_only | implementation_and_callsite）。'
+          + '只写「做了变异」不写做到哪一层，无法判断它是否能证明修复点正确。',
+      });
+    } else if (!['implementation_only', 'implementation_and_callsite'].includes(ms)) {
+      errors.push({
+        field: 'payload.evidence.mutation_scope', rule: 'invalid_mutation_scope',
+        msg: `mutation_scope="${ms}" 不在闭集内`
+          + '（implementation_only | implementation_and_callsite）',
+      });
+    } else if (ms === 'implementation_only') {
+      // 契约要求「否则须在 notes 说明为何未做调用点变异」。
+      // 只判 notes 非空是不够的：本仓库自己的范例 notes 写的是
+      // 「修复有效，且只在实现层回退即可复现，说明修复点正确。」
+      // ——它陈述了结论，完全没有回答「为什么不做调用点变异」。
+      // 所以至少要看到「调用点 / callsite」这个意图，否则视为未说明。
+      const mentionsCallsite = /调用点|callsite|call[- ]?site/.test(notes);
+      if (!mentionsCallsite) {
+        warnings.push({
+          field: 'payload.evidence.mutation_scope', rule: 'mutation_scope_weak_unexplained',
+          msg: 'mutation_scope=implementation_only，但 notes 没有说明「为何未做调用点变异」'
+            + '（需出现「调用点」/callsite）。契约对此的要求是：'
+            + '对「函数返回值决定用户可见行为」的修复必须为 implementation_and_callsite，'
+            + '否则须在 notes 说明理由。'
+            + '（本仓库自己的契约范例长期违反这一条：gen-contract-examples.mjs:192）',
+        });
+      }
+    }
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────
 // 输出
 // ────────────────────────────────────────────────────────────────────
 const result = {

@@ -189,10 +189,19 @@ const EXAMPLES = {
     escalation_required: false,
     evidence: {
       method: 'mutating_call_site',
-      mutation_scope: 'implementation_only',
-      observed: '把 renameSync 改回旧行为后，定向测试变红；恢复修复后变绿。',
+      // 2026-11-17 修：这里原本写 `implementation_only`、notes 也不解释——
+      // 而 `verify.md:184-185` 把 mutation_check 定为必填、并要求 scope 为
+      // implementation_only 时必须在 notes 说明「为何未做调用点变异」。
+      // 也就是说**框架给 agent 照抄的标准范例自己违反了契约正文**，
+      // 却因为生成时真的跑了 check-payload.mjs（而它当时不看这两个字段）
+      // 盖上了「已经过 check-payload.mjs 验证，可以直接照抄再改」的章。
+      // 实战产出 field-test-1/round1-05-verify-1.md 用的就是那个写法。
+      mutation_check: 'performed',
+      mutation_scope: 'implementation_and_callsite',
+      observed: '把 renameSync 改回旧行为后，定向测试变红；再把调用点改回旧的直接写入，同样变红；'
+        + '恢复修复后变绿。',
     },
-    notes: '修复有效，且只在实现层回退即可复现，说明修复点正确。',
+    notes: '修复有效。两层变异都能复现失败，说明修复点与调用点都参与决定用户可见行为。',
   },
 };
 
