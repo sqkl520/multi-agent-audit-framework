@@ -2143,25 +2143,29 @@ console.log('case 145: skipped 且 notes 写明 harness_unsupported → 不得�
     JSON.stringify(r.r?.errors?.map((x) => x.rule)));
 }
 
-console.log('case 146: implementation_only 且 notes 不解释为何未做调用点变异 → 必须 WARN');
+console.log('case 146: implementation_only + notes 不解释 → 不得报语义 WARN（该规则已删）');
 {
-  // 这正是本仓库契约范例的原文：陈述了结论，没回答「为什么不做调用点变异」
+  // 2026-11-17 05:00：`mutation_scope_weak_unexplained` 已删除。
+  // 删除理由：9 份真实 verify 产物 **9 份全部触发** —— 恒亮 WARN 与恒灭 WARN 等价，
+  // 都不携带信息；而且加一句「未做调用点变异」就能把它消掉（正则匹配出现，不匹配语义）。
+  // 契约那句「须在 notes 说明」仍然有效，但它靠人工评审，不由机器假装覆盖。
   const r = run(wrap(JSON.stringify(verifyEnv({
     mutation_check: 'performed', mutation_scope: 'implementation_only', observed: 'x',
   }, '修复有效，且只在实现层回退即可复现，说明修复点正确。'), null, 2)));
-  expect('报 mutation_scope_weak_unexplained',
-    r.r?.warnings?.some((x) => x.rule === 'mutation_scope_weak_unexplained'),
-    JSON.stringify(r.r?.warnings?.map((x) => x.rule)));
-}
-
-console.log('case 147: implementation_only 且 notes 解释了未做调用点变异的理由 → 不得 WARN');
-{
-  const r = run(wrap(JSON.stringify(verifyEnv({
-    mutation_check: 'performed', mutation_scope: 'implementation_only', observed: 'x',
-  }, '未做调用点变异：该函数只被一处调用，且调用点无分支，回退调用点与回退实现等价。'), null, 2)));
-  expect('没有 mutation_scope_weak_unexplained',
+  expect('没有 mutation_scope_weak_unexplained（规则已删）',
     !r.r?.warnings?.some((x) => x.rule === 'mutation_scope_weak_unexplained'),
     JSON.stringify(r.r?.warnings?.map((x) => x.rule)));
+  expect('也没有任何错误', (r.r?.errors ?? []).length === 0,
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+}
+
+console.log('case 147: implementation_and_callsite → 通过（不得因缺少说明而报错）');
+{
+  const r = run(wrap(JSON.stringify(verifyEnv({
+    mutation_check: 'performed', mutation_scope: 'implementation_and_callsite', observed: 'x',
+  }, '两层变异都能复现失败。'), null, 2)));
+  expect('没有错误', (r.r?.errors ?? []).length === 0,
+    JSON.stringify(r.r?.errors?.map((x) => x.rule)));
 }
 
 console.log(`

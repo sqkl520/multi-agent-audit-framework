@@ -40,17 +40,36 @@
  *   rule_sentence            含 (必须|不得|禁止|一律|must|shall|never) 的非代码块行
  *   has_exit                 该句 ±3 行内出现下列任一：
  *                              (a) 点名 tools/ 下的 .mjs 脚本
- *                              (b) 点名一个在 tools/*.mjs 里真实存在的 rule 名
+ *                              (b) 点名一个在 tools/*.mjs 里以 `rule: '…'` 形式**真实实现**的规则名
  *                              (c) 显式标注 DISCRETIONARY（且给出理由，见下）
  *
+ * ── 为什么 (b) 只认 `rule:` 名，不认"工具源码里出现过的任何标识符" ──
+ * 2026-11-17 红队实测：最初 (b) 写成「任何 snake_case 标识符，只要它在 tools/*.mjs 里出现过」。
+ * 那个判据是一枚橡皮图章 —— 它匹配到的是 **payload 字段名**：
+ *
+ *     13 次 residual_risks        9 次 escalation_required
+ *      6 次 output_snippet        6 次 failure_category
+ *
+ * 这些只是 schema 的键名，在工具源码里当然出现（工具要读它们）。于是一句
+ * 「`finding_id` 必须传」就被判成"已与校验器对账"，而**没有任何校验器检查那件事**。
+ *
+ * 最刺眼的是 `residual_risks`：它在整个 tools/ 里只出现在 gen-contract-examples.mjs
+ * 的一个字面量中，内容从未被任何规则读过 —— 这正是本工具要暴露的那种缺陷，
+ * 却被本工具自己判成了"有出口"。
+ *
+ * 宽松判据给出 512 个"出口"，严格判据（只认 rule: 名）是 104 个。
+ * 宽松版把出口率从约 2% 抬到 8.9%，**那个差值是假的**。
+ *
  *   discretionary_without_reason  标了 DISCRETIONARY 但同行/下一行没有 ≥10 字理由  → FAIL
- *   named_rule_not_in_tools       点名了形如 snake_case 的规则名但 tools 里搜不到     → WARN
  *
  * ── 它不检查什么 ────────────────────────────────────────────────────
  *   规则句的抽取是正则。表格里的硬判据（如 wave4-fix.md 的标记表）不含「必须」字样，
  *   会被漏掉；叙述性的「必须读懂这一节」会被误算成规则句。
  *   所以绝对数字不可当真，**趋势**才有意义。
  *   它也不判断「这条规则该不该有机器出口」——那是人的决定，本工具只负责让它无法被静默忽略。
+ *
+ *   **它只证明「有一个同名的 rule: 存在于 tools/ 里」，不证明那条规则真的对应这句规则句。**
+ *   同名不同义、规则存在但不覆盖这句话的场景，本工具看不出来。这是静态对账的固有上限。
  */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';

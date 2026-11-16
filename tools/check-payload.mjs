@@ -1593,22 +1593,19 @@ if (envelope && envelope.role === 'verify') {
           + '（implementation_only | implementation_and_callsite）',
       });
     } else if (ms === 'implementation_only') {
-      // 契约要求「否则须在 notes 说明为何未做调用点变异」。
-      // 只判 notes 非空是不够的：本仓库自己的范例 notes 写的是
-      // 「修复有效，且只在实现层回退即可复现，说明修复点正确。」
-      // ——它陈述了结论，完全没有回答「为什么不做调用点变异」。
-      // 所以至少要看到「调用点 / callsite」这个意图，否则视为未说明。
-      const mentionsCallsite = /调用点|callsite|call[- ]?site/.test(notes);
-      if (!mentionsCallsite) {
-        warnings.push({
-          field: 'payload.evidence.mutation_scope', rule: 'mutation_scope_weak_unexplained',
-          msg: 'mutation_scope=implementation_only，但 notes 没有说明「为何未做调用点变异」'
-            + '（需出现「调用点」/callsite）。契约对此的要求是：'
-            + '对「函数返回值决定用户可见行为」的修复必须为 implementation_and_callsite，'
-            + '否则须在 notes 说明理由。'
-            + '（本仓库自己的契约范例长期违反这一条：gen-contract-examples.mjs:192）',
-        });
-      }
+      // 这里原本有一条 `mutation_scope_weak_unexplained` WARN：若 notes 里没出现
+      // 「调用点 / callsite」就警告。**已删除（2026-11-17 05:00）**，理由是实测：
+      //
+      //   · 9 份真实 verify 产物 **9 份全部触发**。命中率 100% 的 WARN 与 0% 的 WARN
+      //     是同一个东西——不携带任何信息的信号。第一次有人读，第三次就没人读了。
+      //   · 它有明显的绕过：在 notes 里写一句「未做调用点变异」即可，因为正则匹配的是
+      //     **出现**，不是**语义**。
+      //   · 它想判断的那件事（是否属于「函数返回值决定用户可见行为」）需要语义理解，
+      //     属于静态检查做不到的范畴。把做不到的事做成一条恒亮的 WARN，
+      //     只会训练人忽略黄色的字。
+      //
+      // 契约里那句「必须为 implementation_and_callsite，否则须在 notes 说明」仍然有效，
+      // 但它靠**人工评审**执行——这是诚实的现状，不该伪装成机器已覆盖。
     }
   }
 }
