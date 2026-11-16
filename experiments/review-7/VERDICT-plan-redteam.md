@@ -97,8 +97,14 @@ for (const m of src.matchAll(/rule:\s*['"]([a-z0-9_]+)['"]/g)) ruleNames.add(m[1
 
 ### 2. A 的输入面必须换（否则上线即空转）
 
-`git diff --name-only HEAD` **不含 untracked 文件**。被审仓库有 **19 个 `??`**（93 个测试文件的 20%），
-而本轮修复新写的测试几乎全在里面：
+**实测（2026-11-17 05:10，被审仓库）：**
+
+```
+git diff --name-only HEAD -- 'src/test/**'   →  7 个
+git status --porcelain -- 'src/test/**'      → 26 个（M + ??）
+```
+
+**26 个被改动的测试文件里，19 个丢失了。** 而本轮修复新写的测试几乎全在里面：
 
 ```
 ??  ShopConfigCorruptFileTest.java      ← F1 的 test_path
