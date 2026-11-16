@@ -1,0 +1,197 @@
+{
+  "v1": [],
+  "v2": [
+    {
+      "file": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java",
+      "st": "M",
+      "findings": [
+        {
+          "rule": "reversed",
+          "subject": "field(\"scheduledPeriod\")",
+          "method": "refreshFailureIsContained",
+          "scope": "method",
+          "old": [
+            "negative(-1)"
+          ],
+          "new": [
+            "exact(20)"
+          ]
+        },
+        {
+          "rule": "reversed",
+          "subject": "field(\"refreshTask\")",
+          "method": "refreshFailureIsContained",
+          "scope": "method",
+          "old": [
+            "negative(null)"
+          ],
+          "new": [
+            "exact(before)"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java",
+      "st": "M",
+      "findings": [
+        {
+          "rule": "moved-or-renamed",
+          "subject": "size(config.getItems())",
+          "method": "missingIconFallsBackToBarrier",
+          "foundIn": "factoryTemplateParsesCleanly",
+          "scope": "soft"
+        },
+        {
+          "rule": "moved-or-renamed",
+          "subject": "config.getItems().get(0).getIcon()",
+          "method": "missingIconFallsBackToBarrier",
+          "foundIn": "validIconMaterialIsHonored",
+          "scope": "soft"
+        },
+        {
+          "rule": "moved-or-renamed",
+          "subject": "config.getItems().get(0).getPrice()",
+          "method": "missingPriceDefaultsToOne",
+          "foundIn": "negativePriceIsClampedToZero",
+          "scope": "soft"
+        }
+      ]
+    }
+  ],
+  "v3": [
+    {
+      "file": "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java",
+      "st": "M",
+      "findings": [
+        {
+          "rule": "reversed",
+          "subject": "config.getSettingsGate().isReadOnly()",
+          "scope": "file-multiset",
+          "old": [
+            "existence_only(true)"
+          ],
+          "new": [
+            "existence_only(true)",
+            "existence_only(true)",
+            "existence_only(true)",
+            "negative(false)"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "src/test/java/com/hilltopvillage/mechanics/TabListManagerTest.java",
+      "st": "M",
+      "findings": [
+        {
+          "rule": "reversed",
+          "subject": "field(\"scheduledPeriod\")",
+          "scope": "file-multiset",
+          "old": [
+            "exact(20)",
+            "exact(DisplayConfig.DEFAULT_TAB_REFRESH_TICKS)",
+            "negative(-1)",
+            "negative(-1)",
+            "negative(-1)"
+          ],
+          "new": [
+            "exact(20)",
+            "exact(20)",
+            "exact(DisplayConfig.DEFAULT_TAB_REFRESH_TICKS)",
+            "negative(-1)",
+            "negative(-1)"
+          ]
+        },
+        {
+          "rule": "reversed",
+          "subject": "field(\"refreshTask\")",
+          "scope": "file-multiset",
+          "old": [
+            "existence_only(notnull)",
+            "existence_only(notnull)",
+            "negative(null)",
+            "negative(null)",
+            "negative(null)",
+            "negative(null)",
+            "negative(null)",
+            "negative(null)"
+          ],
+          "new": [
+            "exact(before)",
+            "exact(first)",
+            "existence_only(notnull)",
+            "existence_only(notnull)",
+            "negative(null)",
+            "negative(null)",
+            "negative(null)",
+            "negative(null)",
+            "negative(null)"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java",
+      "st": "M",
+      "findings": [
+        {
+          "rule": "reversed",
+          "subject": "size(config.getItems())",
+          "scope": "file-multiset",
+          "old": [
+            "exact(1)",
+            "exact(1)",
+            "exact(1)",
+            "exact(1)",
+            "exact(16)",
+            "exact(2)",
+            "exact(5)",
+            "zero_or_empty(0)",
+            "zero_or_empty(0)",
+            "zero_or_empty(0)",
+            "zero_or_empty(0)",
+            "zero_or_empty(0)",
+            "zero_or_empty(0)",
+            "zero_or_empty(0)"
+          ],
+          "new": [
+            "exact(1)",
+            "exact(1)",
+            "exact(1)",
+            "exact(1)",
+            "exact(1)",
+            "exact(1)",
+            "exact(1)",
+            "exact(16)",
+            "exact(2)",
+            "exact(2)",
+            "exact(5)",
+            "zero_or_empty(0)",
+            "zero_or_empty(0)",
+            "zero_or_empty(0)",
+            "zero_or_empty(0)",
+            "zero_or_empty(0)",
+            "zero_or_empty(0)",
+            "zero_or_empty(0)",
+            "zero_or_empty(0)",
+            "zero_or_empty(0)",
+            "zero_or_empty(0)"
+          ]
+        },
+        {
+          "rule": "reversed",
+          "subject": "logs.anyContains(\"is missing icon.material\")",
+          "scope": "file-multiset",
+          "old": [
+            "existence_only(true)"
+          ],
+          "new": [
+            "existence_only(true)",
+            "existence_only(true)"
+          ]
+        }
+      ]
+    }
+  ]
+}
