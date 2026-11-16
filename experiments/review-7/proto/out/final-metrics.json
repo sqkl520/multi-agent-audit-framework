@@ -1,0 +1,347 @@
+{
+  "q1_tree": {
+    "files": 97,
+    "phys": 2636,
+    "calls": 2742,
+    "parsed": 2671,
+    "unparsable": 56,
+    "containers": 15
+  },
+  "q1_tree_unparsable_rate_pct": 2.04,
+  "q1_unparsable_forms": [
+    [
+      "assertSuspect: unknown assertion helper: assertSuspect",
+      18
+    ],
+    [
+      "assertOk: unknown assertion helper: assertOk",
+      18
+    ],
+    [
+      "assertOnlyLeftIncrements: unknown assertion helper: assertOnlyLeftIncrements",
+      5
+    ],
+    [
+      "assertFactoryOk: unknown assertion helper: assertFactoryOk",
+      5
+    ],
+    [
+      "assertNonWhitelistClicksAreInert: unknown assertion helper: assertNonWhitelistClicksAreInert",
+      4
+    ],
+    [
+      "assertWaveRowsRendered: unknown assertion helper: assertWaveRowsRendered",
+      4
+    ],
+    [
+      "fail: fail() is not a subject assertion",
+      2
+    ]
+  ],
+  "q1_shapes": {
+    "literalCoupled": 505,
+    "bareIdentifier": 248,
+    "dottedPath": 1322,
+    "interaction": 48,
+    "sizeForm": 234,
+    "compositeExpr": 271,
+    "throws": 40,
+    "nothrow": 3
+  },
+  "q1_assertions_total": 2671,
+  "q1_colliding_file_subject_pairs": 262,
+  "q1_colliding_ratio_pct": 14.8,
+  "q1_top_generic_subjects": [
+    [
+      "event.isCancelled()",
+      54
+    ],
+    [
+      "goal.shouldActivate()",
+      37
+    ],
+    [
+      "shop.countCurrency(player)",
+      26
+    ],
+    [
+      "size(config.getItems())",
+      24
+    ],
+    [
+      "got",
+      18
+    ],
+    [
+      "size(spawns)",
+      16
+    ],
+    [
+      "config.hasUnsavedChanges()",
+      16
+    ],
+    [
+      "config.saveToFile()",
+      16
+    ],
+    [
+      "system.getTotalCount()",
+      15
+    ],
+    [
+      "throws:loader::load",
+      14
+    ],
+    [
+      "size(villagers(world))",
+      12
+    ],
+    [
+      "service.canReset(\"arena1\")",
+      11
+    ]
+  ],
+  "changeset": {
+    "files": 0,
+    "modified": 0,
+    "added": 0,
+    "calls": 0,
+    "parsed": 0,
+    "unparsable": 0,
+    "sites": 0
+  },
+  "changeset_unparsable_rate_pct": 0,
+  "findings_count": 0,
+  "findings_by_rule": {},
+  "findings": [],
+  "predicate_classes": {},
+  "raw_diff": {
+    "removed": 0,
+    "added": 0
+  },
+  "q5": {
+    "addedFiles": 0,
+    "assertionsInAdded": 0,
+    "findingsOnAdded": 0
+  },
+  "q6": {
+    "rows": [
+      {
+        "id": "E1",
+        "file": "src/test/java/com/hilltopvillage/shop/ShopConfigCorruptFileTest.java",
+        "baseline": "none",
+        "what": "append a test that only pins the already-passing single truncation point",
+        "findings": [],
+        "reported": false,
+        "stats": {
+          "assertions": "16 -> 17",
+          "distinctSubjects": "12 -> 12"
+        }
+      },
+      {
+        "id": "E2",
+        "file": "src/test/java/com/hilltopvillage/shop/ShopConfigCorruptFileTest.java",
+        "baseline": "none",
+        "what": "same single-variant test but the name claims exhaustive coverage",
+        "findings": [],
+        "reported": false,
+        "stats": {
+          "assertions": "16 -> 17",
+          "distinctSubjects": "12 -> 12"
+        }
+      },
+      {
+        "id": "E3",
+        "file": "src/test/java/com/hilltopvillage/shop/ShopConfigCorruptFileTest.java",
+        "baseline": "none",
+        "what": "delete the multi-assertion truncation test, put a one-line weak one in its place",
+        "findings": [],
+        "reported": false,
+        "stats": {
+          "assertions": "16 -> 9",
+          "distinctSubjects": "12 -> 7"
+        }
+      },
+      {
+        "id": "E4",
+        "file": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java",
+        "baseline": "head",
+        "what": "replace assertEquals(1, price) with assertNotNull(item) — method name unchanged",
+        "findings": [
+          {
+            "rule": "assertion_moved_out_of_method",
+            "severity": "WARN",
+            "subject": "config.getItems().get(0).getPrice()",
+            "method": "missingPriceDefaultsToOne",
+            "old": [
+              "exact(1)"
+            ],
+            "foundIn": [
+              "negativePriceIsClampedToZero",
+              "zeroPriceIsLegalWithoutWarning"
+            ]
+          }
+        ],
+        "reported": true,
+        "stats": {
+          "assertions": "97 -> 97",
+          "distinctSubjects": "57 -> 58"
+        }
+      },
+      {
+        "id": "E5",
+        "file": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java",
+        "baseline": "head",
+        "what": "same weakening but the fixer also renamed the method (the real calibration shape)",
+        "findings": [],
+        "reported": false,
+        "stats": {
+          "assertions": "97 -> 97",
+          "distinctSubjects": "57 -> 58"
+        }
+      },
+      {
+        "id": "E6",
+        "file": "src/test/java/com/hilltopvillage/shop/ShopConfigLoaderTest.java",
+        "baseline": "round2",
+        "what": "same weakening measured against the CURRENT work tree (stable method name)",
+        "findings": [
+          {
+            "rule": "assertion_moved_out_of_method",
+            "severity": "WARN",
+            "subject": "config.getItems().get(0).getPrice()",
+            "method": "missingPriceDefaultsToOneWithWarning",
+            "old": [
+              "exact(1)"
+            ],
+            "foundIn": [
+              "negativePriceIsClampedToZero",
+              "zeroPriceIsLegalWithoutWarning"
+            ]
+          }
+        ],
+        "reported": true,
+        "stats": {
+          "assertions": "97 -> 97",
+          "distinctSubjects": "57 -> 58"
+        }
+      }
+    ],
+    "loopPinned": [
+      {
+        "file": "src/test/java/com/hilltopvillage/admin/ArenaResetNodeRollbackTest.java",
+        "hasLoop": false,
+        "loopAsserts": 0,
+        "parameterized": false
+      },
+      {
+        "file": "src/test/java/com/hilltopvillage/ai/AirdropMobTypeNpeReachabilityTest.java",
+        "hasLoop": false,
+        "loopAsserts": 0,
+        "parameterized": false
+      },
+      {
+        "file": "src/test/java/com/hilltopvillage/command/HilltopCommandReloadResultTest.java",
+        "hasLoop": false,
+        "loopAsserts": 0,
+        "parameterized": false
+      },
+      {
+        "file": "src/test/java/com/hilltopvillage/config/AirdropMobTypeNullabilityTest.java",
+        "hasLoop": true,
+        "loopAsserts": 1,
+        "parameterized": false
+      },
+      {
+        "file": "src/test/java/com/hilltopvillage/config/ConfigLoadClampTest.java",
+        "hasLoop": false,
+        "loopAsserts": 0,
+        "parameterized": false
+      },
+      {
+        "file": "src/test/java/com/hilltopvillage/config/YamlNullMechanismTest.java",
+        "hasLoop": true,
+        "loopAsserts": 0,
+        "parameterized": false
+      },
+      {
+        "file": "src/test/java/com/hilltopvillage/config/menu/MainConfigMenuReloadResultTest.java",
+        "hasLoop": false,
+        "loopAsserts": 0,
+        "parameterized": false
+      },
+      {
+        "file": "src/test/java/com/hilltopvillage/doc/CommandsDocumentAtomicWriteTest.java",
+        "hasLoop": false,
+        "loopAsserts": 0,
+        "parameterized": false
+      },
+      {
+        "file": "src/test/java/com/hilltopvillage/doc/CommandsDocumentConcurrencyTest.java",
+        "hasLoop": true,
+        "loopAsserts": 1,
+        "parameterized": false
+      },
+      {
+        "file": "src/test/java/com/hilltopvillage/doc/CommandsDocumentFallbackTest.java",
+        "hasLoop": false,
+        "loopAsserts": 0,
+        "parameterized": false
+      },
+      {
+        "file": "src/test/java/com/hilltopvillage/doc/CommandsDocumentationCleanupClaimTest.java",
+        "hasLoop": false,
+        "loopAsserts": 0,
+        "parameterized": false
+      },
+      {
+        "file": "src/test/java/com/hilltopvillage/mechanics/RepairSettlementTest.java",
+        "hasLoop": false,
+        "loopAsserts": 0,
+        "parameterized": false
+      },
+      {
+        "file": "src/test/java/com/hilltopvillage/shop/ShopConfigAmountValidationTest.java",
+        "hasLoop": false,
+        "loopAsserts": 0,
+        "parameterized": false
+      },
+      {
+        "file": "src/test/java/com/hilltopvillage/shop/ShopConfigCorruptFileTest.java",
+        "hasLoop": false,
+        "loopAsserts": 0,
+        "parameterized": false
+      },
+      {
+        "file": "src/test/java/com/hilltopvillage/shop/ShopConfigMaterialValidationTest.java",
+        "hasLoop": false,
+        "loopAsserts": 0,
+        "parameterized": false
+      },
+      {
+        "file": "src/test/java/com/hilltopvillage/shop/ShopConfigPriceValidationTest.java",
+        "hasLoop": false,
+        "loopAsserts": 0,
+        "parameterized": false
+      },
+      {
+        "file": "src/test/java/com/hilltopvillage/shop/ShopConfigQuarantineRebuildTest.java",
+        "hasLoop": false,
+        "loopAsserts": 0,
+        "parameterized": false
+      },
+      {
+        "file": "src/test/java/com/hilltopvillage/shop/ShopListenerPurchaseMessageTest.java",
+        "hasLoop": false,
+        "loopAsserts": 0,
+        "parameterized": false
+      },
+      {
+        "file": "src/test/java/com/hilltopvillage/shop/ShopPaidDropMergeTest.java",
+        "hasLoop": true,
+        "loopAsserts": 0,
+        "parameterized": false
+      }
+    ]
+  }
+}

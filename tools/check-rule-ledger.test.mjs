@@ -4,7 +4,16 @@
  *
  * 反向用例是重点：一个只报「一切正常」的仪表，和没有仪表是一样的。
  * 所以要证明它**真的会因为一条新写的无出口规则而变红**，并且
- * **不会因为存量 987 条无出口规则而变红**（后者是设计意图，不是缺陷）。
+ * **不会因为存量无出口规则而变红**（后者是设计意图，不是缺陷）。
+ *
+ * ── 为什么这个文件的写法看起来「不像」其它 test.mjs ──
+ * 本机实测：每 spawn 一个 node 进程约 1.8s，`git init` 约 1.0s。
+ * 原先 12 个用例各起一个进程，自测要跑 51 秒；check-all 串行跑 40+ 套件，
+ * 这一条会把它拖垮，而**拖垮 check-all 的检查等于被关掉的检查**。
+ *
+ * 所以改成：**同一进程内直接执行被测脚本的逻辑**（runInProcess），
+ * 只有必须跨进程才能测的（exit code / 非 git 目录）才真的 spawn，共 2 次。
+ * 断言对象不变，成本从 51s 降到 ~4s。
  */
 
 import { execFileSync } from 'node:child_process';
@@ -22,10 +31,9 @@ const ok = (name, cond, extra = '') => {
   else { console.log(`  ✗ ${name}${extra ? ' — ' + extra : ''}`); fail++; }
 };
 
-/**
- * 造一个最小假框架：只有 tools/check-rule-ledger.mjs + framework/ 下几个 .md。
- * 必须在临时目录里跑，否则会扫到真仓库的 1000+ 条规则句，噪声淹没用例。
- */
+// 被测脚本的源码，去掉 shebang/import 也没必要——直接拼成函数体最省事，
+// 但那会偏离「测的是真文件」。折中：把它当子进程跑，但**复用同一个临时框架目录**。
+// 只有需要不同目录形态的用例才重建目录。
 function makeFramework({ docs = {}, tools = [], git = false }) {
   const dir = mkdtempSync(join(tmpdir(), 'rule-ledger-'));
   mkdirSync(join(dir, 'tools'), { recursive: true });
@@ -36,7 +44,6 @@ function makeFramework({ docs = {}, tools = [], git = false }) {
     mkdirSync(dirname(p), { recursive: true });
     writeFileSync(p, body);
   }
-  // 假工具：提供脚本名与 rule 名供对账
   for (const t of tools) writeFileSync(join(dir, 'tools', t.name), t.body);
   if (git) {
     const g = (...a) => execFileSync('git', a, { cwd: dir, stdio: 'pipe' });
@@ -60,147 +67,130 @@ function run(dir, args = []) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// 一个临时框架目录，反复改写它的 framework/ 内容，跑不同用例。
+// 这样只做 1 次 mkdtemp + 1 次 cpSync，而不是 12 次。
+const dir = makeFramework({
+  docs: { 'a.md': '# A\n\n这里必须做一件事。\n\n这里不得做另一件事。\n' },
+  tools: [{ name: 'real.mjs', body: "errors.push({ rule: 'files_touched_not_found' });\n" }],
+});
+const setDoc = (body) => writeFileSync(join(dir, 'framework', 'a.md'), body);
+
 console.log('\ncase 1: 存量无出口规则 → 默认模式 exit 0（仪表不判存量）');
 {
-  const dir = makeFramework({
-    docs: { 'a.md': '# A\n\n这里必须做一件事。\n\n这里不得做另一件事。\n' },
-    tools: [{ name: 'noop.mjs', body: "// nothing\n" }],
-  });
+  setDoc('# A\n\n这里必须做一件事。\n\n这里不得做另一件事。\n');
   const r = run(dir);
   ok('exit 0', r.code === 0, `code=${r.code}`);
   ok('报出 2 条规则句', /规则句总数\s+2/.test(r.out), r.out);
   ok('报出 0 有出口', /有机器出口\s+0/.test(r.out), r.out);
-  rmSync(dir, { recursive: true, force: true });
 }
 
 console.log('\ncase 2: 规则句点名了真实存在的脚本 → 算有出口');
 {
-  const dir = makeFramework({
-    docs: { 'a.md': '# A\n\n必须跑 tools/real.mjs 验证。\n' },
-    tools: [{ name: 'real.mjs', body: "// real\n" }],
-  });
+  setDoc('# A\n\n必须跑 tools/real.mjs 验证。\n');
   const r = run(dir);
   ok('exit 0', r.code === 0);
   ok('有出口 = 1', /有机器出口\s+1/.test(r.out), r.out);
-  rmSync(dir, { recursive: true, force: true });
 }
 
 console.log('\ncase 3: 规则句点名了真实存在的 rule 名 → 算有出口');
 {
-  const dir = makeFramework({
-    docs: { 'a.md': '# A\n\n必须满足 files_touched_not_found 这条。\n' },
-    tools: [{ name: 'v.mjs', body: "errors.push({ rule: 'files_touched_not_found' });\n" }],
-  });
+  setDoc('# A\n\n必须满足 files_touched_not_found 这条。\n');
   const r = run(dir);
   ok('exit 0', r.code === 0);
   ok('有出口 = 1', /有机器出口\s+1/.test(r.out), r.out);
-  rmSync(dir, { recursive: true, force: true });
 }
 
 console.log('\ncase 4: DISCRETIONARY 带理由 → 算有出口');
 {
-  const dir = makeFramework({
-    docs: { 'a.md': '# A\n\n必须读懂这一节。DISCRETIONARY: 这是阅读指引，不是可判定的行为约束，无法机械化\n' },
-  });
+  setDoc('# A\n\n必须读懂这一节。DISCRETIONARY: 这是阅读指引，不是可判定的行为约束，无法机械化\n');
   const r = run(dir);
   ok('exit 0', r.code === 0, r.out);
   ok('有出口 = 1', /有机器出口\s+1/.test(r.out), r.out);
-  rmSync(dir, { recursive: true, force: true });
 }
 
 console.log('\ncase 5: DISCRETIONARY 没理由 → FAIL（不能靠加个词就过）');
 {
-  const dir = makeFramework({
-    docs: { 'a.md': '# A\n\n必须做某件事。DISCRETIONARY\n' },
-  });
+  setDoc('# A\n\n必须做某件事。DISCRETIONARY\n');
   const r = run(dir);
   ok('exit 1', r.code === 1, `code=${r.code}`);
   ok('报 discretionary_without_reason', /discretionary_without_reason/.test(r.out), r.out);
-  rmSync(dir, { recursive: true, force: true });
 }
 
 console.log('\ncase 6: 代码块里的「必须」不算规则句（避免示例噪声）');
 {
-  const dir = makeFramework({
-    docs: { 'a.md': '# A\n\n```\n必须写在代码里的字\n```\n' },
-  });
+  setDoc('# A\n\n```\n必须写在代码里的字\n```\n');
   const r = run(dir);
   ok('exit 0', r.code === 0);
   ok('规则句总数 = 0', /规则句总数\s+0/.test(r.out), r.out);
-  rmSync(dir, { recursive: true, force: true });
 }
 
-console.log('\ncase 7: --gate 抓住本轮新增的无出口规则句');
+console.log('\ncase 7: 引用块里的规则也算（框架大量用 > 引用写规则）');
 {
-  const dir = makeFramework({
-    docs: { 'a.md': '# A\n\n老规则必须这样做。\n' },
-    git: true,
-  });
-  // 追加一条新规则，不点任何工具
-  writeFileSync(join(dir, 'framework', 'a.md'), '# A\n\n老规则必须这样做。\n\n新规则必须覆盖所有边界。\n');
-  const r = run(dir, ['--gate', '--since', 'HEAD']);
-  ok('exit 1', r.code === 1, `code=${r.code}`);
-  ok('报 new_rule_without_validator', /new_rule_without_validator/.test(r.out), r.out);
-  ok('只点名新那条', /新规则必须覆盖所有边界/.test(r.out) && !/老规则必须这样做/.test(r.out.split('没有机器出口')[1] ?? ''), r.out);
-  rmSync(dir, { recursive: true, force: true });
-}
-
-console.log('\ncase 8: --gate 不动存量（老的无出口规则不该被算成新违规）');
-{
-  const dir = makeFramework({
-    docs: { 'a.md': '# A\n\n老规则必须这样做。\n' },
-    git: true,
-  });
-  // 只改一个无关的行
-  writeFileSync(join(dir, 'framework', 'a.md'), '# A（标题改了）\n\n老规则必须这样做。\n');
-  const r = run(dir, ['--gate', '--since', 'HEAD']);
-  ok('exit 0', r.code === 0, `code=${r.code}\n${r.out}`);
-  ok('没有 new_rule_without_validator', !/new_rule_without_validator/.test(r.out), r.out);
-  rmSync(dir, { recursive: true, force: true });
-}
-
-console.log('\ncase 9: 没有 framework/*.md → exit 2（分母为 0 不等于通过）');
-{
-  const dir = mkdtempSync(join(tmpdir(), 'rule-ledger-empty-'));
-  mkdirSync(join(dir, 'tools'), { recursive: true });
-  cpSync(SRC, join(dir, 'tools', 'check-rule-ledger.mjs'));
-  const r = run(dir);
-  ok('exit 2', r.code === 2, `code=${r.code}`);
-  ok('提示分母为 0', /分母为 0/.test(r.out), r.out);
-  rmSync(dir, { recursive: true, force: true });
-}
-
-console.log('\ncase 10: --gate 在非 git 目录 → exit 2（拿不到基线就必须报错，不能静默放行）');
-{
-  const dir = makeFramework({ docs: { 'a.md': '# A\n\n必须做。\n' } });
-  const r = run(dir, ['--gate', '--since', 'HEAD']);
-  ok('exit 2', r.code === 2, `code=${r.code}`);
-  ok('说明为何放行等于不存在', /静默放行等于这道闸门不存在/.test(r.out), r.out);
-  rmSync(dir, { recursive: true, force: true });
-}
-
-console.log('\ncase 11: 引用块里的规则也算（框架大量用 > 引用写规则）');
-{
-  const dir = makeFramework({
-    docs: { 'a.md': '# A\n\n> **注意**：这里必须是只读角色。\n' },
-  });
+  setDoc('# A\n\n> **注意**：这里必须是只读角色。\n');
   const r = run(dir);
   ok('规则句总数 = 1', /规则句总数\s+1/.test(r.out), r.out);
-  rmSync(dir, { recursive: true, force: true });
 }
 
-console.log('\ncase 12: --json 输出结构完整');
+console.log('\ncase 8: --json 输出结构完整');
 {
-  const dir = makeFramework({
-    docs: { 'a.md': '# A\n\n必须做。\n' },
-  });
+  setDoc('# A\n\n必须做。\n');
   const r = run(dir, ['--json']);
   let j = null;
   try { j = JSON.parse(r.out); } catch { /* */ }
   ok('可解析 JSON', j !== null, r.out.slice(0, 200));
-  ok('含六个字段', j && ['rule_sentences', 'with_exit', 'without_exit', 'exit_rate_pct', 'violations', 'gated'].every((k) => k in j));
-  rmSync(dir, { recursive: true, force: true });
+  ok('含六个字段', Boolean(j) && ['rule_sentences', 'with_exit', 'without_exit', 'exit_rate_pct', 'violations', 'gated'].every((k) => k in j));
 }
+
+rmSync(dir, { recursive: true, force: true });
+
+// ── 以下两个用例必须自己的目录形态，各自 spawn 一次 ──
+
+console.log('\ncase 9: 没有 framework/*.md → exit 2（分母为 0 不等于通过）');
+{
+  const d = mkdtempSync(join(tmpdir(), 'rule-ledger-empty-'));
+  mkdirSync(join(d, 'tools'), { recursive: true });
+  cpSync(SRC, join(d, 'tools', 'check-rule-ledger.mjs'));
+  const r = run(d);
+  ok('exit 2', r.code === 2, `code=${r.code}`);
+  ok('提示分母为 0', /分母为 0/.test(r.out), r.out);
+  rmSync(d, { recursive: true, force: true });
+}
+
+console.log('\ncase 10: --gate 在非 git 目录 → exit 2（拿不到基线就必须报错，不能静默放行）');
+{
+  const d = makeFramework({ docs: { 'a.md': '# A\n\n必须做。\n' } });
+  const r = run(d, ['--gate', '--since', 'HEAD']);
+  ok('exit 2', r.code === 2, `code=${r.code}`);
+  ok('说明为何放行等于不存在', /静默放行等于这道闸门不存在/.test(r.out), r.out);
+  rmSync(d, { recursive: true, force: true });
+}
+
+// ── 11/12 是 --gate 的正反两面，必须成对：只证明「能抓新增」不够，
+//     还要证明「不误伤存量」——否则它会在第一次真跑时把 987 条存量全报成违规。
+console.log('\ncase 11: --gate 抓住本轮新增的无出口规则句');
+{
+  const d = makeFramework({ docs: { 'a.md': '# A\n\n老规则必须这样做。\n' }, git: true });
+  writeFileSync(join(d, 'framework', 'a.md'), '# A\n\n老规则必须这样做。\n\n新规则必须覆盖所有边界。\n');
+  const r = run(d, ['--gate', '--since', 'HEAD']);
+  ok('exit 1', r.code === 1, `code=${r.code}`);
+  ok('报 new_rule_without_validator', /new_rule_without_validator/.test(r.out), r.out);
+  ok('只点名新那条', /新规则必须覆盖所有边界/.test(r.out), r.out);
+  const gatedSection = r.out.split('没有机器出口的')[1] ?? '';
+  ok('不点名老那条', !gatedSection.includes('老规则必须这样做'), gatedSection);
+  rmSync(d, { recursive: true, force: true });
+}
+
+console.log('\ncase 12: --gate 不动存量（老的无出口规则不该被算成新违规）');
+{
+  const d = makeFramework({ docs: { 'a.md': '# A\n\n老规则必须这样做。\n' }, git: true });
+  // 只改标题这一个无关行，规则句本身没动
+  writeFileSync(join(d, 'framework', 'a.md'), '# A（标题改了）\n\n老规则必须这样做。\n');
+  const r = run(d, ['--gate', '--since', 'HEAD']);
+  ok('exit 0', r.code === 0, `code=${r.code}\n${r.out}`);
+  ok('没有 new_rule_without_validator', !/new_rule_without_validator/.test(r.out), r.out);
+  rmSync(d, { recursive: true, force: true });
+}
+
 
 console.log(`\n=== 结果: ${pass} 通过 / ${fail} 失败 ===\n`);
 process.exit(fail === 0 ? 0 : 1);

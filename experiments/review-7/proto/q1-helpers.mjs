@@ -25,21 +25,32 @@ function walk(dir) {
 const treeRoot = path.join(import.meta.dirname, 'out', 'fulltree');
 const workFiles = walk(path.join(treeRoot, 'src_test'));
 
-function methodBodies(src) {
+// Locate a specific method definition by NAME (avoids a general regex: the general one
+// backtracks catastrophically on real files).
+function findBody(src, name) {
   const { code } = maskSource(src);
-  const out = [];
-  const re = /(?<![\w$])(?:private|protected|public|static|final|\s)*[\w$.<>\[\], ?]+\s+([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*(?:throws[^{]*)?\{/g;
+  const re = new RegExp(`(?<![\\w$])${name}\\s*\\(`, 'g');
   let m;
   while ((m = re.exec(code))) {
-    const open = code.indexOf('{', m.index + m[0].length - 1);
-    let d = 0, close = -1;
-    for (let i = open; i < code.length; i++) {
-      if (code[i] === '{') d++;
-      else if (code[i] === '}') { d--; if (!d) { close = i; break; } }
+    // find the matching ')' then expect '{' (i.e. this is a definition, not a call)
+    let d = 0, j = code.indexOf('(', m.index);
+    for (; j < code.length; j++) {
+      if (code[j] === '(') d++;
+      else if (code[j] === ')') { d--; if (!d) break; }
     }
-    if (close > 0) out.push({ name: m[1], body: src.slice(open, close + 1), start: m.index });
+    const rest = code.slice(j + 1, j + 200);
+    const brace = rest.indexOf('{');
+    if (brace < 0) continue;
+    if (!/^\s*(?:throws\s+[\w.,\s]+)?\{/.test(rest.slice(0, brace + 1))) continue;
+    const open = j + 1 + brace;
+    let dd = 0, close = -1;
+    for (let k = open; k < code.length; k++) {
+      if (code[k] === '{') dd++;
+      else if (code[k] === '}') { dd--; if (!dd) { close = k; break; } }
+    }
+    if (close > 0) return src.slice(open, close + 1);
   }
-  return out;
+  return null;
 }
 
 const rows = [];
@@ -48,12 +59,11 @@ for (const f of workFiles) {
   const p = parseAssertions(src);
   const helperNames = [...new Set(p.unparsable.map((u) => u.fn))].filter((n) => n !== 'fail');
   if (!helperNames.length) continue;
-  const bodies = methodBodies(src);
   const info = [];
   for (const h of helperNames) {
-    const def = bodies.find((b) => b.name === h);
-    if (!def) { info.push({ helper: h, definedHere: false, calls: p.unparsable.filter((u) => u.fn === h).length, assertsInside: null }); continue; }
-    const inner = parseAssertions(def.body);
+    const defBody = findBody(src, h);
+    if (!defBody) { info.push({ helper: h, definedHere: false, calls: p.unparsable.filter((u) => u.fn === h).length, assertsInside: null }); continue; }
+    const inner = parseAssertions(defBody);
     info.push({
       helper: h, definedHere: true,
       calls: p.unparsable.filter((u) => u.fn === h).length,
