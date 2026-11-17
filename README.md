@@ -1,3 +1,5 @@
+[English](README-EN.md) | 简体中文
+
 # 多 Agent 极限审计提示词框架
 
 [![checks](https://github.com/sqkl520/multi-agent-audit-framework/actions/workflows/checks.yml/badge.svg)](https://github.com/sqkl520/multi-agent-audit-framework/actions/workflows/checks.yml)
@@ -74,7 +76,7 @@ node tools/check-all.mjs
 
 ---
 
-## 快速开始
+## 接入配置
 
 ### 第一步：定三个前提
 
@@ -404,7 +406,7 @@ framework/
 | [`framework/MANUAL.md`](framework/MANUAL.md) | **完整使用说明书**——三个前置决定、三种运行方式、逐步流程、每波必检项、排错表、字段速查、常见问题 |
 | [`framework/README.md`](framework/README.md) | 总纲——每一条设计为什么这样定，以及被推翻过的中间方案 |
 | [`framework/PORTABILITY.md`](framework/PORTABILITY.md) | 跨 harness 移植——加载机制的三种落地方式、能力对照、必改三处 |
-| [`docs/reports/`](docs/reports/) | 来源对话的完整转录（含思考与检索过程） |
+| `docs/reports/`（在被审计的目标仓库里创建，本仓库不含） | 来源对话的完整转录在被审计仓库中，本仓库不附带 |
 
 ---
 

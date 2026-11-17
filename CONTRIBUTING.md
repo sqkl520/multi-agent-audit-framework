@@ -1,3 +1,5 @@
+[简体中文](CONTRIBUTING.zh-CN.md) | English
+
 # Contributing
 
 Thanks for looking. This repo is a **prompt/contract framework**, not a library —

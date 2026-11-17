@@ -1,3 +1,5 @@
+[简体中文](SECURITY.zh-CN.md) | English
+
 # Security Policy
 
 ## What this repo is (and what "a vulnerability" means here)
