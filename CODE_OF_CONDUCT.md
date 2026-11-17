@@ -1,4 +1,4 @@
-[简体中文](CODE_OF_CONDUCT.zh-CN.md) | English
+[简体中文](docs/i18n/CODE_OF_CONDUCT.zh-CN.md) | English
 
 # Code of Conduct
 

@@ -1,4 +1,4 @@
-[English](README-EN.md) | 简体中文
+[English](README.en.md) | 简体中文
 
 # 多 Agent 极限审计提示词框架
 

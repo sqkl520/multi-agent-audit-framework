@@ -1,4 +1,4 @@
-[English](CODE_OF_CONDUCT.md) | 简体中文
+[English](../../CODE_OF_CONDUCT.md) | 简体中文
 
 # 行为准则
 

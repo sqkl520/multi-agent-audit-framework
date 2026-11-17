@@ -1,4 +1,4 @@
-[简体中文](CONTRIBUTING.zh-CN.md) | English
+[简体中文](docs/i18n/CONTRIBUTING.zh-CN.md) | English
 
 # Contributing
 

@@ -1,4 +1,4 @@
-[English](CONTRIBUTING.md) | 简体中文
+[English](../../CONTRIBUTING.md) | 简体中文
 
 # 参与贡献
 
