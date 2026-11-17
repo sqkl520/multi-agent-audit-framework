@@ -26,7 +26,8 @@ try {
   process.exit(2);
 }
 
-const m = text.match(/```json\n([\s\S]*?)```/);
+// \r? 容忍 CRLF：Windows checkout（core.autocrlf=true）会把文件写成 \r\n。
+const m = text.match(/```json\r?\n([\s\S]*?)```/);
 if (!m) { console.error('✗ 找不到 json 块'); process.exit(1); }
 
 let j;

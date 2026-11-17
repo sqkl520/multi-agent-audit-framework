@@ -20,8 +20,14 @@ const ROOT = join(HERE, '..');
 
 const SRC = join(ROOT, 'framework/components/output-contract.md');
 const OUT_DIR = join(ROOT, 'framework/components/output-contract');
-const src = readFileSync(SRC, 'utf8');
-const lines = src.split(/\r?\n/);
+// 统一行尾为 LF 再切分。
+//
+// 为什么必须显式做：Windows 的 checkout 可能把母文件写成 CRLF。按 /\r?\n/ 切分时
+// 每行末尾会留下 \r，重新拼回来的产物就是 CRLF——而仓库里存的是 LF。
+// 于是「重跑生成器」与「已提交产物」逐字节不等，幂等性测试在 Windows 上失败、
+// 在 Linux 上通过。CI 实测正是如此（Linux 三个 job 全绿，Windows 唯一 job 红）。
+const src = readFileSync(SRC, 'utf8').replace(/\r\n/g, '\n');
+const lines = src.split('\n');
 
 // ── 按标题切块 ──
 function findIndex(re) {

@@ -32,7 +32,8 @@ const EXPECT = {
 const ROLE_OF = {};
 for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.md'))) {
   const txt = fs.readFileSync(path.join(dir, f), 'utf8');
-  const m = txt.match(/```json\n([\s\S]*?)\n```/);
+  // \r? 容忍 CRLF：Windows checkout 会把文件写成 \r\n，只写 \n 会静默匹配失败。
+  const m = txt.match(/```json\r?\n([\s\S]*?)\r?\n```/);
   if (m) { try { ROLE_OF[f.replace('.md', '')] = JSON.parse(m[1]).role; } catch {} }
 }
 

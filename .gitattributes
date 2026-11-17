@@ -1,0 +1,30 @@
+# 统一行尾为 LF。
+#
+# 为什么必须有这个文件：本仓库有一批 fixture 与契约文档会被**正则按行匹配**
+# （例如 `tools/fixtures/scope-probe/run.mjs` 用 /```json\n([\s\S]*?)\n```/ 抽信封）。
+# 没有这条规则时，Windows 上 `core.autocrlf=true` 的 checkout 会把文件写成 CRLF，
+# 于是 `\n` 匹配不到 `\r\n`，正则返回 null，测试在 Windows CI 上炸而 Linux 全绿。
+#
+# 这不是假设：这一轮 CI 首跑，Linux 三个 job 全绿、Windows 唯一 job 因这个原因失败。
+* text=auto eol=lf
+
+# 二进制/生成物不参与行尾转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zst binary
+*.zstd binary
+*.jar binary
+
+# 明确保持 LF 的文本类型
+*.md   text eol=lf
+*.mjs  text eol=lf
+*.js   text eol=lf
+*.json text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.sh   text eol=lf
+*.cmd  text eol=crlf
+*.java text eol=lf

@@ -23,7 +23,10 @@ const EXPECT = {
 // 04 需要现造：用 01 的产物，补上 files_scanned_without_findings
 {
   const raw = fs.readFileSync(`${D}/arts/scope-01-claim-20-quote-1.md`, 'utf8');
-  const m = raw.match(/```json\n([\s\S]*?)\n```/);
+  // \r? —— Windows checkout（core.autocrlf=true）会把文件写成 CRLF，
+  // 只匹配 \n 时这里返回 null，然后 JSON.parse(null[1]) 崩掉。
+  // CI 实测：Linux 全绿、Windows 唯一 job 因此失败。
+  const m = raw.match(/```json\r?\n([\s\S]*?)\r?\n```/);
   const e = JSON.parse(m[1]);
   e.payload.searched_scope.files_scanned_without_findings =
     e.payload.files.filter((f) => f !== 'src/queue.js');
