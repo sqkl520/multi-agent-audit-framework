@@ -20,12 +20,17 @@ jobs:
       matrix:
         # ubuntu 是主要目标；windows 也跑，因为框架里有若干处 git 调用在不同平台上行为不同
         # （本轮真的踩过：Windows 上每个 node 进程启动约 1.8s，把某个套件从 11s 拖到 51s）。
+        #
+        # 下限是 Node 22：几个会话日志校验器用到 `zlib.zstdDecompressSync`，
+        # 那是 22.15 才有的 API。最初矩阵里配了 20，结果两个平台都在**模块加载阶段**
+        # 就因具名导入不存在而全红——现在代码已改成运行时探测 + 明确报错，
+        # 但支持声明仍然从 22 起，不假装能在 20 上工作。
         os: [ubuntu-latest, windows-latest]
-        node: ['20', '22']
+        node: ['22', '24']
         exclude:
           # 只在一个组合上跑两遍没有意义，用一个 linux + 一个 windows 覆盖平台差异即可
           - os: windows-latest
-            node: '22'
+            node: '24'
     steps:
       - uses: actions/checkout@v4
 

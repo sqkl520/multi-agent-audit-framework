@@ -27,7 +27,7 @@
 
 ## 快速开始
 
-零依赖，只需要 Node.js ≥ 20。
+零依赖，只需要 Node.js ≥ 22（部分 harness 日志校验器用到 `zlib.zstdDecompressSync`，22.15 起提供）。
 
 ```bash
 git clone https://github.com/sqkl520/multi-agent-audit-framework.git

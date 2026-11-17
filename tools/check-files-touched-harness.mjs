@@ -131,7 +131,20 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve, dirname, basename, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { zstdDecompressSync } from 'node:zlib';
+import * as zlib from 'node:zlib';
+
+// zstd 解压是 Node ≥ 22.15 才有的 API。
+//
+// 用具名 import 会让整个模块在 Node 20 上**加载即失败**
+// （`SyntaxError: does not provide an export named 'zstdDecompressSync'`），
+// 而这条路径只在「有 zstd 会话日志」时才真的会用到。一个可选的解码能力
+// 不该让整个校验器在旧版本上无法启动——CI 实测 Node 20 两个平台都因此全红。
+//
+// 所以改成命名空间导入 + 运行时探测：没有这个 API 时，
+// 遇到 zstd 文件就明确报「当前 Node 不支持」，而不是让整个套件崩掉。
+const zstdDecompressSync = typeof zlib.zstdDecompressSync === 'function'
+  ? zlib.zstdDecompressSync
+  : null;
 
 // ────────────────────────────────────────────────────────────────────
 // 路径归一化 —— 本工具最容易出 bug 的地方，导出以便单独测
@@ -445,6 +458,15 @@ function main() {
   const readSessionEvents = (dir) => {
     const file = join(dir, DSH_FILE);
     if (!existsSync(file)) return null;
+    if (!zstdDecompressSync) {
+      // Node < 22.15 没有 zstd。这不是「没有日志」，是「有能力用不了」——
+      // 两者必须可区分，否则会静默降级成「这个仓库没有 harness 日志」。
+      return {
+        error: `当前 Node (${process.version}) 不支持 zstd 解压（需要 ≥ 22.15）；`
+          + `该 harness 日志存在但无法读取`,
+        file,
+      };
+    }
     let text;
     try {
       text = zstdDecompressSync(readFileSync(file)).toString('utf8');

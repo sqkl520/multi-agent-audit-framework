@@ -43,7 +43,7 @@ import {
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { zstdCompressSync } from 'node:zlib';
+import * as zlib from 'node:zlib';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TOOL = join(HERE, 'check-files-touched-harness.mjs');
@@ -104,10 +104,27 @@ function makeRoot(projectDir, sessions) {
     const sd = join(root, projectDir, s.dir);
     mkdirSync(sd, { recursive: true });
     const body = s.events.map((e) => JSON.stringify(e)).join('\n') + '\n';
-    writeFileSync(join(sd, 'session.v4.jsonl.zstd'), zstdCompressSync(Buffer.from(body, 'utf8')));
+    writeSessionLog(sd, body);
   }
   return root;
 }
+
+/**
+ * 写一份 session.v4.jsonl.zstd。
+ *
+ * zstd 压缩是 Node ≥ 22.15 才有的 API。旧 Node 上这个测试套件**不是跳过**，
+ * 而是退化成写明文——因为被测的是「路径解析与对账逻辑」，不是压缩算法本身。
+ * 被测代码在没有 zstd 时会明确报「当前 Node 不支持」，那条路径另有专门用例覆盖，
+ * 不应该让整个套件在 Node 20 上因为一个 import 就加载失败。
+ */
+const writeSessionLog = (sd, body) => {
+  const target = join(sd, 'session.v4.jsonl.zstd');
+  if (zlib.zstdCompressSync) {
+    writeFileSync(target, zlib.zstdCompressSync(Buffer.from(body, 'utf8')));
+  } else {
+    writeFileSync(target, Buffer.from(body, 'utf8'));
+  }
+};
 
 /** 一份 fix 产物的 JSON 信封（与 check-fix-artifacts-envelope 的探针口径一致）。 */
 function envelope({ agentId = 'fix-agent-1', files = [], role = 'fix', findingId = 'F1' }) {
@@ -458,7 +475,7 @@ console.log('\n=== 2b：扫描边界（同 project 多顶层 session / 子 sessi
     mkdirSync(sd, { recursive: true });
     const body = sessionEvents({ id: OTHER, writes: [{ path: `${REPO}/src/main/java/com/x/A.java` }] })
       .map((e) => JSON.stringify(e)).join('\n') + '\n';
-    writeFileSync(join(sd, 'session.v4.jsonl.zstd'), zstdCompressSync(Buffer.from(body, 'utf8')));
+    writeSessionLog(sd, body);
   }
   const art = makeArtifactDir([artifactOf({ files: ['src/main/java/com/x/A.java'] })]);
   const st = writeState(stateOf({ repo: REPO, artifactDir: art, contracts: [{ fix_agent_id: 'fix-1' }] }));

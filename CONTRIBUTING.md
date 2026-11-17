@@ -55,7 +55,9 @@ Write the *why*. A commit that says "fix bug" is not reviewable six months later
 
 ## Environment
 
-- Node.js **≥ 20** (the validators use native `fetch` and `node:test` conventions).
+- Node.js **≥ 22** (a few harness-log validators use `zlib.zstdDecompressSync`, added in 22.15).
+  On older Node those validators report "this Node cannot read zstd" instead of crashing,
+  but the supported floor is 22.
 - Git, for the checks that read `git status` / `git diff` against a target repo.
 - No package install step — this repo has **zero runtime dependencies** on purpose.
   Please do not add one for a small feature; the validators are deliberately
