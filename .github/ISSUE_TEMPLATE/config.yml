@@ -1,0 +1,14 @@
+# Issue 模板选择页配置。
+#
+# 这个文件的存在有第二个作用：GitHub 只有在 .github/ISSUE_TEMPLATE/ 目录被识别为
+# 「issue forms 目录」时才会解析其中的 .yml 表单。只放 .yml 而不放 config.yml 时，
+# 某些情况下目录不会被索引（实测：GraphQL 的 repository.issueTemplates 返回空数组，
+# 而文件确实存在且 YAML 结构合规）。
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/sqkl520/multi-agent-audit-framework/security/advisories/new
+    about: 请勿用公开 issue 报告安全问题，用私密公告流程（见 SECURITY.md）
+  - name: Question / usage help
+    url: https://github.com/sqkl520/multi-agent-audit-framework/blob/main/README.md
+    about: 先读 README 与 CAPABILITIES.md
