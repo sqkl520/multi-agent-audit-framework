@@ -539,7 +539,7 @@ if (baselineDirty === null) {
 > |---|---|---|---|
 > | `discipline_log` | 主Agent **自称**做了哪些裁量 | 主Agent | 被审查对象 |
 > | `wave2_completed` | **客观发生**了哪些派发 | 主Agent 每次派发后追加 | 审查基准 |
-> | `slices[].artifact_paths` | 磁盘上**实际存在**的产物 | 主Agent 从子Agent 返回中抄 | 第二重交叉验证 |
+> | `slices[].artifact_paths` | 磁盘上**实际存在**的产物 | 主Agent 从子 Agent 返回中抄 | 第二重交叉验证 |
 >
 > 三者两两比对才有意义：`wave2_completed` 里有的派发，`discipline_log` 里没有对应裁量记录 → 未申报裁量；`artifact_paths` 里有路径但文件不存在 → 产物造假或丢失。
 >

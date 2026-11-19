@@ -206,6 +206,19 @@ const CHECKS = [
     desc: '用例：存量不判 / 点名脚本算出口 / 点名真实 rule 名算出口 / DISCRETIONARY 须带理由 / 代码块不算 / --gate 只拦新增 / 分母为 0 须 exit2 / 非 git 须 exit2',
   },
   {
+    name: '术语一致性（同一个概念是否只有一个写法）',
+    // 与 lint-autonomy 同源：那个钉「同一条规则被复制到多处而不同步」，
+    // 这个钉「同一个概念有多个名字」。
+    // 2026-11-19 实测：「子 Agent」这个概念有 4 种写法共 328 处（子Agent 197 / 子 Agent 101 /
+    // subagent 22 / 子 agent 2）。不是文字洁癖——模板写「派子 Agent」而工具名是 `subagent`，
+    // agent 要在脑内做一次映射，没有任何地方要求它做。
+    //
+    // 注意 `accepted` 字段：英文 `subagent` 与 `Gate 0` 是合法写法（需要与工具名/
+    // 英文资料精确对齐时用），不能判违规——否则合法写法被误伤，人会直接关掉这道检查。
+    script: 'lint-terminology.test.mjs',
+    desc: '用例：规范写法通过 / 变体报错 / accepted 不误伤 / 代码块不参与 / 模板覆盖 WARN / 分母为0须exit2',
+  },
+  {
     name: '修复后快照一致性（事后补拍有没有补漏）',
     // 注册 **.test.mjs 自测**，理由同上。
     //

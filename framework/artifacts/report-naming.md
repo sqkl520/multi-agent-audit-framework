@@ -2,7 +2,7 @@
 file: artifacts/report-naming.md
 title: 报告命名与落盘（机械规则）
 group_order: 5
-loaded: 所有子Agent在写出产物文件前加载；主Agent在生成最终报告时加载
+loaded: 所有子 Agent在写出产物文件前加载；主Agent在生成最终报告时加载
 source: 续写，遵守 orchestrator/protocol.md 第 1 节的裁量分级（L0 禁止 / L1 留痕 / L2 自由）
 ---
 
@@ -64,7 +64,7 @@ round{RN}-{stage}-{discriminator}.md
 
 ## 第 3 节：最终报告的结构
 
-最终报告 `docs/reports/round{RN}/round{RN}-final-report.md`，**只做拼接和索引，不重写任何子Agent的结论**。
+最终报告 `docs/reports/round{RN}/round{RN}-final-report.md`，**只做拼接和索引，不重写任何子 Agent的结论**。
 
 固定五个部分，顺序不变：
 
@@ -222,7 +222,7 @@ node <FRAMEWORK_ROOT>/tools/check-deliverables.mjs --round-dir "docs/reports/rou
 
 | 规则 | 说明 |
 |---|---|
-| 只写自己那一个文件 | 每个子Agent只允许写入属于自己的产物文件，不得写其他的 |
+| 只写自己那一个文件 | 每个子 Agent只允许写入属于自己的产物文件，不得写其他的 |
 | 不覆盖他人文件 | 唯一允许的覆盖是"自己重派后的自我覆盖"（见第 2 节） |
 | 不写历史轮次目录 | 本轮产物只能写 `round{RN}/`，不得修改 `round{M}`（M ≠ RN） |
 | 临时文件不入库 | 复现脚本等临时产物写入系统临时目录，路径在 `payload` 中说明 |

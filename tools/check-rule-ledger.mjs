@@ -73,7 +73,7 @@
  */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, dirname, relative } from 'node:path';
+import { join, dirname, relative, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
@@ -100,7 +100,9 @@ if (ARG.gate && !ARG.since) ARG.since = 'HEAD';
 const RULE_RE = /(必须|不得|禁止|一律|\bmust\b|\bshall\b|\bnever\b)/;
 const FENCE_RE = /^\s*(```|~~~)/;
 const BLOCKQUOTE_PREFIX = /^\s*>\s?/;
-const SCRIPT_RE = /([A-Za-z0-9._-]+\.mjs)/g;
+// 匹配「文件名.扩展名」形式的引用。`.md` 也要匹配——点名框架内的产物规范文件
+// （如 `report-naming.md`）同样是一种机器出口，见 collectToolSurface 的说明。
+const SCRIPT_RE = /([A-Za-z0-9._-]+\.(?:mjs|md))/g;
 const SNAKE_RE = /\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b/g;
 const DISCRETIONARY_RE = /DISCRETIONARY/;
 const WINDOW = 3;
@@ -115,7 +117,27 @@ function collectToolSurface() {
     const src = readFileSync(join(TOOLS, f), 'utf8');
     for (const m of src.matchAll(/rule:\s*['"]([a-z0-9_]+)['"]/g)) ruleNames.add(m[1]);
   }
-  return { scripts, ruleNames };
+  // 2026-11-19 补：规则句点名**框架内的产物规范文件**也算一种出口。
+  //
+  // 实测踩到：`output-contract.md:95` 那句「`report-naming.md` 第 5 节要求…」
+  // 被判成「没有任何机器出口」——但它明确指向一个真实存在、且被 Artifact 校验器
+  // 使用（`check-deliverables.mjs` 会核对命名是否符合 report-naming 的约定）的文件。
+  //
+  // 只认 `tools/*.mjs` 会让所有「这一步由某个规范文件约束」的规则句全部落空，
+  // 那类规则占了框架里相当一部分。出口不必须是可执行脚本，也可以是**被执行的规范**。
+  const artifacts = new Set();
+  const fwRoot = join(ROOT, 'framework');
+  const walkMd = (dir) => {
+    let ents;
+    try { ents = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of ents) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) { if (e.name !== 'node_modules') walkMd(p); }
+      else if (e.name.endsWith('.md')) artifacts.add(e.name);
+    }
+  };
+  walkMd(fwRoot);
+  return { scripts, ruleNames, artifacts };
 }
 
 // ── 枚举框架文档 ──
@@ -138,7 +160,7 @@ function collectDocs() {
   return out;
 }
 
-const { scripts, ruleNames } = collectToolSurface();
+const { scripts, ruleNames, artifacts } = collectToolSurface();
 const docs = collectDocs();
 
 if (docs.length === 0) {
@@ -170,7 +192,24 @@ for (const abs of docs) {
 
     const exits = [];
     for (const m of window.matchAll(SCRIPT_RE)) {
-      if (scripts.has(m[1])) exits.push(`script:${m[1]}`);
+      if (scripts.has(m[1])) { exits.push(`script:${m[1]}`); continue; }
+      // 点名框架内的产物规范文件也算出口 —— 但要排除两种假出口：
+      //   1. **自指**：本文件提到自己的名字（`wave2-audit.md` 里写「加载 wave2-audit.md」）
+      //   2. **命令示例里的文件名**：`xargs grep foo.md` 不是在引用规范
+      // 2026-11-19 实测：不排除的话出口率会从 33% 虚高，抽 6 条全是为了假出口。
+      if (!artifacts.has(m[1])) continue;
+      if (m[1] === basename(rel)) continue;                    // 自指
+      if (/grep|xargs|find|cat |del |rm /i.test(window)) continue;  // 命令示例
+      // 必须真的是「另一份规范在约束这件事」，而不是顺手提了一句文件名。
+      // 判据：该文件名附近出现「按/依/见/遵循/符合/由…规定/参见」这类指引词。
+      // 2026-11-19 实测：不加这条时，「两遍制能保证…」（正文提到 protocol.md）
+      // 也会被算成有出口 —— 抽 5 条里有 1 条是这种假出口。
+      const near = window.slice(
+        Math.max(0, window.indexOf(m[1]) - 30),
+        window.indexOf(m[1]) + m[1].length + 40,
+      );
+      if (!/(按|依|见|遵循|符合|规定|参见|参照|依据|要求)/.test(near)) continue;
+      exits.push(`artifact:${m[1]}`);
     }
     for (const m of window.matchAll(SNAKE_RE)) {
       if (ruleNames.has(m[1])) exits.push(`rule:${m[1]}`);
@@ -232,12 +271,27 @@ if (ARG.gate) {
     process.exit(2);
   }
 
-  // 解析 diff，收集每个文件新增行的行号
+  // 解析 diff，收集每个文件新增行的行号。
+  //
+  // ★ 2026-11-19 修正：原实现把 diff 里**所有** `+` 行都当成「新增规则句」。
+  // 实测踩到：把「子Agent」批量改成「子 Agent」（纯空白调整）后，57 条规则被报成
+  // 「新增规则句没有出口」——而它们的内容一个字都没变，只是行号移动了。
+  //
+  // 一个只会惩罚排版的闸门，第二天就会被人用 --no-verify 绕过。
+  // 所以先做**内容规范化**再比对：删除行集合里已存在同样内容（忽略空白）时，
+  // 这个 `+` 行不算新增，只是移动/重排版。
+  const norm = (s) => String(s).replace(/\s+/g, '');
   const addedByFile = new Map();
+  const removedByFile = new Map();
   let curFile = null, curLine = 0;
   for (const ln of diffOut.split('\n')) {
     const fm = ln.match(/^\+\+\+ b\/(.+)$/);
-    if (fm) { curFile = fm[1]; if (!addedByFile.has(curFile)) addedByFile.set(curFile, new Set()); continue; }
+    if (fm) {
+      curFile = fm[1];
+      if (!addedByFile.has(curFile)) addedByFile.set(curFile, new Set());
+      if (!removedByFile.has(curFile)) removedByFile.set(curFile, new Set());
+      continue;
+    }
     const hm = ln.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/);
     if (hm) { curLine = Number(hm[1]); continue; }
     if (!curFile) continue;
@@ -245,7 +299,8 @@ if (ARG.gate) {
       addedByFile.get(curFile).add(curLine);
       curLine++;
     } else if (ln.startsWith('-') && !ln.startsWith('---')) {
-      // 删除行不推进新文件行号
+      // 记录被删行的内容（去掉前导 '-'），供下面的「是否为纯重排版」判定
+      removedByFile.get(curFile)?.add(norm(ln.slice(1)));
     } else {
       curLine++;
     }
@@ -254,8 +309,13 @@ if (ARG.gate) {
   for (const f of files) {
     const added = addedByFile.get(f.path);
     if (!added || added.size === 0) continue;
+    const removed = removedByFile.get(f.path) ?? new Set();
     for (const r of f.rows) {
       if (!added.has(r.line)) continue;
+      // 纯重排版不算新增：内容（忽略空白）在删除集合里已有同样的一行。
+      // 这一条让「批量改空格 / 调整缩进 / 换行移动」不会触发闸门，
+      // 同时真正的规则新增仍然会被拦（新写的句子不可能出现在删除集合里）。
+      if (removed.has(norm(r.text))) continue;
       if (!r.hasExit) {
         gated.push({
           rule: 'new_rule_without_validator',

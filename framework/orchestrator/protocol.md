@@ -606,8 +606,8 @@ tool result:  "started subagent 82757119-cfd1-45d1-8807-d5f82d3f52e6"
 
 | kind | 含义 |
 |---|---|
-| `parent_missed_child` | 子 agent 有产出，父 session 里没有对应 settle 注入 |
-| `child_no_output` | 子 agent 开了 turn 但零 assistant 文本 |
+| `parent_missed_child` | 子 Agent 有产出，父 session 里没有对应 settle 注入 |
+| `child_no_output` | 子 Agent 开了 turn 但零 assistant 文本 |
 | `turn_without_output` | 任何 session 开了 turn 却零 assistant 消息（附最后 `finish.reason` 与重试次数） |
 | `orphan_child` | 子 session 声明的 `parentSession` 在本目录找不到 |
 
@@ -720,7 +720,7 @@ Agent 循环的退出条件是机械的——**本轮回复里没有 tool call �
 
 原设计写的是**绝对禁令**：
 
-> **你不得使用任何代码读取、文件写入、搜索或分析工具。你唯一允许执行的动作是 `spawn_agent` 和 `read_agent_result`。任何需要"看一眼"才能做的决定，都必须转化为一个子Agent任务。**
+> **你不得使用任何代码读取、文件写入、搜索或分析工具。你唯一允许执行的动作是 `spawn_agent` 和 `read_agent_result`。任何需要"看一眼"才能做的决定，都必须转化为一个子 Agent任务。**
 
 **这条路线的收益是真实的**：主 Agent 的上下文里永远只有结构化任务描述和结果摘要，不会被代码和报告全文污染。这个第一性原理**保留**。
 
@@ -1055,7 +1055,7 @@ ledger:
   unverified: [string]               # 侦察返回的UNKNOWN集合
 ```
 
-主Agent**只读这个账本做调度决策**，不读任何子Agent的正文报告。子Agent的产出文件路径写入 `artifact_path`，主Agent在最终汇总时只做路径拼接，不重写内容。
+主Agent**只读这个账本做调度决策**，不读任何子 Agent的正文报告。子 Agent的产出文件路径写入 `artifact_path`，主Agent在最终汇总时只做路径拼接，不重写内容。
 
 ## 3. 波次门控：每一波的闭合条件必须是确定性的
 
@@ -1141,7 +1141,7 @@ Workflow Wave Dispatch 的纪律是：波次之间不是并行扇出，而是**�
 
 ## 4. 重派与失败处理：区分“可重跑”和“不可重跑”
 
-搜索到的重试实践给出了一个关键区分：**只读的评审者、研究者、报告撰写者可以安全地从零重跑**；有副作用的子Agent（写代码、部署）不应默认无限重跑，因为失败尝试可能留下部分产物。`SpawnWithRetry` 的默认最大重试次数是 3，且每次重跑获得**全新的超时预算**，但消息投递在重试边界上保持 at-most-once[^ref7]。
+搜索到的重试实践给出了一个关键区分：**只读的评审者、研究者、报告撰写者可以安全地从零重跑**；有副作用的子 Agent（写代码、部署）不应默认无限重跑，因为失败尝试可能留下部分产物。`SpawnWithRetry` 的默认最大重试次数是 3，且每次重跑获得**全新的超时预算**，但消息投递在重试边界上保持 at-most-once[^ref7]。
 
 ### 4.0 「全量重跑」为什么不成立（2026-11-09 新增，优先级高于本节其余规则）
 
@@ -1291,7 +1291,7 @@ Saalis 的仲裁层设计提供了可借用的策略：当多个Agent产出冲�
 
 `protocol.md` 中的冲突规则：
 
-1. 主Agent检测到两个子Agent对**同一 `issue_id`** 给出互斥结论（一个判可触发，一个判不可触发）时，在 `conflicts` 中创建一条 `PENDING` 记录，**不自行选择任何一方**。
+1. 主Agent检测到两个子 Agent对**同一 `issue_id`** 给出互斥结论（一个判可触发，一个判不可触发）时，在 `conflicts` 中创建一条 `PENDING` 记录，**不自行选择任何一方**。
 2. 主Agent派一个**新的 Arbiter 实例**（不携带先前波次的倾向），输入是双方的证据包和 `issue_id`，输出是 `UPHELD` / `DOWNGRADED` / `REVOKED` 三选一，并附理由。
 3. 主Agent将裁决结果写回 `conflicts.resolution`，然后按裁决结果决定是否进入修复波。
 4. **主Agent不得以“综合一下”或“取中间值”的方式消除冲突**；如果 Arbiter 返回 `ARBITRATING`（证据不足），主Agent应派发一个**证据补充Agent**，而不是自己判断。

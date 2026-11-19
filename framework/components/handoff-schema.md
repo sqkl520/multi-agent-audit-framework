@@ -7,7 +7,7 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 9 轮)
 ---
 
 # components/handoff-schema.md
-`components/handoff-schema.md` 是主Agent在波次之间传递状态的**唯一序列化格式**。它的设计原则可以概括为一条硬规则：**Resume Packet 携带指针、摘要和裁决，不携带任何子Agent的原始正文**。搜索到的材料反复验证了这一点——`Delivery Packet` 明确指出交付包“携带指针、摘要和裁决，而不是专家内容本身”，当字段与专家产物可能说同一件事时，包内只放路径加一行摘要，详细内容留在产物里[^ref0]。`Handoffs and Coordination Contracts` 同样强调“传递结论，不传递记录”，因为接收方需要的是“做了什么、发现了什么、需要注意什么、什么未解决”，而不是原始探索日志[^ref1]。
+`components/handoff-schema.md` 是主Agent在波次之间传递状态的**唯一序列化格式**。它的设计原则可以概括为一条硬规则：**Resume Packet 携带指针、摘要和裁决，不携带任何子 Agent的原始正文**。搜索到的材料反复验证了这一点——`Delivery Packet` 明确指出交付包“携带指针、摘要和裁决，而不是专家内容本身”，当字段与专家产物可能说同一件事时，包内只放路径加一行摘要，详细内容留在产物里[^ref0]。`Handoffs and Coordination Contracts` 同样强调“传递结论，不传递记录”，因为接收方需要的是“做了什么、发现了什么、需要注意什么、什么未解决”，而不是原始探索日志[^ref1]。
 
 同时，`multi-agent-patterns` 给出了一个必须吸收的工程约束：**把每一次交接当作版本化 API 来处理，带 JSON Schema 校验和 trace_id 跨Agent传播**，因为“大多数Agent失败发生在交接处，而不是单个Agent内部”。`statebus` 的实践进一步证明了版本历史和可重放性对多Agent工作流的价值：每次写入都带 schema 版本，handoff 可回放，读者永远知道手里拿的是哪个形状的数据[^ref3]。
 
@@ -16,15 +16,15 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 9 轮)
 
 > handoff-schema.md
 > 主Agent在每个波次闭合时加载，用于构造 Resume Packet。
-> 本文件定义的是“波次之间的传递格式”，不是子Agent的返回格式。
-> 子Agent的返回格式由 output-contract.md 定义；本文件只消费已验证的 output-contract 结果。
-> 硬规则：Resume Packet 不得包含任何子Agent的原始正文或完整 findings 数组。
+> 本文件定义的是“波次之间的传递格式”，不是子 Agent的返回格式。
+> 子 Agent的返回格式由 output-contract.md 定义；本文件只消费已验证的 output-contract 结果。
+> 硬规则：Resume Packet 不得包含任何子 Agent的原始正文或完整 findings 数组。
 > 只允许包含：指针（artifact_path）、摘要（summary）、裁决（verdict）、以及未闭合项的结构化表示。
 > 违反此规则的 Resume Packet 视为 CONTRACT_VIOLATION，不得进入下一波。
 
 ## 第 1 节：Resume Packet 的顶层结构
 
-Resume Packet 是一个**不可变快照**，在每个波次闭合时由主Agent生成，写入账本。下一波的主Agent调度只读取这个包，不回头读上一波的子Agent产出正文。
+Resume Packet 是一个**不可变快照**，在每个波次闭合时由主Agent生成，写入账本。下一波的主Agent调度只读取这个包，不回头读上一波的子 Agent产出正文。
 
 搜索到的 `Orchestrator Handoff JSON Schema` 给出了一个值得直接借用的约束：handoff 文件按 `handoffs/phase-N-handoff-TIMESTAMP.md` 命名，`summary` 字段有约 100 token 的预算，强制做“2–4 句话的浓缩”。这个 token 预算的设计意图不是限制，而是**防止 Resume Packet 退化成第二份报告**。
 
@@ -53,12 +53,12 @@ Resume Packet 是一个**不可变快照**，在每个波次闭合时由主Agent
 | `schema_version` | string | 精确等于 `"handoff-schema-v1"`。版本不匹配时，主Agent不得尝试兼容，必须标记 `PERMANENT_FAILURE` 并写入 `unverified` | 拒绝整个包 |
 | `round_id` | string | 由轮次探测Agent返回的 `RN`，例如 `"round30"` | 拒绝整个包 |
 | `wave_id` | string | 当前波次标识，固定枚举 | 拒绝整个包 |
-| `wave_status` | enum | `CLOSED` = 该波所有子Agent达到终态且门控通过、无未决阻塞项；`PARTIALLY_CLOSED` = 该波已尽力推进并可以收尾，但存在无法由自动流程消解的遗留（部分切片 `DEFERRED` / `PERMANENT_FAILURE`，或剩余阻塞项**全部**属于 `HUMAN_DECISION_REQUIRED` / `REVOKED` 等人工阻塞类）；`FAILED` = 波次级失败（例如侦察返回空切片、关键模板全部 `CONTRACT_VIOLATION`） | 拒绝整个包 |
-| `trace_id` | string | 全轮次唯一，必须由主Agent在波次一启动时生成并**原样注入每个子Agent的派发参数**，子Agent在返回中回显 | 拒绝整个包；如果某子Agent返回的 `trace_id` 与派发时不一致，该子Agent的返回作废 |
+| `wave_status` | enum | `CLOSED` = 该波所有子 Agent达到终态且门控通过、无未决阻塞项；`PARTIALLY_CLOSED` = 该波已尽力推进并可以收尾，但存在无法由自动流程消解的遗留（部分切片 `DEFERRED` / `PERMANENT_FAILURE`，或剩余阻塞项**全部**属于 `HUMAN_DECISION_REQUIRED` / `REVOKED` 等人工阻塞类）；`FAILED` = 波次级失败（例如侦察返回空切片、关键模板全部 `CONTRACT_VIOLATION`） | 拒绝整个包 |
+| `trace_id` | string | 全轮次唯一，必须由主Agent在波次一启动时生成并**原样注入每个子 Agent的派发参数**，子 Agent在返回中回显 | 拒绝整个包；如果某子 Agent返回的 `trace_id` 与派发时不一致，该子 Agent的返回作废 |
 | `generated_at` | ISO8601 | 包生成时间 | 允许缺失，主Agent补当前时间 |
 | `packet_digest` | string | 包内容的 SHA256，用于完整性校验和去重；下一波主Agent在加载前验证 digest，不一致则拒绝 | 允许缺失；如果存在但不匹配，拒绝整个包 |
 
-**`trace_id` 的传播规则**（直接来自 `multi-agent-patterns` 的 handoff 标准）：`trace_id` 在派发子Agent时写入 `task_payload`，子Agent在 `output-contract` 的 `agent_id` 之外**额外回显 `trace_id`**。主Agent在验证子Agent返回时，`trace_id` 不匹配即判定 `CONTRACT_VIOLATION`。这确保 Resume Packet 里的每一条记录都可以追溯到具体的子Agent实例。
+**`trace_id` 的传播规则**（直接来自 `multi-agent-patterns` 的 handoff 标准）：`trace_id` 在派发子 Agent时写入 `task_payload`，子 Agent在 `output-contract` 的 `agent_id` 之外**额外回显 `trace_id`**。主Agent在验证子 Agent返回时，`trace_id` 不匹配即判定 `CONTRACT_VIOLATION`。这确保 Resume Packet 里的每一条记录都可以追溯到具体的子 Agent实例。
 
 
 ## 第 2 节：`closed_waves`——已闭合波次的摘要
@@ -85,7 +85,7 @@ Resume Packet 是一个**不可变快照**，在每个波次闭合时由主Agent
 
 **`summary` 的硬约束**：不超过 2–4 句话，且**只允许陈述结构化事实**（数量、状态、路径），不允许嵌入任何代码引用、缺陷描述或推断性语言。这借鉴了 `Orchestrator Handoff JSON Schema` 的 `summary` token 预算设计：约 100 token，强制浓缩。
 
-**`artifact_paths` 的语义**：指向该波次子Agent产出的原始文件（`docs/reports/round{RN}-...md`）。Resume Packet 不包含这些文件的内容，只包含路径。下一波如果需要引用某个具体发现，它读的是 `artifact_paths` 指向的文件，而不是 Resume Packet 里的摘要。这是 `Delivery Packet` “指针而非重复”原则的直接应用[^ref7]。
+**`artifact_paths` 的语义**：指向该波次子 Agent产出的原始文件（`docs/reports/round{RN}-...md`）。Resume Packet 不包含这些文件的内容，只包含路径。下一波如果需要引用某个具体发现，它读的是 `artifact_paths` 指向的文件，而不是 Resume Packet 里的摘要。这是 `Delivery Packet` “指针而非重复”原则的直接应用[^ref7]。
 
 
 ## 第 3 节：`open_items`——未闭合项的结构化表示
@@ -119,7 +119,7 @@ Resume Packet 是一个**不可变快照**，在每个波次闭合时由主Agent
 | `UNRESOLVED_FINDING` | wave-2 / wave-5 | 有证据的发现，尚未经过锐评波裁决；或验收波发现的、本轮不追的新问题 | 进入锐评波，由 Skeptic/Arbiter 处理 |
 | `EVIDENCE_GAP` | wave-3 / wave-5 | 某条发现缺少关键证据 | 派发证据补采Agent，**不是**由主Agent判断“够不够” |
 | `DEFERRED_SLICE` | wave-1 / wave-2 | 因 `admission_ceiling` 触达而未派发的切片 | 在下一轮或人工介入后处理；最终报告必须标注“覆盖不完整” |
-| `PERMANENT_FAILURE` | 任意波次 | 子Agent连续重试仍失败 | 写入 `unverified`，最终报告显式暴露“未能覆盖” |
+| `PERMANENT_FAILURE` | 任意波次 | 子 Agent连续重试仍失败 | 写入 `unverified`，最终报告显式暴露“未能覆盖” |
 | `UNVERIFIED_TARGET` | wave-1 | 侦察Agent标记为 `unverified` 的路径/模块 | 作为追加切片进入下一轮发现波，或在最终报告中标注 |
 | `COVERAGE_GAP` | wave-3 | Devil's Advocate 指出的覆盖缺口（切片未被审计、文件未被读取、维度被省略、入口未映射） | 由主Agent决定是否在后续轮次补派审计；**不由 Devil's Advocate 自行补审** |
 | `AFFECTED_BY_FIX` | wave-4 | 修复Agent声明“可能受本次修改影响”的其他已发现缺陷 | 转验收波复核，`next_action: REASSIGN_TO_VERIFY` |
@@ -279,7 +279,7 @@ Resume Packet 在每个波次闭合时生成，**不跨波次修改**。每一�
 | wave-2 → wave-3 | `open_items`（`UNRESOLVED_FINDING`、`EVIDENCE_GAP`）、`conflicts` | 主Agent不得自行裁决冲突；`conflicts.resolution` 只能由 Arbiter 填充 |
 | wave-3 → wave-4 | `conflicts`（`UPHELD`）、`open_items`（`EVIDENCE_GAP` 已补采） | 只对 `UPHELD` 的发现派发修复Agent；不得派发 `DOWNGRADED` 或 `REVOKED` 的 |
 | wave-4 → wave-5 | `closed_waves`（wave-4 的 `affected_issues`）、`open_items`（修复未验证的） | 验收Agent不得读取修复Agent的说明正文；只从 `artifact_ref` 和原始验收标准出发 |
-| wave-5 → 最终报告 | `deferred_items`、`open_items`（`PERMANENT_FAILURE`）、`covered_modules` | 最终报告只拼接路径和摘要，不重写任何子Agent结论 |
+| wave-5 → 最终报告 | `deferred_items`、`open_items`（`PERMANENT_FAILURE`）、`covered_modules` | 最终报告只拼接路径和摘要，不重写任何子 Agent结论 |
 
 
 ## 第 9 节：完整性校验与重放
@@ -303,7 +303,7 @@ Resume Packet 在每个波次闭合时生成，**不跨波次修改**。每一�
 
 | | `output-contract.md` | `handoff-schema.md` |
 |---|---|---|
-| 作用对象 | **单个子Agent的返回** | **波次之间的状态传递** |
+| 作用对象 | **单个子 Agent的返回** | **波次之间的状态传递** |
 | 生命周期 | 一次请求-响应 | 跨波次持久化 |
 | 内容粒度 | 完整 `payload`，含 `findings` 数组和证据 | 指针、摘要、裁决、未闭合项的结构化引用 |
 | 验证者 | 主Agent在接收时逐条校验 | 主Agent在波次闭合时生成，下一波加载时校验 |

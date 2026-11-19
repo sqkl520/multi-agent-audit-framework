@@ -192,5 +192,31 @@ console.log('\ncase 12: --gate 不动存量（老的无出口规则不该被算�
 }
 
 
+console.log('\ncase 13: 纯重排版（只改空白）不得算作新增规则句');
+{
+  // 2026-11-19 实测场景：把「子Agent」批量改成「子 Agent」后，
+  // 57 条规则被误报成「新增规则句没有出口」——内容一个字都没变，只是行号移动了。
+  // 一个只会惩罚排版的闸门，第二天就会被人用 --no-verify 绕过。
+  const d = makeFramework({ docs: { 'a.md': '# A\n\n所有子Agent必须这样做。\n' }, git: true });
+  writeFileSync(join(d, 'framework', 'a.md'), '# A\n\n所有子 Agent 必须这样做。\n');
+  const r = run(d, ['--gate', '--since', 'HEAD']);
+  // 注意：这条「子Agent」→「子 Agent」内容规范化后仍不同（多了空格），
+  // 所以 norm() 去空白后应相等 —— 这正是本条要钉住的行为。
+  ok('exit 0（纯排版改动不算新规则）', r.code === 0, `code=${r.code}\n${r.out}`);
+  ok('没有 new_rule_without_validator', !/new_rule_without_validator/.test(r.out), r.out);
+  rmSync(d, { recursive: true, force: true });
+}
+
+console.log('\ncase 14: 真正新增的无出口规则句仍必须被抓（不能因为 case 13 的放宽而漏掉）');
+{
+  const d = makeFramework({ docs: { 'a.md': '# A\n\n老规则必须这样做。\n' }, git: true });
+  // 追加一条全新的规则句，内容在删除集合里不存在
+  writeFileSync(join(d, 'framework', 'a.md'), '# A\n\n老规则必须这样做。\n\n新规则必须覆盖全部边界。\n');
+  const r = run(d, ['--gate', '--since', 'HEAD']);
+  ok('exit 1', r.code === 1, `code=${r.code}`);
+  ok('抓到新那条', /新规则必须覆盖全部边界/.test(r.out), r.out);
+  rmSync(d, { recursive: true, force: true });
+}
+
 console.log(`\n=== 结果: ${pass} 通过 / ${fail} 失败 ===\n`);
 process.exit(fail === 0 ? 0 : 1);

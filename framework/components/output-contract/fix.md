@@ -8,7 +8,7 @@
 file: components/output-contract/fix.md
 title: 统一返回契约
 group_order: 2
-loaded: 所有子Agent在返回任何结果前加载
+loaded: 所有子 Agent在返回任何结果前加载
 source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 8 轮)
 ---
 
@@ -17,7 +17,7 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 8 轮)
 ## 文件头部：强制加载与优先级
 
 > fix.md（output-contract 的 fix 角色切片）
-> 所有子Agent在返回任何结果前加载。
+> 所有子 Agent在返回任何结果前加载。
 > 主Agent只消费符合本契约的结构化输出；不符合的输出一律判定为 CONTRACT_VIOLATION。
 > 本文件与 evidence-policy.md 的字段约定冲突时，以 evidence-policy.md 的证据结构为准；
 > 本文件负责把 evidence-policy 的状态和结构纳入统一信封。
@@ -74,7 +74,7 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role <你�
 
 ## 第 1 节：统一返回信封（Envelope）
 
-所有子Agent，无论角色，必须返回**同一顶层信封**。角色差异只体现在 `payload` 字段的内部结构上。这借鉴了 `agent-contracts` 的 `allOf` 组合模式：公共字段共享，角色特定内容通过 `payload` 承载[^ref4]。
+所有子 Agent，无论角色，必须返回**同一顶层信封**。角色差异只体现在 `payload` 字段的内部结构上。这借鉴了 `agent-contracts` 的 `allOf` 组合模式：公共字段共享，角色特定内容通过 `payload` 承载[^ref4]。
 
 #### 顶层字段（必填，缺一即 `CONTRACT_VIOLATION`）
 
@@ -98,7 +98,7 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role <你�
 | `status == SUCCESS` 但 `artifact_path` 为 `null`、空串，或指向的文件不存在 | **`CONTRACT_VIOLATION`**，`violated_fields: ["artifact_path"]` |
 | `status != SUCCESS` 时 `artifact_path` 可为 `null` | 合法（失败时可能没有产物） |
 
-> **为什么它必须进契约而不是留在模板里**：`report-naming.md` 第 5 节要求「每个子Agent只允许写入属于自己的产物文件」，但**没有任何角色被授予 `Write`**，且这份文件的加载时机写的是「子 Agent 在写出产物文件**前**加载」——一个还没被授权写产物的 Agent，不会被触发去加载「怎么写产物」的规则。**这是一个自指的空转**：规则假设产物已经存在，产物的存在又依赖规则先被加载。
+> **为什么它必须进契约而不是留在模板里**：`report-naming.md` 第 5 节要求「每个子 Agent只允许写入属于自己的产物文件」，但**没有任何角色被授予 `Write`**，且这份文件的加载时机写的是「子 Agent 在写出产物文件**前**加载」——一个还没被授权写产物的 Agent，不会被触发去加载「怎么写产物」的规则。**这是一个自指的空转**：规则假设产物已经存在，产物的存在又依赖规则先被加载。
 >
 > round31 的实测结果正是这个空转的产物：`83` 条待修复发现、`1` 条实际修复、`IN_PROGRESS`、**无最终报告**。此前把它归因为「修复波太脆弱」，但它还有一条独立的失效路径——**上游产物从未真正落盘**，主Agent 手里的 `artifact_ref` 全是悬空路径，拼不出报告。
 >
@@ -109,24 +109,24 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role <你�
 | 字段 | 类型 | 约束 |
 |---|---|---|
 | `schema_version` | string | 必须精确匹配 `"output-contract-v1"`。版本不匹配直接拒绝，不尝试向后兼容。 |
-| `agent_id` | string | 全局唯一，由主Agent在派发时分配，子Agent原样回显。 |
+| `agent_id` | string | 全局唯一，由主Agent在派发时分配，子 Agent原样回显。 |
 | `role` | enum | 必须是**六个**角色之一（`recon` / `sweep` / `audit` / `critique` / `fix` / `verify`）。角色决定 `payload` 的 schema 分支。 |
 | `status` | enum | 必须是四个顶层状态之一。**不允许自定义状态值**。 |
-| `contract_valid` | boolean | 由子Agent在返回前自行对 `payload` 做一次 schema 校验后写入。如果子Agent无法保证合规，必须写 `false` 并在 `error` 中说明，而不是“尽力凑一个看起来合规的 payload”。 |
+| `contract_valid` | boolean | 由子 Agent在返回前自行对 `payload` 做一次 schema 校验后写入。如果子 Agent无法保证合规，必须写 `false` 并在 `error` 中说明，而不是“尽力凑一个看起来合规的 payload”。 |
 | `artifact_path` | string\|null | 产物文件路径。`SUCCESS` 时必填且文件必须存在；非 `SUCCESS` 时可为 `null`。见下方「`artifact_path` 是必填顶层字段」。 |
 | `payload` | object | 按角色分支的 schema，见第 2 节。 |
 | `error` | object\|null | 仅当 `status` 不是 `SUCCESS` 时必填，结构见第 3 节。 |
 
-**状态枚举的收敛**：顶层 `status` 只保留四个值，与上一轮 `protocol.md` 的状态账本对齐。`Wazir` 的材料显示 A2A 协议使用七个任务状态（`submitted`、`working`、`input-required`、`completed`、`failed`、`canceled`、`rejected`），但那些覆盖了任务生命周期中的中间态[^ref5]。我们的子Agent是**一次性返回结果的执行单元**，不需要 `working` 或 `input-required`（这些由主Agent的账本管理），因此四个终态足以覆盖子Agent的返回语义。`evidence-policy` 中的 `GATE_0_FAILED`、`NO_EVIDENCE_FOUND`、`UNREADABLE` **不作为顶层状态**，而是作为 `payload.findings` 数组内的条目状态，见第 4 节。
+**状态枚举的收敛**：顶层 `status` 只保留四个值，与上一轮 `protocol.md` 的状态账本对齐。`Wazir` 的材料显示 A2A 协议使用七个任务状态（`submitted`、`working`、`input-required`、`completed`、`failed`、`canceled`、`rejected`），但那些覆盖了任务生命周期中的中间态[^ref5]。我们的子 Agent是**一次性返回结果的执行单元**，不需要 `working` 或 `input-required`（这些由主Agent的账本管理），因此四个终态足以覆盖子 Agent的返回语义。`evidence-policy` 中的 `GATE_0_FAILED`、`NO_EVIDENCE_FOUND`、`UNREADABLE` **不作为顶层状态**，而是作为 `payload.findings` 数组内的条目状态，见第 4 节。
 
 **`PENDING` 与 `RUNNING` 的归属**：`protocol.md` 第 2 节的账本状态枚举有六个值（`PENDING | RUNNING | SUCCESS | RETRYABLE_FAILURE | CONTRACT_VIOLATION | PERMANENT_FAILURE`），比本契约多两个。这不是不一致，而是**两个枚举分属不同主体**：
 
-| 枚举 | 主体 | 是否出现在子Agent返回中 |
+| 枚举 | 主体 | 是否出现在子 Agent返回中 |
 |---|---|---|
-| `PENDING` / `RUNNING` | **主Agent账本**的内部调度状态 | **否**。子Agent还没返回时不存在返回；返回了就已经是终态 |
-| `SUCCESS` / `RETRYABLE_FAILURE` / `CONTRACT_VIOLATION` / `PERMANENT_FAILURE` | **子Agent返回**的顶层 `status` | 是，四选一 |
+| `PENDING` / `RUNNING` | **主Agent账本**的内部调度状态 | **否**。子 Agent还没返回时不存在返回；返回了就已经是终态 |
+| `SUCCESS` / `RETRYABLE_FAILURE` / `CONTRACT_VIOLATION` / `PERMANENT_FAILURE` | **子 Agent返回**的顶层 `status` | 是，四选一 |
 
-**机械判定规则**：主Agent在接收子Agent返回时，只接受四个终态；若子Agent返回 `PENDING` 或 `RUNNING`，视为 `CONTRACT_VIOLATION`（这是一次性执行单元，不存在"我先挂起一会儿"的语义）。反过来，账本中的 `PENDING` / `RUNNING` 只能由主Agent自己写入，**不得**从子Agent返回中读取。
+**机械判定规则**：主Agent在接收子 Agent返回时，只接受四个终态；若子 Agent返回 `PENDING` 或 `RUNNING`，视为 `CONTRACT_VIOLATION`（这是一次性执行单元，不存在"我先挂起一会儿"的语义）。反过来，账本中的 `PENDING` / `RUNNING` 只能由主Agent自己写入，**不得**从子 Agent返回中读取。
 
 ---
 
@@ -284,7 +284,7 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role <你�
 
 ## 第 4 节：契约验证——主Agent的机械检查清单
 
-主Agent在接收到子Agent返回后，**必须**按以下顺序执行验证。任何一步失败，该Agent的 `status` 被覆盖为 `CONTRACT_VIOLATION`，**其全部输出作废**，不得作为下游输入。
+主Agent在接收到子 Agent返回后，**必须**按以下顺序执行验证。任何一步失败，该Agent的 `status` 被覆盖为 `CONTRACT_VIOLATION`，**其全部输出作废**，不得作为下游输入。
 
 | 检查序 | 检查项 | 通过条件 | 失败处理 |
 |---|---|---|---|
@@ -303,9 +303,9 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role <你�
 
 ---
 
-## 第 5 节：状态转换规则（子Agent视角）
+## 第 5 节：状态转换规则（子 Agent视角）
 
-顶层 `status` 的四值之间**不允许任意转换**。子Agent在一次返回中只能报告一个终态。转换规则如下：
+顶层 `status` 的四值之间**不允许任意转换**。子 Agent在一次返回中只能报告一个终态。转换规则如下：
 
 ```
 SUCCESS
@@ -339,7 +339,7 @@ PERMANENT_FAILURE
 - 已闭合波次、未闭合项、冲突列表的跨波次表示；
 - 轮次号 `RN` 和已覆盖模块标记的持久化格式。
 
-本文件与 `handoff-schema` 的交接点是：`output-contract` 保证每个子Agent的返回可被主Agent机械验证；`handoff-schema` 保证验证后的结果可以被安全地传递给下一波，而不需要主Agent重新阅读任何散文。
+本文件与 `handoff-schema` 的交接点是：`output-contract` 保证每个子 Agent的返回可被主Agent机械验证；`handoff-schema` 保证验证后的结果可以被安全地传递给下一波，而不需要主Agent重新阅读任何散文。
 
 ---
 
