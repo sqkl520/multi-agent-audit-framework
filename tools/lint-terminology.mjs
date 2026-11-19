@@ -92,15 +92,22 @@ const TERMS = [
 ];
 
 // ────────────────────────────────────────────────────────────────────
-// T3 的覆盖检查：这些模板必须提到 subagent
+// T3 的覆盖检查：哪些模板**必须**提到子 Agent
+//
+// ★ 2026-11-19 修正：最初把全部 6 个 wave 模板都列进来，跑出 4 条警告。
+// 打开看，那 4 个模板根本不需要提 —— 它们描述的是「你被派来之后怎么干活」，
+// 派发这件事由主 Agent 按 protocol.md 决定，不由这些模板决定。
+//
+// 判据应该是「这个模板是否包含派发决策」：
+//   · wave2a-sweep 明确写了「按片派发」「派发含义」→ 必须提
+//   · wave4-fix 描述了修复实例的派发与重派 → 必须提
+//   · 其余四个是「执行体视角」的作业指导 → **不该要求它们提**
+//
+// 强加要求会让模板为了过检查而塞一句无关的话，那比没有检查更糟。
 // ────────────────────────────────────────────────────────────────────
 const MUST_MENTION_SUBAGENT = [
-  'templates/wave1-recon.md',
   'templates/wave2a-sweep.md',
-  'templates/wave2-audit.md',
-  'templates/wave3-critique.md',
   'templates/wave4-fix.md',
-  'templates/wave5-verify.md',
 ];
 
 const findings = [];

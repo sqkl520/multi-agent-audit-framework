@@ -103,14 +103,30 @@ console.log('\ncase 6: 「Gate 0」是 accepted，不得 FAIL');
   rmSync(dir, { recursive: true, force: true });
 }
 
-console.log('\ncase 7: 模板一次不提 subagent → WARN（不是 FAIL）');
+console.log('\ncase 7: 需要派发的模板却不提 subagent → WARN（不是 FAIL）');
 {
+  // 注意：只有 MUST_MENTION_SUBAGENT 里的模板才会被检查。
+  // 2026-11-19 修正：最初 6 个 wave 模板全查，跑出 4 条警告——但那 4 个是
+  // 「执行体视角」的作业指导（描述「你被派来之后怎么做」），本来就不该提派发。
+  // 判据改成「这个模板是否包含派发决策」后，只剩 wave2a-sweep 与 wave4-fix。
   const { dir, fw } = mkfw({
-    'templates/wave5-verify.md': '# 验收\n\n本模板只做验收。\n',
+    'templates/wave2a-sweep.md': '# 宽扫\n\n本模板只做宽扫。\n',
   });
   const r = run(dir, fw);
   ok('exit 0（WARN 不阻断）', r.code === 0, `code=${r.code}`);
   ok('报 T3 警告', /T3_template_silent_about_subagent|项警告/.test(r.out), r.out);
+  rmSync(dir, { recursive: true, force: true });
+}
+
+console.log('\ncase 7b: 不需要派发的模板（如 wave5-verify）沉默 → 不得 WARN');
+{
+  // 反向对照：证明 T3 的判据确实收窄了，不是把警告全关掉。
+  const { dir, fw } = mkfw({
+    'templates/wave5-verify.md': '# 验收\n\n你被派来验收一条修复。\n',
+  });
+  const r = run(dir, fw);
+  ok('exit 0', r.code === 0, `code=${r.code}`);
+  ok('没有 T3 警告', !/T3_template_silent_about_subagent/.test(r.out), r.out);
   rmSync(dir, { recursive: true, force: true });
 }
 
