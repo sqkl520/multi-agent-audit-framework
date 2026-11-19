@@ -122,7 +122,7 @@ That last row is the most important self-description this framework has.
 The full line-by-line list of "what it can stop / what it can't" is in [`CAPABILITIES.md`](CAPABILITIES.md). **That document will help you decide whether to use this more than this README does.**
 
 The most important item among them: **when it misses a check, nothing will remind you.**
-Of 1084 rule sentences measured, only 97 (8.9%) have a machine outlet; the rest rely on the executor's own discipline.
+Of 1113 rule sentences measured, 248 (22.3%) have a machine outlet; only 124 (11.1%) are covered by an executable rule in `tools/*.mjs`.
 
 ## 🔧 How it works
 
@@ -188,7 +188,7 @@ See [`docs/analysis/2026-11-01-proposal.md`](docs/analysis/2026-11-01-proposal.m
 | Four-wave read-only path + report | ✅ Done |
 | Fix / acceptance separate path | ✅ Done |
 | Mechanical validation suites (40) | ✅ All green · CI passing on three platforms |
-| Three-layer contract loop (template/contract/validator) | ⚠️ Partial — 8.9% outlet rate |
+| Three-layer contract loop (template/contract/validator) | ⚠️ Partial — 22.3% outlet rate (11.1% strict) |
 | Rule → validator reconciliation tool | ✅ Shipped (a dashboard, not a gate) |
 | Chinese/English bilingual front | ✅ README + community files |
 | Mechanical detection of Mode B (judgment surface covers only self-made samples) | ⬜ Not achievable in practice, not implemented |
