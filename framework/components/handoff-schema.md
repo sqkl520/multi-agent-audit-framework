@@ -27,6 +27,8 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 9 轮)
 > 版本不符（`bad_schema_version`）、`wave_id` / `wave_status` / `open_items[].kind`
 > 三个枚举越界（`bad_wave_id` / `bad_wave_status` / `bad_open_item_kind`）、
 > 以及「塞入了原始正文或 findings 片段」（`raw_body_in_packet`）。
+> 包本身不是合法 JSON 时报 `json_parse_failed`——**解析失败不等同于约束通过**，
+> 这是本框架反复出现的失效形态。
 > 用法：`node tools/check-handoff.mjs <packet.json>` 或 `--dir <产物目录>`。
 
 ## 第 1 节：Resume Packet 的顶层结构

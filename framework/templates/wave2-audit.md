@@ -224,6 +224,18 @@ console.log(r.length);   // 期望 3，实际 0
 }
 ```
 
+**`main_path` 的三个字段缺一不可，缺了会被判违规**（2026-11-19 补：此前只有示例，没写约束）：
+
+| 字段 | 缺了会怎样 | 校验器规则 |
+|---|---|---|
+| `command` | 无法复现，等于「我说我跑过」 | `runtime_no_main_path` |
+| `expected` | **没有期望值就不构成验证**——「跑了一下，输出是 X」无法证明 X 是错的 | `runtime_main_path_incomplete` |
+| `observed` | 同上，缺了就无法和 expected 对比 | `runtime_main_path_incomplete` |
+
+另有两条配套：`runtime_main_path_trivial`（期望值形如「不报错」这种同义反复，
+不构成可证伪的预测）、`runtime_no_control`（没有 `control_case`，
+无法证明探针本身有效——`control_case` 为空时整段 `runtime_evidence` 不采信）。
+
 ### 4.5.1 允许的运行方式（与零写入原则兼容）
 
 `protocol.md` 第 0 节禁止写入被审仓库。**运行验证不违反它，前提是遵守以下任一种隔离方式**：

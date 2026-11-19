@@ -19,6 +19,20 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 8 轮)
 
 ## 第 0 节：产物的物理形态（所有角色适用，2026-11-09 新增）
 
+> **本框架对「规则」本身的两条硬要求**（2026-11-19 补：此前只写在
+> `tools/check-rule-ledger.mjs` 的文件头里，契约正文没有承载，导致
+> `discretionary_without_reason` / `new_rule_without_validator` 两条规则
+> 在契约里找不到落点）：
+>
+> | 要求 | 违反时 | 校验器规则 |
+> |---|---|---|
+> | 标了 `DISCRETIONARY` 的规则必须给出 ≥10 字理由 | 无法执行的规则应被删掉，而不是被标注 | `discretionary_without_reason` |
+> | 新增/修改的规则句必须有机器出口（点名校验器脚本、`rule:` 名，或标 `DISCRETIONARY`） | 从写下那天起就没人读它 | `new_rule_without_validator` |
+>
+> 用法：`node tools/check-rule-ledger.mjs --gate --since <ref>`。
+> 为什么这条要写进契约而不是只写在校验器注释里：**同一个文件头注释里的道理，
+> 不写进契约就没人执行**——这正是本框架反复出现的形态。
+
 **你的产物文件必须以一个 json 代码块结尾，里面是本契约定义的信封。**
 
 ```
