@@ -1,0 +1,10 @@
+{
+  "finding_id": "S01-F3",
+  "verdict": "confirmed",
+  "confidence": "high",
+  "adjusted_severity": "low",
+  "reason": "Verbatim match at HilltopCommandHandler.java:766: `admin.sendMessage(lang.getFor(admin, \"deploy.clearspawns-expired\", arenaId));` inside the runTaskLater expiry callback of requestClear(). requestClear() is genuinely shared by all three ClearKinds (callers at lines 1004-1005 SPAWN, 1075-1076 MOB_SPAWN, 1158-1159 VILLAGER), and the method does dispatch every neighbouring message through kind-keyed helpers warningKey (684-690), confirmKey (692-698), alreadyKey (700-706), doneKey (708-714), noPendingKey (716-722) — the expiry line is the sole exception, and line 802 in confirmClear repeats the same hardcoded key for the overdue branch. I checked for a kind-specific expired key and there is none: grep over src/main/resources/messages.yml and messages-legacy.yml for \"expired\" returns only deploy.clearspawns-expired (messages.yml:489 en, 1591 zh), so clearspawns-expired is the only expiry key that exists and it is reachable for all three kinds. Reference path is real: /hilltop deploy clearmobspawns or clearvillagers (handleDeployCommand, reached from the registered /hilltop executor) then either no confirm within PendingClear.TTL_MILLIS (15 s, /50 = 300 ticks) or a confirm after expiry. The key text (\"Clear operation for arena {0} timed out and was cancelled.\") contains no spawn-point wording, so the only defect is that a mob/villager timeout is announced under a player-spawn-named key — a naming/i18n inconsistency with purely cosmetic impact; no state, no pendingClears handling, no arena binding is affected (the callback uses the two-arg remove(key, fresh), which is correct).",
+  "counter_evidence": "messages.yml:489  deploy.clearspawns-expired: \"&7Clear operation for arena &f{0} &7timed out and was cancelled.\"  — the message body itself is kind-neutral, which is why the mislabelling is cosmetic only",
+  "corrected_file": "src/main/java/com/hilltopvillage/command/HilltopCommandHandler.java",
+  "corrected_line": 766
+}

@@ -1,0 +1,10 @@
+{
+  "finding_id": "S02-F1",
+  "verdict": "downgraded",
+  "confidence": "medium",
+  "adjusted_severity": "low",
+  "reason": "The code gap is real: grep over the whole plugin finds InventoryDragEvent handlers only in ArenaSelectionGUI.java:334, ShopListener.java:108 and AbstractAdminMenu.java:48; SetupWizard.java has exactly two @EventHandler methods (onInventoryClick at 1734, onQuit at 2180), all six wizard inventories are holder-less Bukkit.createInventory(player, ...) calls (408, 421, 434, 614, 761, 939), and the refresh methods start with inv.clear() (451, 496, 554, 624, 771), so the quoted invariant at 1749-1750 covers clicks only. However the claimed loss is not demonstrably reachable in the normal path: the handler at 1750 cancels EVERY click in the wizard view, with no getClickedInventory()/getSlot() filter (grep for getClickedInventory/getRawSlot in the file returns nothing), so clicks in the player's own bottom inventory (pickup, shift-click, number-key, double-click collect, creative clone, drop) are cancelled too, and a drag distribution cannot start without a stack already on the cursor; opening a wizard view also closes any prior inventory, so a carried stack is returned to the inventory first. The only demonstrated way to reach an unguarded view is the separate title/locale bypass already reported as S02-F2, and even then it takes a deliberate drag of the admin's own items INTO a display GUI, i.e. a hardening/defense-in-depth gap rather than a medium-severity loss bug.",
+  "counter_evidence": "SetupWizard.java:1749-1753  // 防御：向导 GUI 内一律禁止移动物品（即使 session 意外丢失）\n        event.setCancelled(true);\n\n        SetupSession s = sessions.get(player.getUniqueId());\n        if (s == null) return;   // cancel precedes the session check and applies to the whole view, player-inventory half included",
+  "corrected_file": "src/main/java/com/hilltopvillage/command/SetupWizard.java",
+  "corrected_line": 1749
+}

@@ -1,0 +1,78 @@
+{
+  "slice_id": "S02",
+  "auditor": "wave2",
+  "files_read": [
+    "src/main/java/com/hilltopvillage/command/SetupWizard.java",
+    "src/main/java/com/hilltopvillage/gui/ArenaSelectionGUI.java"
+  ],
+  "findings": [
+    {
+      "local_id": "S02-F1",
+      "title": "Wizard GUIs cancel clicks but never cancel InventoryDragEvent, so items can be dragged into and destroyed by the wizard inventory",
+      "severity": "medium",
+      "file": "src/main/java/com/hilltopvillage/command/SetupWizard.java",
+      "line": 1749,
+      "line_end": 1750,
+      "evidence": "// 防御：向导 GUI 内一律禁止移动物品（即使 session 意外丢失）\nevent.setCancelled(true);",
+      "problem": "SetupWizard registers only an InventoryClickEvent handler. A drag from the player's inventory into the wizard's top inventory fires InventoryDragEvent, which nothing in this class handles, so the stated invariant (no item movement inside wizard GUIs) holds only for clicks. Every wizard inventory is a throw-away Bukkit.createInventory() (buildSpawnsOverview/buildSpawnGui/buildMobSpawnGui/showVillagersGui/showStepNodesGui/showStepPreview) and every refresh starts with inv.clear(), so anything dragged in is silently destroyed on the next refresh or on close. ArenaSelectionGUI (see its onInventoryDrag) and ShopListener both implement the drag guard; the wizard does not.",
+      "impact": "An admin who drags (or double-click-collects into) a wizard GUI loses the dragged items permanently with no message; the GUI also stops reflecting the deployed data until reopened.",
+      "trigger": "Open any wizard GUI (/hilltop setup -> step 3 overview / spawngui / mobspawngui / nodesgui / villagersgui / preview) and drag an item from the player inventory into the top inventory; the item is placed, then inv.clear() on the next refresh or the close of the temp inventory destroys it."
+    },
+    {
+      "local_id": "S02-F2",
+      "title": "Wizard identifies its GUIs by comparing the view title to the player's current-locale string, so a mid-session locale change disables the cancel guard and all buttons",
+      "severity": "medium",
+      "file": "src/main/java/com/hilltopvillage/command/SetupWizard.java",
+      "line": 1746,
+      "line_end": 1747,
+      "evidence": "if (!title.equals(overviewTitle) && !title.equals(spawnsTitle) && !title.equals(mobSpawnsTitle)\n                && !title.equals(nodesTitle) && !title.equals(villagersTitle) && !title.equals(previewTitle)) return;",
+      "problem": "The handler rebuilds the expected titles with lang.getFor(player, ...) at click time (lines 1738-1743) and returns early when the view title does not match. The title stored in the open inventory was rendered with the locale that was active when the GUI was opened, so running /hilltop lang <other> while a wizard GUI is open makes the comparison fail. Because the early return happens before event.setCancelled(true) (line 1750), the click guard is skipped entirely for the still-open GUI: shift-click and collect-to-cursor move wizard items into the player inventory, and every navigation/add/remove button stops responding with no feedback. The same title-string dispatch also cancels clicks in any other plugin inventory that happens to share one of these titles; ArenaSelectionGUI deliberately avoids this by matching on its ArenaSelectorHolder instead of the title (ArenaSelectionGUI.java line 275).",
+      "impact": "A locale switch locks the admin out of the open wizard GUI (silent, no error), and the now-unguarded view lets items be shifted out of / into a temp inventory that is cleared on refresh, destroying the moved items.",
+      "trigger": "Open any wizard GUI, then run /hilltop lang <other locale> (HilltopCommandHandler calls lang.setPlayerLocale) and click in the still-open inventory."
+    },
+    {
+      "local_id": "S02-F3",
+      "title": "Spawn/mob-spawn deletion discards removeSpawnPoint/removeMobSpawnPoint's boolean and reports success for a stale index",
+      "severity": "medium",
+      "file": "src/main/java/com/hilltopvillage/command/SetupWizard.java",
+      "line": 1945,
+      "line_end": 1951,
+      "evidence": "deploy(player).removeSpawnPoint(idx);\n                    // If removing caused current page to become empty, go back one page\n                    int totalAfter = deploy(player).getSpawnPoints().size();\n                    int maxPageAfter = totalAfter == 0 ? 0 : (totalAfter - 1) / SPAWNS_PER_PAGE;\n                    if (s.spawnPage > maxPageAfter) s.spawnPage = maxPageAfter;\n                    player.sendMessage(LegacyComponentSerializer.legacySection()\n                            .deserialize(lang.getFor(player, \"setup.spawn-removed\", String.valueOf(idx + 1))));",
+      "problem": "AdminDeployManager.removeSpawnPoint(index) returns false for an out-of-range index and true only when the element was actually removed, but the return value is dropped here, and the same pattern is repeated for mob spawn points at line 2016 (removeMobSpawnPoint). The \"spawn point #N removed\" message, the page clamp and autoSave(player) therefore all run on a no-op. The villager branch does check its boolean (line 1860: if (deploy(player).removeVillager(index))), so the asymmetry is not a deliberate convention. The index in the tag (\"setup-spawn-\"+i) is rendered from a list snapshot, so it goes stale whenever the list shrinks underneath an open GUI: /hilltop clearspawns, a second admin, or an arena reset via ArenaResetService all rewrite arenas.yml without touching the open inventory.",
+      "impact": "The admin is told a point was deleted and shown a \"saved\" confirmation while the point is still deployed; the GUI is re-rendered from the unchanged list, so the entry reappears and the deletion appears to have silently failed.",
+      "trigger": "Open the spawn-point or mob-spawn GUI, then shrink the list underneath it (/hilltop clearspawns or a reset) and click a stale entry."
+    },
+    {
+      "local_id": "S02-F4",
+      "title": "Preview-GUI reset and validation bounces change s.step without persisting it, so a disconnect resumes at the abandoned step",
+      "severity": "medium",
+      "file": "src/main/java/com/hilltopvillage/command/SetupWizard.java",
+      "line": 2171,
+      "line_end": 2174,
+      "evidence": "case \"setup-reset\":\n                player.closeInventory();\n                s.step = 1;\n                showStep(player, s);",
+      "problem": "Wizard progress is persisted only inside autoSave/autoSaveSilent (wizard.step.<uuid> at lines 1684 and 1707) and in validateCompletion (line 1202). The [Reset Setup] button sets s.step = 1 and calls showStep with neither, and the mandatory-field bounces in the same handler (s.step = 3 / 5 / 6 at lines 2140, 2148, 2155, 2162) do the same. In contrast the goto path persists explicitly (s.step = targetStep followed by autoSaveSilent at lines 1645-1646). config.yml therefore keeps the last saved step, e.g. 8 or 7, while the live session is at 1 or 3.",
+      "impact": "If the admin disconnects (or the server stops) after a reset or a validation bounce, the next /hilltop setup in the same arena restores the stale step from config.yml instead of step 1, so the reset silently did not stick: the admin is dropped back onto the abandoned step (e.g. straight into showStepPreview at step 7) rather than restarting the wizard as the button promised, and must notice the mismatch and press reset again.",
+      "trigger": "Open the step-7 preview GUI, click [Reset Setup] (or trigger a required-field bounce), then quit or restart and run /hilltop setup again in the same arena world."
+    },
+    {
+      "local_id": "S02-F5",
+      "title": "Quit path drops the in-memory session but never clears the persisted wizard.step/wizard.arena keys",
+      "severity": "low",
+      "file": "src/main/java/com/hilltopvillage/command/SetupWizard.java",
+      "line": 2184,
+      "line_end": 2190,
+      "evidence": "SetupSession s = sessions.get(quitting.getUniqueId());\n        if (s != null) {\n            // 会话结束：清掉该玩家第 5 步留下的村民预览实体。必须在移除 session 之前清理，\n            // 否则按会话 arenaId 解析目标世界会退化成按「所在世界」解析（离服瞬间仍可用，但越早越稳）。\n            clearVillagerPreviews(quitting);\n        }\n        sessions.remove(quitting.getUniqueId());",
+      "problem": "onQuit removes the UUID from the session map (correct) but performs no cleanup of the per-player config keys written by autoSave/autoSaveSilent (wizard.step.<uuid> at line 1684, wizard.arena.<uuid> at line 1686). The only place those keys are nulled is showStepDone, i.e. the successful-completion path (lines 1062 and 1064); an abandoned or saveexit-ed wizard leaves them behind forever. Nothing else in the plugin reads or expires them (the only other reader is start() at lines 240 and 243), so config.yml accumulates a permanent key pair per admin UUID, and any later /hilltop setup in that arena silently resumes at the abandoned step even after the arena's deployment data was cleared by ArenaResetService, which then only gets caught by the step-8 validateCompletion bounce.",
+      "impact": "config.yml grows with dead per-UUID progress entries and abandoned progress keeps being honoured indefinitely; an admin who quit mid-wizard is unexpectedly dropped into an arbitrary step (with the deployment data no longer matching) instead of starting at step 1.",
+      "trigger": "Start /hilltop setup, advance past step 1, then quit the server or /hilltop setup saveexit without finishing; the keys remain and are re-read on the next setup run for that arena."
+    }
+  ],
+  "unverified": [
+    "Whether a wizard GUI drag can be completed by a client when the top inventory is a temp Bukkit.createInventory() was not exercised at runtime; the finding rests on the absence of any InventoryDragEvent handler in SetupWizard (grep across the plugin shows drag handlers only in ArenaSelectionGUI and ShopListener).",
+    "Exact client behaviour of shift-click/collect on a view whose title no longer matches the listener's expected string (S02-F2) was reasoned from Bukkit event ordering, not observed: the early return precedes event.setCancelled(true), so the click is left uncancelled for vanilla handling.",
+    "No async/executor path exists in either slice file; SetupSession fields are plain ints/Strings mutated only from Bukkit event handlers and the command handler, so no concurrency finding was raised even though sessions is a ConcurrentHashMap.",
+    "deploy(player)/gameManager(player) null dereferences (e.g. SetupWizard.java lines 452, 497, 773) were traced and deliberately not reported: resolveArenaId/deploymentGameManager return null only when the arena definition or its world is missing, and the plugin contains no unloadWorld call, so the session's arena world stays loaded and the NPE is not reachable.",
+    "Line numbers and evidence were re-read from the on-disk UTF-8 sources after writing this file; the Chinese comment lines in S02-F1/S02-F5 evidence were copied byte-for-byte from the source."
+  ],
+  "notes": "Both slice files were read in full (SetupWizard.java 2274 lines, ArenaSelectionGUI.java 338 lines). ArenaSelectionGUI was reviewed for the same five dimensions and produced no reportable defect: it uses an InventoryHolder for identification, cancels both clicks and drags, filters clicks to the top inventory, resolves the clicked arena from the render-time slot->arenaId map, and re-validates with canJoin before joining; its locale keys (gui-*, arena-status-*, arena-not-deployed, join-failed, already-in-arena, arena-not-found) all exist in messages.yml. Its join path is a same-tick check-then-act but arenaManager.joinArena/addPlayer re-validates enabled/state/full/deployed, so no exploitable gap was found. The strongest defects in this slice are on the SetupWizard side and cluster around the GUI-identification choice (title string instead of InventoryHolder), which simultaneously causes the missing drag guard and the locale-change bypass."
+}

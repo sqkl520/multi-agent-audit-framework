@@ -1,0 +1,10 @@
+{
+  "finding_id": "S08-F4",
+  "verdict": "confirmed",
+  "confidence": "high",
+  "adjusted_severity": "low",
+  "reason": "The quote and mechanism verify. restoreAll builds `touched` from the union of all four caches (TabListManager.java:215-219), and pushHeaderFooter caches header/footer for every online viewer on every refresh regardless of isManaged() (lines 402-429: the `else` branch at 416-419 builds Component.empty() and line 427-429 sends and caches it). So a player in a context switched off (e.g. tab.contexts.lobby: false) is in lastHeader/lastFooter even though pushName/pushOrder were never called for him: refreshAllUnchecked routes unmanaged targets to resetNameAndOrder (lines 358-361, 382-391), which only removes cache entries and never writes a name. restoreAll then executes playerListName((Component) null) and setPlayerListOrder(0) unconditionally for every UUID in the union (lines 225-226), so it does reset name/order the plugin never set. That directly contradicts the T5.1 contract documented at lines 207-211 ('only restore players this plugin really touched', so tab.lobby=false does not wipe another plugin's layout). CraftPlayer confirms null is a real write, not a no-op: playerListName(null) stores null in ServerPlayer.listName and broadcasts UPDATE_DISPLAY_NAME to every viewer, and the getter then falls back to Component.text(getName()) - i.e. the other plugin's custom list name is replaced by the default name. Reachable from onDisable (HilltopVillagePlugin.java:237-244 -> restoreAll at 240), so on a plugin reload/disable with players online the other plugin's name/order are reset. Severity stays low: it requires a non-default context switch plus a third-party tab plugin, it happens only at plugin shutdown/reload, and the other plugin normally re-asserts its values on its next refresh.",
+  "counter_evidence": "",
+  "corrected_file": "src/main/java/com/hilltopvillage/mechanics/TabListManager.java",
+  "corrected_line": 225
+}

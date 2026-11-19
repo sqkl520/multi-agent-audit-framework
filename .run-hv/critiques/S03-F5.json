@@ -1,0 +1,10 @@
+{
+  "finding_id": "S03-F5",
+  "verdict": "confirmed",
+  "confidence": "high",
+  "adjusted_severity": "low",
+  "reason": "Verified verbatim at DisplayConfigLoader.java:201-206: an absent key returns List.of() with no warning, and parseTab() calls it for header and footer whenever a tab: section exists (lines 188-191). parseBoard() differs by explicit design (lines 152-155 restore DisplayConfig.defaultLines() when 'lines' is absent), so the asymmetry the finding reports is real. Reachability is confirmed: a tab: section containing only 'contexts' (or enabled/player-name) passes YamlFiles.displayValidator because DISPLAY_TAB_KEYS = {enabled, header, footer, contexts} (YamlFiles.java:359) matches 'contexts', and the empty lists render as Component.empty() via TabListManager.pushHeaderFooter:414-415, so the tab header/footer vanish with no console line. One correction to the finding's wording: a completely absent tab: section does NOT blank anything, because parse() falls back to defaults.tab() (DisplayConfigLoader.java:126-128), which carries the factory header/footer (DisplayConfig.java:152-154); only a partial tab: section hits this path. The display.yml header comment (resources/display.yml:57-64) advertises the tab board keys as optional with factory defaults, so trimming the section to one key silently drops the header/footer — a genuine fail-silent inconsistency, correctly rated low.",
+  "counter_evidence": "DisplayConfigLoader.java:126-128 `DisplayConfig.Tab tab = hasTab ? parseTab(yaml.getConfigurationSection(\"tab\"), warnings) : defaults.tab();` — a wholly missing tab: section keeps the factory header/footer, so the trigger requires a partial section. The non-list case also warns (lines 207-209 `warnings.add(\"display.yml \" + path + \" is not a list; using an empty \" + path)`); only key omission is silent, mirroring parseBoard's silent missing-lines fallback.",
+  "corrected_file": "src/main/java/com/hilltopvillage/config/DisplayConfigLoader.java",
+  "corrected_line": 204
+}

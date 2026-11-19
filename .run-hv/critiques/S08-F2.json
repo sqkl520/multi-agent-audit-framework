@@ -1,0 +1,10 @@
+{
+  "finding_id": "S08-F2",
+  "verdict": "confirmed",
+  "confidence": "high",
+  "adjusted_severity": "medium",
+  "reason": "Verified at ArenaScoreboard.java:363-373: while the effective switch is false, each board owner is passed to hide() (line 367), which does boards.remove(uuid) and restores the main scoreboard (lines 280-285), and stopTask() then cancels the only ticker (line 372 -> 329-334). show() has exactly two call sites, ArenaInstance#addPlayer (ArenaInstance.java:343) and ArenaInstance#rejoin (ArenaInstance.java:575); neither fires for a player who stays online in a waiting or running arena, and startGame()/onGameStart() never re-show boards. The switch is genuinely hot in the disable direction (refreshAll re-reads isScoreboardEffectivelyEnabled() every frame; /hilltop reloadconfig calls ConfigManager#loadFromFile(), which rebuilds activeConfig and re-applies scoreboard.enabled at ConfigManager.java:1405/1443, plus reloadDisplay() at HilltopCommandHandler.java:428), but that same reload has no scoreboard re-show step - its only re-show work is TabListManager.start()/refreshNow (HilltopCommandHandler.java:431-436). The behavior is not documented as by-design: display.yml:13 promises all switches take effect immediately, and the class's own javadoc at lines 344-345 says re-opening resumes the animation from where it stopped, which is impossible once boards and the task are gone. Only minor details of the write-up are imprecise (after stopTask the empty-boards branch at 375-378 is never actually reached on re-enable, and restoration in practice requires leave+rejoin or disconnect+rejoin), none of which changes the defect or its medium severity.",
+  "counter_evidence": "",
+  "corrected_file": "src/main/java/com/hilltopvillage/mechanics/ArenaScoreboard.java",
+  "corrected_line": 363
+}

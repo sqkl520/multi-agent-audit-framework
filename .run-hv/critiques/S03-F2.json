@@ -1,0 +1,10 @@
+{
+  "finding_id": "S03-F2",
+  "verdict": "confirmed",
+  "confidence": "high",
+  "adjusted_severity": "medium",
+  "reason": "Verified the cited array verbatim at MonsterSettingsMenu.java:400-404: all six entries are *_HELMET plus AIR, and addArmorSlot (lines 273-305, called at 191-198 with mc::setChestplate/setLeggings/setBoots) receives that same array for every slot with no per-slot list or name translation; the plain-click branch is `Material next = cycleMaterial(current, ARMOR_CYCLE); setter.accept(next);` (297-298). Grep for _HELMET/_CHESTPLATE across com.hilltopvillage shows no switch/rename helper anywhere, so nothing converts helmet->chestplate. The setters are plain field assignment (GameConfig.java:372-378) and loadMonstersConfig validates only `mat != null && mat.isItem()` per slot (ConfigManager.java:2036/2043/2050/2057), so LEATHER_HELMET passes and saveMonstersConfig writes mc.getChestplate().name() back to key+\".chestplate\" (ConfigManager.java:1045), making the wrong value persistent. WaveSettingsMenu.MonsterPropMenu:511-514 passes the same all-helmet ARMOR_LIST (661-665) through addMaterialCycle (611-627), which has no shift/custom branch at all, so that menu can only ever write helmets into all four fields.",
+  "counter_evidence": "MonsterSettingsMenu.java:280-291 does provide a SHIFT-click escape hatch that can store a genuine chestplate: `if (ct == ClickType.SHIFT_LEFT || ct == ClickType.SHIFT_RIGHT) { ... Material m = Material.getMaterial(v.toUpperCase(Locale.ROOT)); if (m != null && m.isItem()) setter.accept(m);`. This narrows the impact sentence (\"the only GUI path ... cannot produce a chestplate\") for MonsterSettingsMenu only; WaveSettingsMenu.MonsterPropMenu has no equivalent, and the plain-click path still writes helmet materials into chest/legs/boots, so the defect itself stands.",
+  "corrected_file": "src/main/java/com/hilltopvillage/config/menu/MonsterSettingsMenu.java",
+  "corrected_line": 400
+}

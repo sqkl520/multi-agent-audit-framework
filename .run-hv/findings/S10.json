@@ -1,0 +1,82 @@
+{
+  "slice_id": "S10",
+  "auditor": "wave2",
+  "files_read": [
+    "src/main/java/com/hilltopvillage/util/LanguageManager.java",
+    "src/main/java/com/hilltopvillage/util/MessageTextSync.java",
+    "src/main/java/com/hilltopvillage/util/YamlFiles.java",
+    "src/main/java/com/hilltopvillage/util/YamlFileGate.java",
+    "src/main/java/com/hilltopvillage/util/SafeSpawnUtil.java",
+    "src/main/java/com/hilltopvillage/util/DisplayEntityManager.java",
+    "src/main/java/com/hilltopvillage/stats/StatsManager.java",
+    "src/main/java/com/hilltopvillage/doc/CommandsDocumentGenerator.java"
+  ],
+  "findings": [
+    {
+      "local_id": "S10-F1",
+      "title": "Arena validator quarantines a legal multi-arena arenas.yml when a later arena only declares 'world'",
+      "severity": "high",
+      "file": "src/main/java/com/hilltopvillage/util/YamlFiles.java",
+      "line": 226,
+      "line_end": 229,
+      "evidence": "if (thin && (arenaKeys.isEmpty() || sawRichArena)) {",
+      "problem": "arenasValidator() treats an arena section whose key set is a subset of {world} as a truncated write whenever ANY earlier arena in the file had a wider key set (sawRichArena). But ArenaManager.readDefinition/validationFailure explicitly accept a world-only arena: 'core 缺失是合法的（core == null 表示尚未部署）' (ArenaManager.java:502-504), display-name/enabled are optional, and spawn points are optional. Only 'world' is required. arenas.yml's own header instructs admins to add an arena by filling in 'world' first and then run /hilltop setup. So two identical arena sections are judged differently depending only on which sibling precedes them: the same minimal arena is accepted when it is the only arena (the code comments even say '单竞技场的裸 {world} 文件两种都不命中，按合法放行') and is fatal when it follows a fully configured arena. The validator returns a reason, YamlFiles.load() renames the whole file to arenas.yml.corrupt, YamlFileGate locks the process read-only, and ArenaManager.load() clears the registry.",
+      "impact": "One admin add of a second/third arena block containing just 'world:' (the documented first setup step) destroys the entire multi-arena configuration: the file is renamed to arenas.yml.corrupt, all arenas disappear from /hilltop list, /hilltop arenas and the GUI, and every arenas.yml write (deploy wizard, spawn/villager/shop edits, reset) is refused for the rest of the session. The step also fires mid-session, because every deployment write path calls gate.load() first (AdminDeployManager.saveSpawnPoints:471), so a plain '/hilltop deploy addspawn' can rename the live configuration file out from under the server.",
+      "trigger": "Write a second arena entry with only 'world: <name>' after an already-deployed arena (or copy arena1 and delete everything except world), then restart the server, run /hilltop reloadconfig, or run any deploy/write command that calls arenasGate.load()."
+    },
+    {
+      "local_id": "S10-F2",
+      "title": "StatsManager writes player-stats.yml with a non-atomic replace and then deletes the only surviving copy",
+      "severity": "medium",
+      "file": "src/main/java/com/hilltopvillage/stats/StatsManager.java",
+      "line": 465,
+      "line_end": 465,
+      "evidence": "Files.move(tmp.toPath(), statsFile.toPath(), StandardCopyOption.REPLACE_EXISTING);",
+      "problem": "writeAtomically() never requests StandardCopyOption.ATOMIC_MOVE, despite its own javadoc claiming '临时文件 + 原子替换：避免写入中途被中断时留下半截 YAML' (line 440). A plain REPLACE_EXISTING move on Windows is implemented as DeleteFile(target) followed by a non-replacing MoveFileEx (the JDK behaviour documented at CommandsDocumentGenerator.java:489-493 in this same repository), i.e. it is delete-then-rename, not a replace. If the process dies or the rename fails after the delete, player-stats.yml no longer exists at all. The finally block then does 'if (tmp.exists() && !tmp.delete())' unconditionally, so after a failed move the only complete copy (the tmp file) is deleted too, leaving no file to recover. YamlFiles.write() in this same slice does this correctly (ATOMIC_MOVE first, non-atomic move only as a logged fallback), so the two persistence paths disagree.",
+      "impact": "All persisted player statistics (games, wins, kills, deaths, nodes, crystals, best wave) can be lost outright instead of at worst being one flush cycle stale. On the next start load() sees no file and begins with an empty cache, then the first save writes a file containing only post-restart records, so the loss becomes permanent. The narrow window also exists on every 60-second async flush, not only at shutdown.",
+      "trigger": "Any flush (async 60 s timer, or saveNow() on disable) whose Files.move fails or is interrupted on Windows - e.g. antivirus/backup holding the target, disk full, or a server crash between the implicit delete and the rename."
+    },
+    {
+      "local_id": "S10-F3",
+      "title": "StatsManager.load() treats transient read errors as corruption and renames the stats file away",
+      "severity": "medium",
+      "file": "src/main/java/com/hilltopvillage/stats/StatsManager.java",
+      "line": 287,
+      "line_end": 296,
+      "evidence": "yaml.loadFromString(Files.readString(statsFile.toPath(), StandardCharsets.UTF_8));",
+      "problem": "The read and the parse are wrapped in one 'catch (Exception exception)' that unconditionally calls quarantineCorruptFile() and then 'dirty = false; return;' with an empty cache. Files.readString throws IOException for reasons that have nothing to do with content corruption (file locked by antivirus/backup on Windows, ACL/permission change, sharing violation, I/O error). In those cases the file is perfectly valid but is still renamed to player-stats.yml.corrupt, the in-memory statistics start empty, and because dirty is reset to false the next successful save rewrites a fresh file containing only new records. Only the parse failure (InvalidConfigurationException) actually means 'damaged', which is the distinction the comment at lines 275-284 claims to be making.",
+      "impact": "A single transient read failure at startup silently wipes the live statistics file: the server serves empty leaderboards and /hilltop stats, and the first save after that permanently replaces the data set (the old data survives only as an unread .corrupt file the plugin never reads back). Every player's history is affected for a failure that a simple retry would have survived.",
+      "trigger": "Server start while player-stats.yml is momentarily locked or unreadable (backup/AV scan, permission change, network-share hiccup) - StatsManager is constructed during onEnable."
+    },
+    {
+      "local_id": "S10-F4",
+      "title": "YamlFiles.write fallback breaks the 'target file stays intact on failure' guarantee and then deletes the temp copy",
+      "severity": "medium",
+      "file": "src/main/java/com/hilltopvillage/util/YamlFiles.java",
+      "line": 124,
+      "line_end": 129,
+      "evidence": "Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);",
+      "problem": "The AtomicMoveNotSupportedException fallback performs a non-atomic replace, and the surrounding finally always deletes the temp file. On Windows that fallback is delete-target-then-rename, so if the rename fails (target re-opened by another process, sharing violation, I/O error) the original file is already gone and the finally block then deletes the temp file that held the only complete new content. The class javadoc states the opposite guarantee - '本类写「同目录唯一临时名 + ATOMIC_MOVE」，失败时目标文件保持原样' (line 30) - and the fallback is also silent: unlike CommandsDocumentGenerator.moveIntoPlace(), which emits an explicit WARNING naming ATOMIC_MOVE and the loss of the previous file, YamlFiles gives the operator no signal that it just degraded to a destructive path.",
+      "impact": "arenas.yml, nodes.yml, shop.yml or any other gated YAML can be destroyed (target deleted, temp deleted, IOException propagated) on filesystems that do not support atomic replace - SMB/network shares, FUSE/VirtualBox shared folders and some NFS mounts, all of which are used for Minecraft server directories. The caller only sees 'save failed', and the next arena load may recreate a factory template, silently replacing the lost configuration.",
+      "trigger": "Any gate.write()/YamlFiles.write() on a filesystem that reports AtomicMoveNotSupportedException where the subsequent non-atomic move also fails."
+    },
+    {
+      "local_id": "S10-F5",
+      "title": "Generated commands.md still documents /hilltop help as admin-only after the permission gate was removed",
+      "severity": "low",
+      "file": "src/main/java/com/hilltopvillage/doc/CommandsDocumentGenerator.java",
+      "line": 159,
+      "line_end": 159,
+      "evidence": "md.append(\"- **注意事项**: 管理员专用，显示所有可用命令及简要说明。\\n\\n\");",
+      "problem": "The generated documentation for '/hilltop help' claims the command is admin-only ('- **权限**: `hilltopvillage.admin`' at line 156 and '管理员专用' here), but HilltopCommandHandler.handle() deliberately removed that gate: 'case \"help\":' now calls deployMenuSender.sendUsage(sender) with no permission check, and the inline comment says 'fix6 Y3-R07-08：撤掉 admin 门——sendUsage 内部按权限裁剪（玩家看不到管理段）'. sendUsage() itself only hides the admin block behind hasPermission, so any player may run /hilltop help. The file is regenerated on every startup, so the wrong statement is shipped to the operator as authoritative documentation.",
+      "impact": "Admins and players read a freshly generated in-game/disk reference that contradicts the running plugin: operators may grant hilltopvillage.admin believing help requires it, and players are told a command they can use is forbidden. The class javadoc explicitly makes keeping this text in sync with the implementation a maintenance obligation, so the drift defeats the purpose of generating the document at runtime.",
+      "trigger": "Every server start - CommandsDocumentGenerator.generate() runs from onEnable and rewrites commands.md; a player then runs /hilltop help and it works despite the documented permission."
+    }
+  ],
+  "unverified": [
+    "LanguageManager.reload() step 4 iterates jarConfig.getKeys(true) (which includes intermediate section paths) and calls diskConfig.set(key, jarConfig.get(key)) without the isString() filter used for the cache build at line 127. When the disk file is missing a whole message section, jarConfig.get() returns a live ConfigurationSection object rather than text. I could not confirm without running Bukkit/Paper how MemorySection serializes such a foreign section in saveToString() (possible garbage keys or a save failure), so no finding is claimed for it.",
+    "Reachability of S10-F4 depends on the deployment filesystem lacking atomic replace; that is not testable in a read-only audit. The Windows delete-then-rename behaviour of Files.move(REPLACE_EXISTING) is taken from the repository's own analysis in CommandsDocumentGenerator.java:489-493, not from an executed test.",
+    "No build or test execution was performed; all findings are static. Message i18n coverage was checked mechanically instead: 740 distinct literal keys passed to lang/languageManager get/getFor/send all exist in src/main/resources/messages.yml, the dynamic keys (state.*, mob.*, scoreboard.*, tab.*, item.*, particles.*) all exist, and en/zh have identical top-level key sets (1010 each), so no reachable raw-key fallback was found in get()."
+  ],
+  "notes": "All 8 slice files were read in full. The slice is generally careful: YamlFiles/YamlFileGate implement a genuine temp+ATOMIC_MOVE write and a per-file read-only latch that correctly refuses ABSENT-after-quarantine (so the lock cannot be bypassed by the quarantine itself), LanguageManager publishes immutable per-locale map snapshots to the Netty chat thread, and both streams (messages.yml resource, messages-legacy.yml) use try-with-resources. StatsManager's write-sequence protocol is sound (seq allocated on the main thread, check plus write plus move all inside writeLock), so I did not claim a flush/saveNow lost-update race: each early return happens only when a strictly newer snapshot is guaranteed to be written. The remaining defects concentrate in the semantic validators (F1), in the two write paths that do not match the repository's own atomicity standard (F2, F4), in the over-broad corruption classifier (F3), and in the hardcoded generated documentation (F5)."
+}

@@ -1,0 +1,10 @@
+{
+  "finding_id": "S10-F2",
+  "verdict": "downgraded",
+  "confidence": "high",
+  "adjusted_severity": "low",
+  "reason": "The quoted call is verbatim and genuinely lacks ATOMIC_MOVE: on Windows JDK 21 sun/nio/fs/WindowsFileCopy.move deletes the existing target (DeleteFile at line 390) before MoveFileEx(source,target,0) at line 410, so a rename failure leaves statsFile gone and the finally at StatsManager.java:474-478 then deletes the complete tmp file. The impact is overstated, however: the catch at :467-472 sets dirty = true, so the next 60-second flush (or saveNow) rebuilds the whole snapshot from the in-memory cache and rewrites the file, making the loss self-healing within one flush cycle in the ordinary failure case. A process crash between the delete and the rename does not run the finally at all, so the full tmp file survives on disk; only a failed rename during the final shutdown saveNow (HilltopVillagePlugin.java:316-322) can turn the window into permanent loss. The code therefore has a real non-atomic replace and a risky tmp cleanup, but it is a narrow single-flush window, not 'all statistics lost outright'.",
+  "counter_evidence": "StatsManager.java:467-472 `} catch (IOException exception) { ... dirty = true; ... }`; StatsManager.java:474-478 `} finally { if (tmp.exists() && !tmp.delete()) { tmp.deleteOnExit(); } }`; JDK 21 WindowsFileCopy.java:384-390 `// if target exists then delete it. ... DeleteFile(targetPath);`; :407-411 `MoveFileEx(sourcePath, targetPath, 0); return;`.",
+  "corrected_file": "src/main/java/com/hilltopvillage/stats/StatsManager.java",
+  "corrected_line": 465
+}

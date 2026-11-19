@@ -1,0 +1,70 @@
+{
+  "slice_id": "S09",
+  "auditor": "wave2",
+  "files_read": [
+    "src/main/java/com/hilltopvillage/shop/NpcManager.java",
+    "src/main/java/com/hilltopvillage/shop/ShopConfig.java",
+    "src/main/java/com/hilltopvillage/shop/ShopConfigLoader.java",
+    "src/main/java/com/hilltopvillage/shop/ShopGUI.java",
+    "src/main/java/com/hilltopvillage/shop/ShopItem.java",
+    "src/main/java/com/hilltopvillage/shop/ShopListener.java",
+    "src/main/java/com/hilltopvillage/shop/ShopManager.java"
+  ],
+  "findings": [
+    {
+      "local_id": "S09-F1",
+      "title": "Unusable shop.yml throws out of onEnable and takes the whole plugin down",
+      "severity": "high",
+      "file": "src/main/java/com/hilltopvillage/shop/ShopConfigLoader.java",
+      "line": 110,
+      "line_end": 112,
+      "evidence": "throw new IllegalStateException(\"Cannot use shop.yml (\" + loaded.status() + \")\"\n                    + (detail == null ? \"\" : \": \" + detail)\n                    + \". Refusing to replace the live shop with an empty configuration.\");",
+      "problem": "load() throws IllegalStateException for every unusable read (blank file, parse failure, quarantined/absent-after-quarantine). ShopManager.reload() assigns this.config = loader.load() at ShopManager.java:56 with no try/catch, and HilltopVillagePlugin.onEnable calls shopManager.reload() at line 120 without the fault isolation applied to PlayerGoodsManager/StatsManager (lines 105-116 catch Throwable). The preceding shop-directory delete().clear() style isolation elsewhere does not cover this path. YamlFiles.load() classifies a 0-byte/whitespace-only file as SUSPECT (YamlFiles.java:88-90) and quarantines it, so an admin who empties shop.yml, or a truncated write, yields status !usable() and the throw.",
+      "impact": "A single empty or corrupt plugins/HilltopVillage/shop.yml aborts onEnable, so the plugin never enables: no arenas, no worlds, no /hilltop commands, no listeners. Recovery requires manually repairing/removing shop.yml and restarting; the config is core to the whole plugin, not just the shop.",
+      "trigger": "Server start (onEnable -> ShopManager.reload -> ShopConfigLoader.load) with a blank, truncated or corrupt shop.yml; the same throw escapes /hilltop shop reload (HilltopCommandHandler.java:578) at runtime."
+    },
+    {
+      "local_id": "S09-F2",
+      "title": "MATERIAL item without icon.material charges full price and delivers a barrier block",
+      "severity": "high",
+      "file": "src/main/java/com/hilltopvillage/shop/ShopConfigLoader.java",
+      "line": 289,
+      "line_end": 292,
+      "evidence": "if (\"MATERIAL\".equals(type) && !iconConfigured) {\n            plugin.getLogger().warning(\"shop.yml: MATERIAL item '\" + id\n                    + \"' is missing icon.material; keeping the item with the BARRIER fallback icon.\"\n                    + \" Add icon.material to fix its GUI/delivery appearance\");",
+      "problem": "parseItem keeps a MATERIAL entry that has no icon.material and leaves icon at the BARRIER default (line 260). Because deliverItem builds the shipped product from that same field (ShopManager.java:135: return new ItemStack(item.getIcon(), amount);), the fallback is not display-only: it is what the player receives. The in-code comment admits the residual gap. The purchase path (ShopListener.purchase, lines 115-179) charges item.getPrice() first and never validates the delivered material, so the charge is unconditional.",
+      "impact": "A player pays the full configured price and receives a BARRIER (a non-survival, unusable block), i.e. a guaranteed currency loss per purchase, repeatable for as long as the admin leaves the entry unconfigured. The only signal is a startup warning line.",
+      "trigger": "Player buys that item from the shop GUI after shop.yml was saved with type: MATERIAL and no icon.material."
+    },
+    {
+      "local_id": "S09-F3",
+      "title": "reload() has no failure isolation: exception escapes the command and skips the GUI refresh",
+      "severity": "medium",
+      "file": "src/main/java/com/hilltopvillage/shop/ShopManager.java",
+      "line": 56,
+      "line_end": 56,
+      "evidence": "this.config = loader.load();",
+      "problem": "reload() is the single entry point used both by onEnable and by /hilltop shop reload, and it performs the throwing load() as its first statement. There is no try/catch, no status return, and no admin-facing message: the following loop that closes stale ShopGUI instances (lines 59-63) and the item-count log (line 64) are skipped, and the exception propagates into Bukkit's command dispatch. The caller at HilltopCommandHandler.java:578 assumes success and then reports itemCount from getShopConfig(), so the operator cannot distinguish 'reloaded 0 items', 'reload refused' and 'reload threw'.",
+      "impact": "Degraded/partial reload: on a refused load the in-memory snapshot and every already-open ShopGUI keep using the old prices while the admin gets no in-game error (only a console stack trace). Any price change the admin believes is live is not, and re-running the command keeps failing until the file is repaired and the server restarted.",
+      "trigger": "/hilltop shop reload with an unreadable/corrupt shop.yml (the shot is taken while the file is being edited)."
+    },
+    {
+      "local_id": "S09-F4",
+      "title": "Reload never re-applies the NPC name, so a changed shop.npc.name stays stale",
+      "severity": "medium",
+      "file": "src/main/java/com/hilltopvillage/shop/NpcManager.java",
+      "line": 102,
+      "line_end": 102,
+      "evidence": "String npcName = resolveNpcName();",
+      "problem": "The configured name is resolved and applied only inside spawnNpc(). ShopManager.reload() (lines 55-65) swaps the config snapshot and closes GUIs but never re-spawns, renames, or reconfigures the live Villager; nothing in NpcManager is touched by reload(). The villager field is deliberately kept stable across reloads ('reload does not rebuild', ShopManager.java:29), so the entity keeps the display name resolved at its last spawn.",
+      "impact": "Partial reload: an admin edits shop.npc.name (or the i18n shop.npc.name fallback) and runs /hilltop shop reload, gets 'Shop config reloaded', but the villager in game keeps the old name until a restart or until someone re-runs setshop / the wizard and thereby triggers spawnNpc.",
+      "trigger": "/hilltop shop reload after changing shop.npc.name in shop.yml, with the NPC already spawned."
+    }
+  ],
+  "unverified": [
+    "Whether CraftInventory#getStorageContents() returns live mirrors or copies could not be verified without the server jar: ShopManager.removeCurrency mutates a slot in place via item.setAmount(...) without writing it back with inv.setItem(i, ...) for the partial-take branch (ShopManager.java:217-222). MockBukkit tests pass, but a real-server copy semantics would make partial takes a silent no-op. No server jar exists in the audited tree, so this is dropped rather than asserted.",
+    "Material.AIR.isItem() semantics for shop.yml 'material: AIR' validation could not be executed (only the API jar is available, class-file version 65 vs local javac 17); the loader accepts any Material where isItem() is true, so an AIR currency/icon would only fail later in new ItemStack(...).",
+    "shop.yml itself (src/main/resources) is outside the Java slice and was only skimmed for key names; no full key-by-key validation of the shipped template was performed.",
+    "No build or test execution was performed (read-only audit)."
+  ],
+  "notes": "Audited all 7 files completely. The currency core is otherwise sound: currency identity is PDC-only (no material/display-name fallback, so anvil renaming cannot forge money), countCurrency/removeCurrency use the same slots (storage 0-35 plus offhand), removeCurrency refuses partial deduction and returns false before touching anything, every shop-inventory click and drag is cancelled before any branch (so shift-click, number-key and double-click cannot extract or insert), and the 250 ms per-player cooldown is written before the balance check, blocking same-tick double settlement. deliverItem failures are compensated (null and throwing factories both refund) and refund overflow is dropped with a paid marker. Remaining economy risk is the documented trade-off that a merged paid drop launders ordinary items into arena-reset-exempt drops (ShopListener.onItemMerge / ArenaInstance.clearDroppedItems), which is a deliberate anti-loss design with an entity-accumulation cost, so it was not reported as a defect."
+}

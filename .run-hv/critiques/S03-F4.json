@@ -1,0 +1,10 @@
+{
+  "finding_id": "S03-F4",
+  "verdict": "revoked",
+  "confidence": "medium",
+  "adjusted_severity": "low",
+  "reason": "The mechanics are accurately quoted: MainConfigMenu.java:151 calls only configManager.loadFromFile(); loadFromFile() reaches loadDisplayConfig() at ConfigManager.java:1381, and that method (ConfigManager.java:284-296) re-parses the cached displayYaml, assigned only in initDisplayFile() (line 199) and reloadDisplay() (line 274), the latter called only from HilltopCommandHandler.java:428. But the claimed failure does not follow. The button is labelled 'Load Config File' with lore 'Reload from game-settings.yml', and the success text is 'Config reloaded from game-settings.yml.' (messages.yml:625/634) — the GUI never asserts that display.yml was reloaded, so there is no false success claim. The impact sentence 'appear to have no effect until a full restart' is also false: /hilltop reloadconfig performs displayGate.reset() + a real disk re-read + TabListManager.start()/refreshNow() (HilltopCommandHandler.java:428-435), and docs/guides/config-reference.md:187 routes display.yml to that command. The only residual issue is that this one GUI button is narrower than the command — a UX/documentation nit, not the stated defect; the display hot-reload path is intentionally owned by reloadDisplay(), whose javadoc and YamlFileGate.reset() ('仅由 /hilltop reloadconfig 或重启后的重新构造调用', YamlFileGate.java:101) make that scope explicit.",
+  "counter_evidence": "messages.yml:625 `config.menu.main.reload-lore1: \"&7Reload from game-settings.yml\"`; messages.yml:634 `config.menu.main.reloaded-msg: \"&bConfig reloaded from game-settings.yml.\"`; HilltopCommandHandler.java:428 `plugin.getConfigManager().reloadDisplay();`; YamlFileGate.java:102-104 `public void reset() { readOnly = false; warned.set(false); }` called from the command path only.",
+  "corrected_file": "src/main/java/com/hilltopvillage/config/menu/MainConfigMenu.java",
+  "corrected_line": 151
+}

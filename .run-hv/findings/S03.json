@@ -1,0 +1,99 @@
+{
+    "slice_id":  "S03",
+    "auditor":  "wave2",
+    "files_read":  [
+                       "src/main/java/com/hilltopvillage/config/ConfigManager.java",
+                       "src/main/java/com/hilltopvillage/config/GameConfig.java",
+                       "src/main/java/com/hilltopvillage/config/ConfigPermission.java",
+                       "src/main/java/com/hilltopvillage/config/DisplayConfig.java",
+                       "src/main/java/com/hilltopvillage/config/DisplayConfigLoader.java",
+                       "src/main/java/com/hilltopvillage/config/menu/AbstractConfigMenu.java",
+                       "src/main/java/com/hilltopvillage/config/menu/GameRulesMenu.java",
+                       "src/main/java/com/hilltopvillage/config/menu/ItemSettingsMenu.java",
+                       "src/main/java/com/hilltopvillage/config/menu/MainConfigMenu.java",
+                       "src/main/java/com/hilltopvillage/config/menu/MonsterSettingsMenu.java",
+                       "src/main/java/com/hilltopvillage/config/menu/NodeSettingsMenu.java",
+                       "src/main/java/com/hilltopvillage/config/menu/WaveSettingsMenu.java",
+                       "src/main/java/com/hilltopvillage/config/menu/NumericInputHandler.java"
+                   ],
+    "findings":  [
+                     {
+                         "local_id":  "S03-F1",
+                         "title":  "Failed reload marks in-memory edits as saved and hides the save button",
+                         "severity":  "high",
+                         "file":  "src/main/java/com/hilltopvillage/config/ConfigManager.java",
+                         "line":  1391,
+                         "line_end":  1394,
+                         "evidence":  "settingsLoadedFromDisk = false;\nloadMonstersConfig();\nlastSavedSnapshot = activeConfig.snapshot();\nreturn false;",
+                         "problem":  "loadFromFile() takes the \"file unusable / gate read-only\" early return but first executes lastSavedSnapshot = activeConfig.snapshot(). The snapshot is taken from the still-modified in-memory config, so hasUnsavedChanges() (lines 307-313) compares the config against itself and returns false. MainConfigMenu then renders the GREEN_WOOL \"up to date\" item and omits the save button, while the load failure only produced a console SEVERE. The method contract at lines 1352-1358 promises that memory is preserved, but advancing the snapshot silently converts \"not reloaded\" into \"nothing left to save\".",
+                         "impact":  "Admin GUI edits (wave tuning, monster stats, rules) made while game-settings.yml was locked/corrupt are reported as persisted: the save button disappears, no retry is offered, and the next restart rebuilds activeConfig from disk, discarding every edit with no further trace.",
+                         "trigger":  "/hilltop config -\u003e reload button (MainConfigMenu:151) or /hilltop reloadconfig while game-settings.yml is corrupt, empty, absent after quarantine, or the settings gate is already read-only."
+                     },
+                     {
+                         "local_id":  "S03-F2",
+                         "title":  "Armor cycle list holds only helmets, so chest/legs/boots slots store helmet materials",
+                         "severity":  "medium",
+                         "file":  "src/main/java/com/hilltopvillage/config/menu/MonsterSettingsMenu.java",
+                         "line":  400,
+                         "line_end":  404,
+                         "evidence":  "private static final Material[] ARMOR_CYCLE = {\nMaterial.LEATHER_HELMET, Material.CHAINMAIL_HELMET, Material.IRON_HELMET,\nMaterial.DIAMOND_HELMET, Material.NETHERITE_HELMET, Material.GOLDEN_HELMET,\nMaterial.AIR\n};",
+                         "problem":  "addArmorSlot() is invoked for helmet, chestplate, leggings and boots (lines 191-198) but every call passes the single ARMOR_CYCLE array, whose entries are all helmets (LEATHER/CHAINMAIL/IRON/DIAMOND/NETHERITE/GOLDEN_HELMET) plus AIR. A plain click on the chestplate/leggings/boots slot therefore executes mc.setChestplate(LEATHER_HELMET) etc. WaveSettingsMenu.MonsterPropMenu reuses the same all-helmet ARMOR_LIST for all four slots (WaveSettingsMenu:511-514, 661-665). loadMonstersConfig() only checks Material.isItem() (ConfigManager:2040-2059) and saveMonstersConfig:1044-1047 writes the value back, so the wrong material is accepted and persisted.",
+                         "impact":  "The only GUI path for monster armor cannot produce a chestplate, leggings or boots; it writes helmet items into those fields (for example chestplate: LEATHER_HELMET), so equipped armor renders wrong or not at all and the misconfiguration survives reload and restart.",
+                         "trigger":  "/hilltop config -\u003e Monsters -\u003e any page -\u003e click (not shift-click) the chestplate, leggings or boots slot."
+                     },
+                     {
+                         "local_id":  "S03-F3",
+                         "title":  "Quarantined game-settings.yml is silently recreated from jar defaults on the next start",
+                         "severity":  "medium",
+                         "file":  "src/main/java/com/hilltopvillage/config/ConfigManager.java",
+                         "line":  147,
+                         "line_end":  149,
+                         "evidence":  "if (!settingsFile.exists()) {\nplugin.saveResource(\"game-settings.yml\", false);\n}",
+                         "problem":  "initSettingsFile() copies the bundled template whenever the file is missing, without distinguishing a first run from \"the previous run quarantined this file to *.corrupt\". YamlFiles.load() renames an unreadable file (empty/truncated/validator failure) to game-settings.yml.corrupt, so on the next start !settingsFile.exists() is true: saveResource() writes factory defaults, settingsGate.load() then returns OK and clears the read-only latch. The \"this run is READ-ONLY for that file\" protection therefore survives exactly one run, and the admin-supplied configuration is replaced by defaults with only the stale .corrupt file as evidence. initMonstersConfigFile() (164-167) and initDisplayFile() (187-190) share the shape, and loadFromFile() then sets settingsLoadedFromDisk = true, so the defaults are treated as an authoritative disk configuration.",
+                         "impact":  "One truncated or corrupt save is enough to have game-settings.yml (and monsters-config.yml / display.yml) silently revert to factory values on the following restart; later GUI saves persist those defaults, so tuning, wave tables and monster overrides are lost instead of the run staying read-only as the gate class documents.",
+                         "trigger":  "Restart the server after YamlFiles.load() has quarantined any of the three config files."
+                     },
+                     {
+                         "local_id":  "S03-F4",
+                         "title":  "Config-menu reload only re-parses the cached display.yml, so display edits never take effect",
+                         "severity":  "low",
+                         "file":  "src/main/java/com/hilltopvillage/config/menu/MainConfigMenu.java",
+                         "line":  148,
+                         "line_end":  152,
+                         "evidence":  "ct -\u003e {\n// #8：loadFromFile() 在 game-settings.yml 不可用/只读时会保留内存值并提前返回，\n// 且不抛异常。丢弃返回值就会在磁盘什么都没读到的情况下宣告「已重新加载」。\nboolean reloaded = configManager.loadFromFile();\nif (reloaded) {",
+                         "problem":  "The reload button calls only configManager.loadFromFile(). Inside loadFromFile() the sole display step is loadDisplayConfig() (ConfigManager:1381), and that method (ConfigManager:284-296) parses the in-memory displayYaml captured at startup; it never re-reads display.yml and never resets displayGate. The disk re-read plus gate reset exists only in reloadDisplay() (ConfigManager:264-276), which is called only by /hilltop reloadconfig. So after editing display.yml, the GUI reload prints \"reloaded\" (and plays the success sound) while the old scoreboard/tab layout keeps rendering, and neither TabListManager.start() nor the scoreboard refresh period is re-evaluated.",
+                         "impact":  "display.yml edits (lines, title, tab header, refresh-ticks) appear to have no effect until a full restart, and the GUI reports success while stale layout state stays live.",
+                         "trigger":  "/hilltop config -\u003e reload (crafting-table button) after editing display.yml."
+                     },
+                     {
+                         "local_id":  "S03-F5",
+                         "title":  "Missing tab.header/tab.footer silently blanks the tab instead of using the factory layout",
+                         "severity":  "low",
+                         "file":  "src/main/java/com/hilltopvillage/config/DisplayConfigLoader.java",
+                         "line":  201,
+                         "line_end":  206,
+                         "evidence":  "private static List\u003cDisplayConfig.Line\u003e parseOptionalLines(ConfigurationSection section,\nString key, String path,\nList\u003cString\u003e warnings) {\nif (!section.contains(key)) {\nreturn List.of();\n}",
+                         "problem":  "parseOptionalLines() returns List.of() whenever the key is absent, and parseTab() runs as soon as a tab: section exists at all. A partial tab section (for example only enabled/contexts/player-name, which passes YamlFiles.displayValidator) therefore drops the default header and footer, whereas the analogous scoreboard case explicitly restores the factory layout when its key is missing (parseBoard:152-155 -\u003e DisplayConfig.defaultLines()). Every other missing tab key (contexts, player-name.*) falls back to the documented default and emits no warning, so this one silent divergence is easy to miss.",
+                         "impact":  "Changing one tab setting (for example tab.contexts.arena=false) silently removes the tab header/footer for every player with no console warning, and behaves differently from the scoreboard section for the identical missing-key situation.",
+                         "trigger":  "display.yml with a tab: section that omits header or footer, then /hilltop reloadconfig or a restart."
+                     },
+                     {
+                         "local_id":  "S03-F6",
+                         "title":  "Invalid-number re-arm races with inventory-open and resurrects a pending chat input",
+                         "severity":  "low",
+                         "file":  "src/main/java/com/hilltopvillage/config/menu/NumericInputHandler.java",
+                         "line":  211,
+                         "line_end":  214,
+                         "evidence":  "PendingInput renewed = new PendingInput(pending.plugin, pending.callback, pending.min, pending.max,\npending.onCancel, pending.playerId, pending.lang);\npendingInputs.put(id, renewed);\nscheduleNumberTimeout(event.getPlayer(), renewed);",
+                         "problem":  "onChat() runs on the async chat thread: it removes the pending entry at line 172, then on NumberFormatException builds a new PendingInput and puts it back (lines 211-214). onInventoryOpen() (lines 246-251) clears the same map on the main thread to express \"the player has left chat-input mode\". The remove/re-put pair is not atomic, so an inventory opening between the removal and the re-put leaves a live entry behind after the player already left the input flow — the state the class javadoc (lines 236-244) says must not survive, and which the two-argument removals elsewhere were written to avoid.",
+                         "impact":  "The player next chat line is cancelled and, if it parses as a number, written straight into the config value with no confirmation while the player is already interacting with a GUI (the hijack the inventory-open guard exists to prevent).",
+                         "trigger":  "SHIFT-click a numeric slot, then send a non-numeric chat line at the same moment as opening any container so the chat thread re-arm lands after the main thread removal."
+                     }
+                 ],
+    "unverified":  [
+                       "Whether Bukkit/Paper renders or rejects an ItemStack of a helmet placed in the CHEST/LEGS/FEET equipment slot; the wrong material being written and reloaded is verified statically, the visual result is not.",
+                       "S03-F6 depends on a main-thread/async interleaving that cannot be proven from source; the non-atomic remove/re-put is verified, the exact timing window is not.",
+                       "No build or test execution (read-only audit); Bukkit semantics for saveResource(), HandlerList and YamlConfiguration path parsing are assumed from their documented behaviour."
+                   ],
+    "notes":  "Read all 13 S03 files completely, plus YamlFileGate/YamlFiles, ArenaManager.defaultMinPlayers/readDefinition, GameManager and WaveManager call sites to confirm reachability. Deliberately not reported: the missing InventoryDragEvent guard in AbstractConfigMenu (harmless because every click while the menu is open is already cancelled, so no cursor item can exist); unbounded wave numbers from the free-range requestInteger; monsters.\u003ckey\u003e.airdrop-mob-type not being in the external-change merge (saveToFile never writes that key, so disk values survive); and the GUI save reporting failure when only the monsters half fails (documented and snapshot-preserving)."
+}

@@ -1,0 +1,10 @@
+{
+  "finding_id": "S08-F3",
+  "verdict": "confirmed",
+  "confidence": "high",
+  "adjusted_severity": "low",
+  "reason": "Verified at TabListManager.java:402-430: the else branch assigns Component.empty() at lines 417-418 for a disabled context and line 427 sends it unconditionally, and the call site refreshAllUnchecked (lines 348-351) loops over every online player with no isManaged() test - the only gate before the send is the global tab.enabled() check at line 324, so a disabled per-context switch does not skip the packet. The send also runs on join through apply -> forcePush -> pushHeaderFooter (lines 175-182, 255-262) for a lobby player, i.e. exactly the case the T4.1 comment at lines 354-357 says must not overwrite another plugin's tab layout; Bukkit's header/footer is a single per-player field with no ownership tracking, so sending empty components erases the other plugin's value. The rule was implemented for name/order through resetNameAndOrder (382-391) but not for header/footer, so the internal contradiction the finding describes is real rather than a misreading of the javadoc at 396-400. One detail is overstated: because lastHeader/lastFooter cache the empty value (424-429), the wipe happens once per cache invalidation and a later value set by another plugin is not re-erased every refresh, so 'keeps it blank' overstates persistence while the initial overwrite itself is genuine.",
+  "counter_evidence": "",
+  "corrected_file": "src/main/java/com/hilltopvillage/mechanics/TabListManager.java",
+  "corrected_line": 417
+}

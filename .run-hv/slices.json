@@ -1,0 +1,459 @@
+{
+  "slice_count": 10,
+  "total_main_files": 75,
+  "coverage_check": {
+    "assigned_unique": 75,
+    "duplicate_count": 0,
+    "unassigned": [],
+    "duplicates": [],
+    "verified": true,
+    "method": "Recursive enumeration of src/main/java/com/hilltopvillage/**/*.java returned exactly 75 files (src/test, target, .git, docs and assets excluded). Every path appears in exactly one slice.files[]; set equality of manifest paths vs on-disk paths was checked, with no omissions and no duplicates."
+  },
+  "unverified": [
+    "No build or test execution was performed (read-only audit); entry-point reachability, call graphs and line counts are static. Line counts are LF counts from UTF-8 source and total 34205 across the 75 files.",
+    "target/generated-sources and target/generated-test-sources exist but contain no Java files; no annotation-processor or otherwise generated production sources were found, so no generated class is missing from the manifest.",
+    "Optional ItemsAdder support is reflection-only: HammerListener uses Class.forName(\"dev.lone.itemsadder.api.CustomStack\") and getMethod(...).invoke(...). plugin.yml declares no softdepend, so the presence/behavior of that API at runtime is unverified.",
+    "Paper Mob Goal implementations in the ai package are runtime entry points registered with Bukkit.getMobGoals().addGoal(...) inside WaveManager; they are not Bukkit @EventHandler methods and cannot be confirmed by plugin.yml or event registration alone.",
+    "Ten resource files under src/main/resources (plugin.yml, config.yml, arenas.yml, display.yml, game-settings.yml, messages.yml, messages-legacy.yml, monsters-config.yml, shop.yml, spawnpoints.yml) are outside the Java slice scope. Only plugin.yml was read, for command declarations; the other YAML key surfaces were not audited here.",
+    "The versions/ directory, docs/, assets/, .work/ and target/ classes were excluded from scope and were not inspected for alternate or stale production sources.",
+    "Cross-slice dependencies were derived from explicit imports and observed call sites. Dynamic lookup through the plugin service-locator getters (HilltopVillagePlugin#getXxx) is covered because those callers import the main class, but any purely string/reflection-based coupling would not appear."
+  ],
+  "notes": {
+    "architecture": "HilltopVillage is a Paper 1.21.4 (api-version 1.21, Java 21) cooperative PvE tower-defense plugin with a single JavaPlugin bootstrap, HilltopVillagePlugin. There is no DI framework: the main class constructs shared managers and exposes them through getters, and arena-scoped objects obtain them through the plugin reference (service-locator style).",
+    "bootstrap_order": "onEnable(): saveDefaultConfig -> LanguageManager -> ConfigManager -> fault-isolated PlayerGoodsManager and StatsManager (null on failure, feature degrades) -> MapRestoreManager -> VillagerPreviewManager -> ShopManager (reload + NPC respawn/orphan cleanup) -> MultiArenaManager (load definitions, optional serial auto-enable queue) -> ArenaAdminService/ArenaResetService/LocationParticlePreview -> TabListManager.start() -> listeners -> ArenaSelectionGUI -> ArenaCommand, SetupWizard, HilltopCommandHandler, HilltopTabCompleter -> listener registration -> /hilltop, /hub, /lobby executor and tab-completer binding -> CommandsDocumentGenerator.generate() (failure only warns).",
+    "shutdown_order": "onDisable() intentionally isolates each step in try/catch: Fireball task shutdown -> tab list stop/restore -> reset-service and particle-preview shutdown -> MultiArenaManager shutdown and synchronous stopAllArenasNow -> MapRestoreManager.restoreAllNow (final world-rollback barrier) -> shop NPC despawn -> preview entity cleanup -> StatsManager.saveNow -> PlayerGoodsManager.saveNow.",
+    "layers": "command/ is the command surface and setup wizard; config/ plus config/menu/ own YAML snapshots, validation gates and chest-GUI editors; arena/ owns definitions, the serial enable queue, per-arena instances and the WAITING/STARTING/RUNNING/ENDING state machine; core/ owns the game loop, waves and per-player data; ai/ supplies Paper Mob Goals spawned by WaveManager; mechanics/ holds Bukkit listeners for combat, nodes, villagers, lobby protection, world rollback and the scoreboard/tab displays; admin/ plus admin/gui/ implement deployment editing, reset orchestration and /hilltop manage; shop/ is a plugin-wide shop and NPC subsystem; util/ provides i18n, atomic YAML loading/gating, safe spawn search and particle helpers; stats/, diagnostic/ and doc/ are side features.",
+    "runtime_shape": "Arenas are enabled one at a time through MultiArenaManager's queue; disabled instances enter a retired-world quarantine until delayed reset/rollback completes. MapRestoreManager journals block changes per world and rolls them back on reset/disable. Per-arena GameManager, NodeSystem, VillagerSystem and ArenaScoreboard are created by ArenaInstance. Two display surfaces (ArenaScoreboard and TabListManager) are driven by display.yml parsed into DisplayConfig. WaveManager attaches the five AI goals when spawning wave mobs.",
+    "data_and_i18n": "YAML persistence is centralized in util/YamlFiles plus util/YamlFileGate (read-only gate when a file is corrupt/missing, with validator functions per file). LanguageManager loads messages.yml, with MessageTextSync reconciling jar defaults against on-disk customizations, plus per-player locale selection."
+  },
+  "slices": [
+    {
+      "id": "S01",
+      "name": "Plugin bootstrap and command routing",
+      "rationale": "The JavaPlugin lifecycle, Bukkit listener callbacks implemented on the main class, and the top-level command dispatch/tab-completion layer. These files define how every other subsystem is constructed, registered and reached from /hilltop, /hub and /lobby.",
+      "approx_lines": 2913,
+      "files": [
+        "src/main/java/com/hilltopvillage/HilltopVillagePlugin.java",
+        "src/main/java/com/hilltopvillage/command/HilltopCommandHandler.java",
+        "src/main/java/com/hilltopvillage/command/ArenaCommand.java",
+        "src/main/java/com/hilltopvillage/command/HilltopTabCompleter.java",
+        "src/main/java/com/hilltopvillage/command/DeployMenuSender.java"
+      ],
+      "entry_points": [
+        "HilltopVillagePlugin#onEnable",
+        "HilltopVillagePlugin#onDisable",
+        "HilltopVillagePlugin#onCommand",
+        "HilltopVillagePlugin#onProjectileHit",
+        "HilltopVillagePlugin#onMobDeath",
+        "HilltopVillagePlugin#onPlayerJoin",
+        "HilltopVillagePlugin#onPlayerRespawn",
+        "HilltopVillagePlugin#onPlayerQuit",
+        "HilltopCommandHandler#handle",
+        "ArenaCommand#onCommand",
+        "HilltopTabCompleter#onTabComplete",
+        "DeployMenuSender#sendDeployMenu"
+      ],
+      "cross_slice_deps": [
+        "S02: SetupWizard (constructed, registered as listener, invoked for /hilltop setup)",
+        "S03: ConfigManager, NumericInputHandler",
+        "S04: MultiArenaManager, ArenaInstance",
+        "S05: ArenaAdminService, ArenaResetService, LocationParticlePreview, ArenaManageGUI, AdminDeployManager",
+        "S06: GameManager, PlayerData, PlayerGoodsManager, WaveManager (orphan cleanup)",
+        "S07: HammerListener, NodeListener, FireballListener, PlayerLifecycleListener, LobbyProtectionListener, ArenaAccessListener, FriendlyFireListener, VillagerSystem.GlobalListener, VillagerPreviewManager, MapRestoreManager",
+        "S08: TabListManager, TpsDiagnostic",
+        "S09: ShopManager, ShopListener",
+        "S10: LanguageManager, StatsManager, CommandsDocumentGenerator"
+      ]
+    },
+    {
+      "id": "S02",
+      "name": "Setup wizard and arena selection GUI",
+      "rationale": "The two player/admin-facing inventory flows that are not part of the config or admin menus: the multi-step deployment wizard (sessions, chat subcommands, inventory clicks, disconnect persistence) and the arena chooser GUI. Keeping them together isolates large stateful GUI/session code from command parsing.",
+      "approx_lines": 2612,
+      "files": [
+        "src/main/java/com/hilltopvillage/command/SetupWizard.java",
+        "src/main/java/com/hilltopvillage/gui/ArenaSelectionGUI.java"
+      ],
+      "entry_points": [
+        "SetupWizard#start",
+        "SetupWizard#handle",
+        "SetupWizard#onInventoryClick",
+        "SetupWizard#onQuit",
+        "SetupWizard#invalidateDeploymentContext",
+        "ArenaSelectionGUI#openGUI",
+        "ArenaSelectionGUI#onInventoryClick",
+        "ArenaSelectionGUI#onInventoryDrag"
+      ],
+      "cross_slice_deps": [
+        "S01: HilltopVillagePlugin (plugin services, config persistence via plugin.getConfig)",
+        "S03: ConfigManager",
+        "S04: MultiArenaManager, ArenaInstance, ArenaManager, IArena",
+        "S05: AdminDeployManager, ArenaDefinition",
+        "S06: GameManager",
+        "S09: NpcManager",
+        "S10: LanguageManager"
+      ]
+    },
+    {
+      "id": "S03",
+      "name": "Configuration core and config menu editors",
+      "rationale": "All configuration state and its chest-GUI editors: game-settings/monsters/display parsing, write gates, permission constants, plus the abstract menu framework, numeric chat input and the rules/waves/monsters/items/nodes submenus. This is a self-contained read/write configuration surface consumed by nearly every other slice.",
+      "approx_lines": 6076,
+      "files": [
+        "src/main/java/com/hilltopvillage/config/ConfigManager.java",
+        "src/main/java/com/hilltopvillage/config/GameConfig.java",
+        "src/main/java/com/hilltopvillage/config/ConfigPermission.java",
+        "src/main/java/com/hilltopvillage/config/DisplayConfig.java",
+        "src/main/java/com/hilltopvillage/config/DisplayConfigLoader.java",
+        "src/main/java/com/hilltopvillage/config/menu/AbstractConfigMenu.java",
+        "src/main/java/com/hilltopvillage/config/menu/GameRulesMenu.java",
+        "src/main/java/com/hilltopvillage/config/menu/ItemSettingsMenu.java",
+        "src/main/java/com/hilltopvillage/config/menu/MainConfigMenu.java",
+        "src/main/java/com/hilltopvillage/config/menu/MonsterSettingsMenu.java",
+        "src/main/java/com/hilltopvillage/config/menu/NodeSettingsMenu.java",
+        "src/main/java/com/hilltopvillage/config/menu/WaveSettingsMenu.java",
+        "src/main/java/com/hilltopvillage/config/menu/NumericInputHandler.java"
+      ],
+      "entry_points": [
+        "ConfigManager#ConfigManager",
+        "ConfigManager#loadFromFile",
+        "ConfigManager#saveToFile",
+        "ConfigManager#revertAll",
+        "ConfigManager#reloadDisplay",
+        "AbstractConfigMenu#open",
+        "AbstractConfigMenu#onClick",
+        "AbstractConfigMenu#onClose",
+        "MainConfigMenu#buildMenu",
+        "GameRulesMenu#buildMenu",
+        "ItemSettingsMenu#buildMenu",
+        "MonsterSettingsMenu#buildMenu",
+        "NodeSettingsMenu#buildMenu",
+        "WaveSettingsMenu#buildMenu",
+        "NumericInputHandler#onChat",
+        "NumericInputHandler#onQuit",
+        "NumericInputHandler#onInventoryOpen"
+      ],
+      "cross_slice_deps": [
+        "S01: HilltopVillagePlugin",
+        "S04: MultiArenaManager (config reload refreshes definitions)",
+        "S10: YamlFiles, YamlFileGate, LanguageManager"
+      ]
+    },
+    {
+      "id": "S04",
+      "name": "Arena instances and multi-arena lifecycle",
+      "rationale": "The runtime arena object and the manager that owns the enable queue, player routing, rejoin windows, retired-world quarantine and lobby state. These two files carry the core state machine and scheduler ownership, so they form one cohesive concurrency/lifecycle slice.",
+      "approx_lines": 2974,
+      "files": [
+        "src/main/java/com/hilltopvillage/arena/ArenaInstance.java",
+        "src/main/java/com/hilltopvillage/arena/MultiArenaManager.java",
+        "src/main/java/com/hilltopvillage/arena/IArena.java",
+        "src/main/java/com/hilltopvillage/arena/ArenaStatus.java"
+      ],
+      "entry_points": [
+        "MultiArenaManager#loadArenaDefinitions",
+        "MultiArenaManager#enableArena",
+        "MultiArenaManager#disableArena",
+        "MultiArenaManager#joinArena",
+        "MultiArenaManager#leaveArena",
+        "MultiArenaManager#tryRejoin",
+        "MultiArenaManager#handleQuit",
+        "MultiArenaManager#applyLobbyState",
+        "MultiArenaManager#shutdown",
+        "MultiArenaManager#processEnableQueue",
+        "MultiArenaManager#expirePendingRejoins",
+        "MultiArenaManager#processRetiredArenas",
+        "ArenaInstance#addPlayer",
+        "ArenaInstance#startGame",
+        "ArenaInstance#stopGame",
+        "ArenaInstance#rejoin",
+        "ArenaInstance#resetNow",
+        "ArenaInstance#beginEndSequence",
+        "ArenaInstance#startCountdown",
+        "ArenaInstance#ensureEmptyArenaTaskRunning"
+      ],
+      "cross_slice_deps": [
+        "S01: HilltopVillagePlugin",
+        "S03: ConfigManager, GameConfig",
+        "S05: ArenaDefinition, ArenaManager (definition registry)",
+        "S06: GameManager, GameState, PlayerData, PlayerGoodsManager",
+        "S07: ArenaScoreboard, NodeSystem, VillagerSystem",
+        "S10: LanguageManager, SafeSpawnUtil"
+      ]
+    },
+    {
+      "id": "S05",
+      "name": "Arena definitions, deployment and admin GUI",
+      "rationale": "Definition parsing/validation, deployment editing, reset orchestration, particle previews and the /hilltop manage GUI. These pieces all mutate or describe arena definitions and are only reachable through admin flows, making a cohesive administrative slice.",
+      "approx_lines": 4909,
+      "files": [
+        "src/main/java/com/hilltopvillage/arena/ArenaManager.java",
+        "src/main/java/com/hilltopvillage/arena/ArenaDefinition.java",
+        "src/main/java/com/hilltopvillage/arena/ArenaRegistry.java",
+        "src/main/java/com/hilltopvillage/admin/AdminDeployManager.java",
+        "src/main/java/com/hilltopvillage/admin/ArenaAdminService.java",
+        "src/main/java/com/hilltopvillage/admin/ArenaResetService.java",
+        "src/main/java/com/hilltopvillage/admin/PointKind.java",
+        "src/main/java/com/hilltopvillage/admin/PointParticleRenderer.java",
+        "src/main/java/com/hilltopvillage/admin/LocationParticlePreview.java",
+        "src/main/java/com/hilltopvillage/admin/gui/AbstractAdminMenu.java",
+        "src/main/java/com/hilltopvillage/admin/gui/ArenaManageGUI.java"
+      ],
+      "entry_points": [
+        "ArenaManager#load",
+        "ArenaManager#reload",
+        "ArenaManager#validate",
+        "ArenaManager#clearDeploymentData",
+        "ArenaManager#updateGameParams",
+        "AdminDeployManager#loadSpawnPoints",
+        "AdminDeployManager#saveSpawnPoints",
+        "AdminDeployManager#addSpawnPoint",
+        "AdminDeployManager#setCoreLocation",
+        "AdminDeployManager#setWaitingLocation",
+        "AdminDeployManager#showSpawnPointParticles",
+        "ArenaAdminService#listArenas",
+        "ArenaAdminService#describe",
+        "ArenaAdminService#updateGameParams",
+        "ArenaResetService#reset",
+        "ArenaResetService#canReset",
+        "ArenaResetService#shutdown",
+        "ArenaManageGUI#buildMenu",
+        "AbstractAdminMenu#guardClick",
+        "AbstractAdminMenu#guardDrag",
+        "LocationParticlePreview#show",
+        "LocationParticlePreview#stopAll"
+      ],
+      "cross_slice_deps": [
+        "S01: HilltopVillagePlugin",
+        "S03: NumericInputHandler (param input from the admin GUI)",
+        "S04: ArenaInstance, MultiArenaManager, ArenaStatus",
+        "S06: GameManager, GameState",
+        "S07: NodeSystem, MapRestoreManager",
+        "S09: NpcManager",
+        "S10: YamlFiles, YamlFileGate, LanguageManager"
+      ]
+    },
+    {
+      "id": "S06",
+      "name": "Core game loop, waves, player state and mob AI",
+      "rationale": "GameManager, WaveManager, per-player data/goods and the five Paper Mob Goals they attach. Wave spawning is the only place the AI goals are registered, and the game loop drives them each tick, so these files are tightly coupled and best reviewed together.",
+      "approx_lines": 4151,
+      "files": [
+        "src/main/java/com/hilltopvillage/core/GameManager.java",
+        "src/main/java/com/hilltopvillage/core/GameState.java",
+        "src/main/java/com/hilltopvillage/core/PlayerData.java",
+        "src/main/java/com/hilltopvillage/core/WaveManager.java",
+        "src/main/java/com/hilltopvillage/core/PlayerGoodsManager.java",
+        "src/main/java/com/hilltopvillage/ai/AirdropSpawnGoal.java",
+        "src/main/java/com/hilltopvillage/ai/DropperAttackGoal.java",
+        "src/main/java/com/hilltopvillage/ai/ExplodeBeetleGoal.java",
+        "src/main/java/com/hilltopvillage/ai/HookClawHunterGoal.java",
+        "src/main/java/com/hilltopvillage/ai/NodeAttackGoal.java"
+      ],
+      "entry_points": [
+        "GameManager#startGame",
+        "GameManager#startNextWave",
+        "GameManager#checkWaveCompletion",
+        "GameManager#forceAdvanceWave",
+        "GameManager#endGame",
+        "GameManager#stopGame",
+        "GameManager#respawnDeadPlayers",
+        "GameManager#addPlayer",
+        "GameManager#removePlayer",
+        "WaveManager#spawnWave",
+        "WaveManager#onMobDeath",
+        "WaveManager#spawnAirdropMobs",
+        "WaveManager#cleanupAllOrphans",
+        "NodeAttackGoal#tick",
+        "ExplodeBeetleGoal#tick",
+        "HookClawHunterGoal#tick",
+        "HookClawHunterGoal#onHookHit",
+        "AirdropSpawnGoal#tick",
+        "DropperAttackGoal#tick",
+        "PlayerGoodsManager#save",
+        "PlayerGoodsManager#restore",
+        "PlayerGoodsManager#saveNow"
+      ],
+      "cross_slice_deps": [
+        "S01: HilltopVillagePlugin",
+        "S03: ConfigManager, GameConfig",
+        "S04: MultiArenaManager, ArenaInstance",
+        "S05: ArenaDefinition",
+        "S07: NodeSystem",
+        "S09: ShopManager (currency item drops)",
+        "S10: LanguageManager, DisplayEntityManager, SafeSpawnUtil"
+      ]
+    },
+    {
+      "id": "S07",
+      "name": "Combat, nodes, villagers, world rollback and protection listeners",
+      "rationale": "The Bukkit listener layer for in-game mechanics plus the node/villager systems and the block-journal rollback manager they depend on. Shared event-routing and world-state concerns make this the natural mechanics slice.",
+      "approx_lines": 4774,
+      "files": [
+        "src/main/java/com/hilltopvillage/mechanics/HammerListener.java",
+        "src/main/java/com/hilltopvillage/mechanics/HammerEffectRenderer.java",
+        "src/main/java/com/hilltopvillage/mechanics/FireballListener.java",
+        "src/main/java/com/hilltopvillage/mechanics/NodeListener.java",
+        "src/main/java/com/hilltopvillage/mechanics/NodeSystem.java",
+        "src/main/java/com/hilltopvillage/mechanics/VillagerSystem.java",
+        "src/main/java/com/hilltopvillage/mechanics/VillagerPreviewManager.java",
+        "src/main/java/com/hilltopvillage/mechanics/MapRestoreManager.java",
+        "src/main/java/com/hilltopvillage/mechanics/LobbyProtectionListener.java",
+        "src/main/java/com/hilltopvillage/mechanics/ArenaAccessListener.java",
+        "src/main/java/com/hilltopvillage/mechanics/FriendlyFireListener.java",
+        "src/main/java/com/hilltopvillage/mechanics/PlayerLifecycleListener.java"
+      ],
+      "entry_points": [
+        "HammerListener#onPlayerInteract",
+        "HammerListener#onPlayerMove",
+        "HammerListener#onFallDamage",
+        "HammerListener#onPlayerQuit",
+        "FireballListener#onRightClick",
+        "FireballListener#onDispense",
+        "FireballListener#onProjectileHit",
+        "FireballListener#shutdown",
+        "NodeListener#onBlockBreak",
+        "NodeListener#onEntityExplode",
+        "NodeListener#onBlockExplode",
+        "NodeListener#onBlockExplosionDamage",
+        "NodeListener#onPlayerInteract",
+        "NodeSystem#applyAllBuffs",
+        "VillagerSystem.GlobalListener#onVillagerDamage",
+        "VillagerSystem.GlobalListener#onVillagerDeath",
+        "VillagerPreviewManager#onEntitiesLoad",
+        "VillagerPreviewManager#onPreviewDamage",
+        "MapRestoreManager#onBlockBreak",
+        "MapRestoreManager#onBlockPlace",
+        "MapRestoreManager#onEntityExplode",
+        "MapRestoreManager#onBlockExplode",
+        "MapRestoreManager#onBlockFade",
+        "MapRestoreManager#onPlayerBucketEmpty",
+        "MapRestoreManager#onBlockFromTo",
+        "LobbyProtectionListener#onBlockBreak",
+        "ArenaAccessListener#onTeleport",
+        "FriendlyFireListener#onEntityDamage",
+        "PlayerLifecycleListener#onDeath",
+        "PlayerLifecycleListener#onRespawn"
+      ],
+      "cross_slice_deps": [
+        "S01: HilltopVillagePlugin",
+        "S03: GameConfig",
+        "S04: ArenaInstance",
+        "S05: ArenaDefinition",
+        "S06: GameManager, GameState, PlayerData",
+        "S10: LanguageManager, YamlFiles, SafeSpawnUtil, DisplayEntityManager"
+      ]
+    },
+    {
+      "id": "S08",
+      "name": "Scoreboard, tab list and TPS diagnostics",
+      "rationale": "The two display surfaces driven by display.yml plus the TPS diagnostic command helper. They share layout/condition semantics and per-player refresh loops, and are independent of gameplay mutation code.",
+      "approx_lines": 1606,
+      "files": [
+        "src/main/java/com/hilltopvillage/mechanics/ArenaScoreboard.java",
+        "src/main/java/com/hilltopvillage/mechanics/TabListManager.java",
+        "src/main/java/com/hilltopvillage/diagnostic/TpsDiagnostic.java"
+      ],
+      "entry_points": [
+        "ArenaScoreboard#show",
+        "ArenaScoreboard#hide",
+        "ArenaScoreboard#cleanupPlayer",
+        "ArenaScoreboard#refreshAll",
+        "TabListManager#start",
+        "TabListManager#stop",
+        "TabListManager#apply",
+        "TabListManager#cleanup",
+        "TabListManager#restoreAll",
+        "TabListManager#refreshNow",
+        "TabListManager#refreshAll",
+        "TpsDiagnostic#printDiagnostic"
+      ],
+      "cross_slice_deps": [
+        "S01: HilltopVillagePlugin",
+        "S03: DisplayConfig",
+        "S04: ArenaInstance, MultiArenaManager",
+        "S06: GameManager, GameState, PlayerData",
+        "S10: LanguageManager"
+      ]
+    },
+    {
+      "id": "S09",
+      "name": "Shop, NPC and currency subsystem",
+      "rationale": "A plugin-wide shop that is deliberately not arena-owned: config model/loader, GUI, listeners, NPC lifecycle and currency item handling. All seven files form a closed feature and share the shop.yml data contract.",
+      "approx_lines": 1520,
+      "files": [
+        "src/main/java/com/hilltopvillage/shop/NpcManager.java",
+        "src/main/java/com/hilltopvillage/shop/ShopConfig.java",
+        "src/main/java/com/hilltopvillage/shop/ShopConfigLoader.java",
+        "src/main/java/com/hilltopvillage/shop/ShopGUI.java",
+        "src/main/java/com/hilltopvillage/shop/ShopItem.java",
+        "src/main/java/com/hilltopvillage/shop/ShopListener.java",
+        "src/main/java/com/hilltopvillage/shop/ShopManager.java"
+      ],
+      "entry_points": [
+        "ShopListener#onPlayerInteractEntity",
+        "ShopListener#onNpcDamage",
+        "ShopListener#onInventoryClick",
+        "ShopListener#onInventoryDrag",
+        "ShopListener#onItemMerge",
+        "ShopListener#onPlayerQuit",
+        "ShopGUI#open",
+        "ShopManager#reload",
+        "ShopManager#countCurrency",
+        "ShopManager#removeCurrency",
+        "ShopManager#deliverItem",
+        "NpcManager#spawnNpc",
+        "NpcManager#respawnFromConfig",
+        "NpcManager#cleanupOrphans",
+        "NpcManager#despawnNpc",
+        "ShopConfigLoader#load"
+      ],
+      "cross_slice_deps": [
+        "S01: HilltopVillagePlugin",
+        "S04: ArenaInstance",
+        "S05: ArenaDefinition",
+        "S06: GameState",
+        "S10: YamlFiles, YamlFileGate, LanguageManager"
+      ]
+    },
+    {
+      "id": "S10",
+      "name": "Persistence, i18n, statistics, docs and shared utilities",
+      "rationale": "Cross-cutting infrastructure: YAML atomic load/write and read-only gating, language and message synchronization, stats persistence, command-doc generation, safe spawn search and particle helpers. These are consumed by every other slice rather than owning gameplay.",
+      "approx_lines": 2670,
+      "files": [
+        "src/main/java/com/hilltopvillage/util/LanguageManager.java",
+        "src/main/java/com/hilltopvillage/util/MessageTextSync.java",
+        "src/main/java/com/hilltopvillage/util/YamlFiles.java",
+        "src/main/java/com/hilltopvillage/util/YamlFileGate.java",
+        "src/main/java/com/hilltopvillage/util/SafeSpawnUtil.java",
+        "src/main/java/com/hilltopvillage/util/DisplayEntityManager.java",
+        "src/main/java/com/hilltopvillage/stats/StatsManager.java",
+        "src/main/java/com/hilltopvillage/doc/CommandsDocumentGenerator.java"
+      ],
+      "entry_points": [
+        "LanguageManager#LanguageManager",
+        "LanguageManager#reload",
+        "LanguageManager#getFor",
+        "LanguageManager#send",
+        "LanguageManager#setPlayerLocale",
+        "MessageTextSync#sync",
+        "YamlFiles#load",
+        "YamlFiles#write",
+        "YamlFileGate#load",
+        "YamlFileGate#write",
+        "SafeSpawnUtil#findSafeGround",
+        "DisplayEntityManager#spawnNodeRepairEffect",
+        "StatsManager#record",
+        "StatsManager#recordOffline",
+        "StatsManager#saveNow",
+        "StatsManager#flushAsync",
+        "CommandsDocumentGenerator#generate"
+      ],
+      "cross_slice_deps": [
+        "S01: HilltopVillagePlugin",
+        "S06: PlayerData (statistics input)"
+      ]
+    }
+  ]
+}
