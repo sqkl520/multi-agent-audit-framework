@@ -218,5 +218,27 @@ console.log('\ncase 14: 真正新增的无出口规则句仍必须被抓（不�
   rmSync(d, { recursive: true, force: true });
 }
 
+console.log('\ncase 15: `finding_id` 不应被当成命令示例，吃掉 `.md` 出口');
+{
+  // 2026-11-20 修：旧判据 `/grep|xargs|find|cat |del |rm /i` 里的 `find` 没有词边界，
+  // 命中 `finding_id` / `findings` —— 而这两个词几乎每条 finding 相关规则附近都有，
+  // 于是它们指向的 `.md` 出口被系统性否决。实测因此少算 46 条真出口。
+  //
+  // 这条用例钉住两个方向：
+  //   ① `finding_id` 附近提到规范文件 → 算出口
+  //   ② 真的命令示例（`grep foo.md`）→ 仍不算出口（不能矫枉过正）
+  const d = makeFramework({
+    docs: {
+      'spec.md': '# SPEC\n\n这份规范定义 finding 的形状。\n',
+      'a.md': '# A\n\n每条 finding_id 必须符合 spec.md 的规定。\n',
+      'b.md': '# B\n\n必须这样做。\n\n    xargs grep foo spec.md\n',
+    },
+  });
+  const r = run(d);
+  ok('finding_id 附近 → 算出口', /a\.md\s+1\/1/.test(r.out) || /有机器出口\s+[12]/.test(r.out), r.out);
+  ok('真命令示例仍不算出口', /有机器出口\s+1/.test(r.out), r.out);
+  rmSync(d, { recursive: true, force: true });
+}
+
 console.log(`\n=== 结果: ${pass} 通过 / ${fail} 失败 ===\n`);
 process.exit(fail === 0 ? 0 : 1);

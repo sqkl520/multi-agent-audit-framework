@@ -32,6 +32,8 @@ function withCopy(mutator, fn) {
   cpSync(join(ROOT, 'framework'), join(dir, 'framework'), { recursive: true });
   mkdirSync(join(dir, 'tools'), { recursive: true });
   cpSync(TOOL, join(dir, 'tools', 'check-wrapper-integrity.mjs'));
+  // 基线文件也要一起拷，否则 case 4/5/7 的 --baseline 会指向临时目录里不存在的路径
+  cpSync(join(HERE, 'fixtures'), join(dir, 'tools', 'fixtures'), { recursive: true });
   mutator(join(dir, 'framework', 'wrappers'), dir);
   try {
     return fn(dir);
@@ -44,10 +46,13 @@ function runIn(dir, extra = []) {
   try {
     const out = execFileSync(process.execPath,
       [join(dir, 'tools', 'check-wrapper-integrity.mjs'), ...extra],
-      { encoding: 'utf8' });
+      // cwd 设在临时目录里，这样 `--baseline fixtures/...` 相对它解析，
+      // 与 check-all（cwd=tools）和手工从 tools/ 跑时的行为一致。
+      { encoding: 'utf8', cwd: join(dir, 'tools') });
     return { code: 0, out };
   } catch (e) {
-    return { code: e.status ?? 1, out: e.stdout?.toString() ?? '' };
+    // stderr 也要收：exit 2 的「配置错误」是写到 stderr 的（那是错误通道）。
+    return { code: e.status ?? 1, out: (e.stdout?.toString() ?? '') + (e.stderr?.toString() ?? '') };
   }
 }
 
@@ -148,6 +153,27 @@ console.log('case 5: JSON 输出里 results[].issues 与 findings 必须都有�
     expect('基线问题级别为 WARN 而非 FAIL',
       (data?.findings ?? []).every((f) => f.level !== 'FAIL' || !/基线/.test(f.msg ?? '')),
       JSON.stringify((data?.findings ?? []).map((f) => f.level)));
+  });
+}
+
+console.log('case 6: --baseline 指向不存在的文件 → 必须 exit 2，不得静默跳过');
+{
+  // 2026-11-20 修：原来 `if (baselinePath && existsSync(baselinePath))`，
+  // 路径不存在就整段跳过，输出「合计: 0 项问题 / 7 个文件」exit 0 ——
+  // 与「基线对比通过」完全同形。而注释写的是「不能因此不报」。
+  withCopy(() => {}, (dir) => {
+    const r = runIn(dir, ['--baseline', 'fixtures/this-does-not-exist.json']);
+    expect('退出码 2（配置错误）', r.code === 2, `实际 ${r.code}`);
+    expect('报出配置错误', /配置错误/.test(r.out + (r.err ?? '')), r.out.slice(-200));
+  });
+}
+
+console.log('case 7: --baseline 指向有效文件 → 正常比对，不因 case 6 而误判');
+{
+  withCopy(() => {}, (dir) => {
+    const r = runIn(dir, ['--baseline', 'fixtures/wrapper-baseline.json']);
+    expect('退出码 0', r.code === 0, `实际 ${r.code}`);
+    expect('确实比对了基线', /已知未闭合|0 项问题/.test(r.out), r.out.slice(-200));
   });
 }
 

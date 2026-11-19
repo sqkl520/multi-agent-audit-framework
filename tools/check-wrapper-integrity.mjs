@@ -123,7 +123,22 @@ for (const f of files) {
 // 且 CHECKOUT-INCIDENT.md 已判定「无源可恢复，不补写」。
 // 若保持 FAIL，check-all 会永久红，下一个人会以为新坏了 5 个文件。
 // 但**不能因此不报**——它必须每次都被看见，所以降为 WARN 而不是删除。
-if (baselinePath && existsSync(baselinePath)) {
+//
+// 2026-11-20 修：`--baseline` 给了但文件不存在时，原来是**整段静默跳过**。
+// 实测：同一个 wrapper、同一份基线，从仓库根跑（`--baseline fixtures/wrapper-baseline.json`，
+// 相对 cwd 解析、路径差一级）报「0 项问题 / 7 个文件」exit 0，从 tools/ 跑报
+// 「0 项问题 / 5 项已知未闭合」。**那份内容永久丢失的 5 项，会因为一个相对路径错误
+// 而完全不被看见**——而上面这句注释写的是「不能因此不报」。
+//
+// 判据：给了 `--baseline` 就说明调用方要求做对比。文件不存在是**配置错误**，
+// 不是「调用方不想比」。静默降级成「不比」等于把这道检查关掉而不告诉任何人。
+if (baselinePath && !existsSync(baselinePath)) {
+  console.error(`\n[配置错误] --baseline 指定的文件不存在: ${baselinePath}`);
+  console.error('  （路径相对当前工作目录解析。从 tools/ 里跑应该是 fixtures/wrapper-baseline.json）');
+  console.error('  静默跳过基线对比等于关掉这道检查——「不能因此不报」的 5 项会一次都不被看见。\n');
+  process.exit(2);
+}
+if (baselinePath) {
   const baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));
   for (const r of results) {
     const base = baseline[r.name];

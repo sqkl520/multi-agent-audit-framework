@@ -81,7 +81,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
 const TOOLS = join(HERE);
 
-const ARG = { json: false, gate: false, since: null, failOnRegress: false, quiet: false };
+const ARG = { json: false, gate: false, since: null, failOnRegress: false, quiet: false, dumpRows: false };
 for (let i = 2; i < process.argv.length; i++) {
   const a = process.argv[i];
   if (a === '--json') ARG.json = true;
@@ -89,9 +89,13 @@ for (let i = 2; i < process.argv.length; i++) {
   else if (a === '--gate-new') { ARG.gate = true; }
   else if (a === '--fail-on-regress') ARG.failOnRegress = true;
   else if (a === '--quiet') ARG.quiet = true;
+  // 2026-11-20 补：--json 只给聚合数字，下游拿不到「具体是哪一句没出口」，
+  // 于是任何按文件并行分诊的作业都得自己重新实现一遍抽取逻辑 —— 两份实现必然漂移。
+  // 这是本框架反复记过的形态（校验器与契约各写一套正则）。明细必须由同一个抽取器导出。
+  else if (a === '--dump-rows') ARG.dumpRows = true;
   else if (a === '--since') ARG.since = process.argv[++i] ?? null;
   else if (a === '--help' || a === '-h') {
-    console.log('用法: node check-rule-ledger.mjs [--json] [--gate] [--since <ref>] [--fail-on-regress]');
+    console.log('用法: node check-rule-ledger.mjs [--json] [--dump-rows] [--gate] [--since <ref>] [--fail-on-regress]');
     process.exit(0);
   } else { console.error(`未知参数: ${a}`); process.exit(2); }
 }
@@ -199,7 +203,14 @@ for (const abs of docs) {
       // 2026-11-19 实测：不排除的话出口率会从 33% 虚高，抽 6 条全是为了假出口。
       if (!artifacts.has(m[1])) continue;
       if (m[1] === basename(rel)) continue;                    // 自指
-      if (/grep|xargs|find|cat |del |rm /i.test(window)) continue;  // 命令示例
+      // 2026-11-20 修：旧判据是 `/grep|xargs|find|cat |del |rm /i`，其中 `find` 没有词边界，
+      // 会命中 **`finding_id` / `findings`** —— 而这两个词几乎出现在每一条 finding 相关规则
+      // 附近，于是它们所指的 `.md` 出口被系统性否决。
+      //
+      // 实测：窗口里含 `.md` 文件名且被旧判据否决的有 51 条，换成下面这条只在
+      // 「真的是命令上下文」时否决的判据后只剩 5 条 —— **46 条真出口被一个正则吃掉了**。
+      // 这不是出口率的统计噪声，是"有检测器却算成没检测器"。
+      if (/(^|[\s`|(])(grep|xargs|find|cat|del|rm)\s+[-./'"`A-Za-z]/i.test(window)) continue;  // 命令示例
       // 必须真的是「另一份规范在约束这件事」，而不是顺手提了一句文件名。
       // 判据：该文件名附近出现「按/依/见/遵循/符合/由…规定/参见」这类指引词。
       // 2026-11-19 实测：不加这条时，「两遍制能保证…」（正文提到 protocol.md）
@@ -344,6 +355,19 @@ const result = {
   gated,
   ok: violations.length === 0 && gated.length === 0 && !regression,
 };
+
+// 逐条明细：默认不输出（会让 --json 的体积涨 20 倍，CI 日志读不了）。
+// 分诊作业需要它，所以显式开。
+if (ARG.dumpRows) {
+  result.rows = files.flatMap((f) => f.rows.map((r) => ({
+    file: f.path,
+    line: r.line,
+    text: r.text,
+    has_exit: r.hasExit,
+    discretionary_no_reason: r.discretionaryNoReason,
+    exits: r.exits,
+  })));
+}
 
 if (ARG.json) {
   console.log(JSON.stringify(result, null, 2));
