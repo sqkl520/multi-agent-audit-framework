@@ -965,5 +965,98 @@ console.log('case 52: 真交付物（无机器字段）→ 仍应豁免 G7，不
   rmSync(dir, { recursive: true, force: true });
 }
 
+console.log('case 53: 尾逗号容错改写 quote → 编造的 quote 不得判 G0 PASS');
+{
+  // 2026-11-20 修：旧实现无条件 `.replace(/,(\s*[}\]])/g,'$1')` 改写整段 JSON，
+  // 包括字符串内部。实测源文件是 `if (a) { return {x}; }`、quote 写成
+  // `if (a) { return {x,}; }`（逐字不存在），门 0 报「1/1 通过」。
+  // 这正好摧毁门 0 的存在理由：诚实引用可能被判伪造，编造引用被判真实。
+  const dir = mkdtempSync(join(tmpdir(), 'v53-'));
+  const repo = join(dir, 'repo');
+  mkdirSync(join(repo, 'src'), { recursive: true });
+  writeFileSync(join(repo, 'src', 'comma.js'), 'if (a) { return {x}; }\n');
+  const art = join(dir, 'arts');
+  mkdirSync(art, { recursive: true });
+  // 手工写产物：JSON 带尾逗号（触发容错），quote 含 `{x,}`（源文件里不存在）
+  writeFileSync(join(art, 'round1-02-audit-core-logic.md'), [
+    '# audit', '', '```json', '{',
+    '  "schema_version": "output-contract-v1",',
+    '  "agent_id": "a1",',
+    '  "role": "audit",',
+    '  "status": "SUCCESS",',
+    '  "contract_valid": true,',
+    '  "artifact_path": "' + join(art, 'round1-02-audit-core-logic.md').replace(/\\/g, '/') + '",',
+    '  "payload": { "findings": [ {',
+    '    "finding_id": "F1", "status": "CONFIRMED", "file": "src/comma.js", "line": 1,',
+    '    "evidence": { "file": "src/comma.js", "line": 1, "quote": "if (a) { return {x,}; }" },',
+    '    "inference": { "claim": "c", "basis": "probe basis long enough", "alternatives": ["n"] }',
+    '  },] },',
+    '}', '```', '',
+  ].join('\n'));
+
+  const r = run(repo, art);
+  const g0pass = (r.json?.findings ?? []).filter((f) => f.check === 'G0' && f.level === 'PASS');
+  const g0warn = (r.json?.findings ?? []).filter((f) => f.check === 'G0' && f.level === 'WARN');
+  expect('编造的 quote 不得判 G0 PASS', g0pass.length === 0, JSON.stringify(g0pass));
+  expect('必须报成「无法核验」', g0warn.length > 0, JSON.stringify((r.json?.findings ?? []).map((f) => `${f.level}:${f.check}`)));
+  rmSync(dir, { recursive: true, force: true });
+}
+
+console.log('case 54: 全 SKIP（0 PASS / 0 FAIL）→ 必须 exit 4，不得报「通过」');
+{
+  // 2026-11-20 修：`envelopes.length === 0` 的守卫只挡住「一份产物都没有」。
+  // 一份格式合法、但所有检查都无从下手的信封能穿过它，得到
+  //   「合计: 0 FAIL / 0 WARN / 0 PASS / 6 SKIP」+ EXIT=0
+  // 也就是把「无从验证」报告成「验证通过」。判 4（验证仪问题），不是 1（产物违规）。
+  const dir = mkdtempSync(join(tmpdir(), 'v54-'));
+  const repo = join(dir, 'repo');
+  mkdirSync(join(repo, 'src'), { recursive: true });
+  writeFileSync(join(repo, 'src', 'a.js'), 'const a=1;\n');
+  const art = join(dir, 'arts');
+  mkdirSync(art, { recursive: true });
+  writeFileSync(join(art, 'round1-02-sweep-a.md'),
+    '# sweep\n\n```json\n' + JSON.stringify({
+      schema_version: 'output-contract-v1',
+      agent_id: 'a1',
+      role: 'sweep',
+      status: 'PERMANENT_FAILURE',
+      attempt: 1,
+    }, null, 2) + '\n```\n');
+
+  const r = run(repo, art);
+  expect('退出码 4', r.code === 4, `实际 ${r.code}`);
+  // 用 --json 时人类提示走 stderr，所以这里核实「PASS=0 且 SKIP>0」这个判据本身
+  const findings = r.json?.findings ?? [];
+  const nPass = findings.filter((f) => f.level === 'PASS').length;
+  const nSkip = findings.filter((f) => f.level === 'SKIP').length;
+  expect('0 PASS 且 >0 SKIP（这正是 exit 4 的判据）', nPass === 0 && nSkip > 0, `pass=${nPass} skip=${nSkip}`);
+  rmSync(dir, { recursive: true, force: true });
+}
+
+console.log('case 55: 非 .md 产物必须被报出来，不得静默丢弃');
+{
+  // 2026-11-20 修：实测一个从不被检查的 `.json` + 一个合规 `.md` 会被报告成
+  // 「0 FAIL / 1 PASS」，输出里连一句「有文件被忽略」都没有。
+  // 仓库唯一一次真实审计（.run-hv）是 65 个 .json，被报成「扫描 5 个文件」。
+  const dir = mkdtempSync(join(tmpdir(), 'v55-'));
+  const repo = join(dir, 'repo');
+  mkdirSync(join(repo, 'src'), { recursive: true });
+  writeFileSync(join(repo, 'src', 'a.js'), 'const a=1;\n');
+  const art = join(dir, 'arts');
+  mkdirSync(art, { recursive: true });
+  writeFileSync(join(art, 'never-checked.json'),
+    JSON.stringify({ findings: [{ fake: 'this file is never validated' }] }));
+  writeFileSync(join(art, 'round1-02-sweep-a.md'),
+    '# sweep\n\n```json\n' + JSON.stringify({
+      schema_version: 'output-contract-v1', agent_id: 'a1', role: 'sweep',
+      status: 'PERMANENT_FAILURE', attempt: 1,
+    }, null, 2) + '\n```\n');
+
+  const r = run(repo, art);
+  const warns = (r.json?.findings ?? []).filter((f) => f.level === 'WARN' && /非 \.md|未被检查/.test(f.message));
+  expect('报出被忽略的文件数', warns.length > 0, JSON.stringify((r.json?.findings ?? []).map((f) => f.message?.slice(0, 60))));
+  rmSync(dir, { recursive: true, force: true });
+}
+
 console.log(`\n=== 结果: ${passCount} 通过 / ${failCount} 失败 ===\n`);
 process.exit(failCount > 0 ? 1 : 0);

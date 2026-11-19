@@ -193,7 +193,32 @@ function matchQuality(lineText, quote) {
   return 'fuzzy';
 }
 
-/** 从产物 markdown 里抽出所有 ```json 块并解析（容忍 // 行注释与尾逗号） */
+/**
+ * 从产物 markdown 里抽出所有 ```json 块并解析（容忍 // 行注释；尾逗号仅在必要时修）。
+ *
+ * ── 2026-11-20 修：尾逗号容错会静默改写 quote，门 0 因此把编造的 quote 判成「逐字原文」──
+ *
+ * 原实现无条件对整段文本做 `.replace(/,(\s*[}\]])/g, '$1')`，而这个正则**不尊重字符串边界**。
+ * 于是 quote 里的 `,}` 会被改写成 `}`，然后拿去和源文件比对 —— 两边都改过，所以永远匹配。
+ *
+ * 实测（主线程探针）：
+ *   源文件  src/comma.js:  `if (a) { return {x}; }`
+ *   产物quote:             `if (a) { return {x,}; }`   ← 逐字不存在（grep '{x,}' → 0）
+ *   verify-artifacts:      `✓ PASS [G0] 门 0 回显: 1/1 通过`
+ *
+ * 反方向同样坏：一份**诚实**的逐字引用（源文件里真有 `{x,}`）会被同一个正则改写后比对失败，
+ * 判成伪造。**诚实产物被打回，编造产物被放行**——这正好摧毁门 0 存在的全部理由。
+ *
+ * `check-payload.mjs:493-520` 在 2026-11-14 已经踩过并修过同一个坑，注释原文：
+ *   「先按原样解析。原样能解析就**绝不改写**。只有原样解析失败时才启用容错，
+ *     且容错生效必须留下 WARN —— 因为一旦容错改动了内容，这份产物就不能再声称 quote 逐字。」
+ * 本文件没跟着改，于是同族缺陷在另一个校验器里活到了现在。
+ *
+ * 现在的做法与 check-payload 对齐：
+ *   1. 先按原样 JSON.parse（绝大多数产物都能过）→ 完全不碰 quote；
+ *   2. 原样失败才启用容错，并打 `tolerated` 标记；
+ *   3. 带 `tolerated` 的产物由调用方降级：**它的 quote 不再算「逐字原文」**。
+ */
 function extractJsonBlocks(text) {
   const blocks = [];
   const re = /```json\s*\n([\s\S]*?)```/g;
@@ -201,15 +226,37 @@ function extractJsonBlocks(text) {
   while ((m = re.exec(text)) !== null) {
     const raw = m[1];
     const lineNo = text.slice(0, m.index).split('\n').length + 1;
-    const cleaned = raw
+    // 剥掉独占整行的 // 注释（这一步也会改内容，所以同样记为 tolerated）
+    const noComment = raw
       .split('\n')
       .filter((ln) => !/^\s*\/\//.test(ln))
-      .join('\n')
-      .replace(/,(\s*[}\]])/g, '$1');
+      .join('\n');
+    const strippedComments = noComment !== raw;
+
+    let value = null, err = null, tolerated = false;
+
+    // ① 原样解析：成功就绝不改写
     try {
-      blocks.push({ line: lineNo, value: JSON.parse(cleaned) });
-    } catch (e) {
-      blocks.push({ line: lineNo, error: e.message, raw: raw.slice(0, 200) });
+      value = JSON.parse(noComment);
+    } catch (e1) {
+      // ② 原样失败才容错
+      const tolerant = noComment.replace(/,(\s*[}\]])/g, '$1');
+      if (tolerant !== noComment) {
+        try {
+          value = JSON.parse(tolerant);
+          tolerated = true;
+        } catch {
+          err = e1.message;
+        }
+      } else {
+        err = e1.message;
+      }
+    }
+
+    if (value !== null) {
+      blocks.push({ line: lineNo, value, tolerated, strippedComments });
+    } else {
+      blocks.push({ line: lineNo, error: err, raw: raw.slice(0, 200) });
     }
   }
   return blocks;
@@ -337,7 +384,7 @@ function collectEnvelopes(value, acc = []) {
 // 校验 1 · 门 0 回显真实性
 // ────────────────────────────────────────────────────────────────────
 function checkGate0(repo, envelopes, salvagedLeads = []) {
-  let checked = 0, ok = 0, bad = 0, noLine = 0, unreadable = 0;
+  let checked = 0, ok = 0, bad = 0, noLine = 0, unreadable = 0, quoteRewritten = 0;
 
   // 降级线索走同一套比对逻辑（它们来自 Markdown 散文，不是 JSON 信封）
   const pseudoEnvelopes = salvagedLeads.length
@@ -363,6 +410,11 @@ function checkGate0(repo, envelopes, salvagedLeads = []) {
       const items = Array.isArray(value) ? value : [value];
       for (const ev of items) {
         if (!ev || typeof ev !== 'object') continue;
+        // 2026-11-20：这份信封的 JSON 曾被尾逗号容错改写 → quote 已被动过，
+        // 「逐字比对」这件事本身前提不成立。既不能判 PASS（那是假绿），
+        // 也不能判 FAIL（那可能惩罚一份本来没问题的产物）。
+        // 正确做法是显式记为 GATE0_UNVERIFIABLE 并让 exit 体现它。
+        if (env.__quoteRewritten) { quoteRewritten++; continue; }
         // 2026-11-10 修正「空集即通过」后门：
         // 此前「缺 file 或缺 quote」的 evidence 直接 continue，于是攻击者
         // 只要把 quote 字段整个删掉，checked 就是 0 → G0 判 SKIP → 放行。
@@ -532,6 +584,14 @@ function checkGate0(repo, envelopes, salvagedLeads = []) {
   if (bad > 0) {
     fail('G0', `门 0 回显: ${ok}/${checked} 通过，${bad} 条 evidence 缺 file 或 quote（等于没有证据）`);
     return;
+  }
+  // 2026-11-20：被尾逗号容错改写过的 quote 不能判「通过」。
+  // 判 WARN 而不是 PASS，也不是 FAIL：产物本身可能没问题，但**它的 quote 没有被真正核验过**，
+  // 报告不能显示成绿的。全部 evidence 都落进这一档时更要显式说明「一条都没验」。
+  if (quoteRewritten > 0) {
+    warn('G0', `门 0 无法核验 ${quoteRewritten} 条 evidence：产物 JSON 需要尾逗号容错才能解析，`
+      + '容错会改写字符串内容，quote 已不是原文。**这几条没有被真正验证过**。', {});
+    if (checked === 0) return;
   }
   if (checked === 0) return skip('G0', '产物中没有任何需要门 0 校验的 evidence，跳过');
   const msg = `门 0 回显: ${ok}/${checked} 通过（${bad} 条 quote 与源文件不符，${noLine} 条缺 line，${unreadable} 条文件不可读）`;
@@ -991,6 +1051,19 @@ function main() {
   const envelopes = [];
   const salvaged = [];
   const scanned = [];
+  // 2026-11-20 补：非 .md 的产物必须被**报出来**，不能静默丢弃。
+  //
+  // 实测（主线程探针）：目录里放一个从不被检查的 `bad-artifact.json` + 一个合规的
+  // `good.md`，本脚本报告「扫描产物: 1 个文件 … 0 FAIL / 1 PASS」，**宣称通过**，
+  // 输出里连一句「有文件被忽略」都没有。也就是说「格式违规」与「目录干净」
+  // 在报告上完全不可区分。
+  //
+  // 仓库里唯一一次真实审计（`.run-hv`）是 65 个 `.json` + 5 个 `.md`，
+  // 本脚本报告「扫描 5 个文件」—— **65 份真实产物对校验器不存在**。
+  //
+  // 契约立场是明确的（`output-contract.md:36` + `report-naming.md:29` 都要求 `.md`），
+  // 所以正确做法**不是去支持 `.json`**，而是把「这里有非契约格式文件」当成问题报出来。
+  const ignoredNonMd = [];
   const walk = (dir, depth = 0) => {
     if (depth > 3) return;
     let entries;
@@ -1000,16 +1073,24 @@ function main() {
       if (e.isDirectory()) walk(p, depth + 1);
       else if (e.name.endsWith('.md')) {
         const text = readFileSync(p, 'utf8');
-        const rel = relative(artifactsRoot, p);
-        const blocks = extractJsonBlocks(text);
+        const rel = relative(artifactsRoot, p);        const blocks = extractJsonBlocks(text);
         let found = 0;
         for (const b of blocks) {
           if (b.error) {
             fail('G6', `产物 JSON 块解析失败: ${rel}:${b.line}`, { error: b.error });
             continue;
           }
+          // 容错解析改动过内容 → 这份产物不能再声称 quote 逐字。
+          // 不改判 FAIL（产物本身仍可用），但必须让门 0 知道：它的 quote 降级为「近似」。
+          if (b.tolerated) {
+            warn('G6', `${rel}:${b.line} 的 JSON 块需要修复尾逗号才能解析——`
+              + '**该容错会改写字符串内的内容（例如 `{x,}` → `{x}`），因此本产物的 quote 不能视为「逐字原文」**。'
+              + '门 0 对它的判定降级为 GATE0_UNVERIFIABLE，请让 agent 输出合法 JSON', {});
+          }
           const before = envelopes.length;
           collectEnvelopes(b.value, envelopes);
+          // 给新收进来的信封打上「quote 已被改写」标记，供 checkGate0 降级使用。
+          if (b.tolerated) for (let k = before; k < envelopes.length; k++) envelopes[k].__quoteRewritten = true;
           found += envelopes.length - before;
         }
 
@@ -1070,6 +1151,9 @@ function main() {
         }
 
         scanned.push({ file: rel, blocks: blocks.length, salvaged: found === 0 });
+      } else if (/\.(json|txt|log|yaml|yml)$/i.test(e.name)) {
+        // 只统计「像产物的」后缀，避免把 .gitignore 之类的杂项也算进来。
+        ignoredNonMd.push(relative(artifactsRoot, p));
       }
     }
   };
@@ -1092,6 +1176,17 @@ function main() {
   if (envelopes.length === 0 && salvaged.length === 0) {
     fail('G0', `产物目录里一份可用产物都没有（扫描 ${scanned.length} 个文件，0 个 JSON 信封，0 条降级线索）。`
       + '**这不等于通过——它意味着什么都没验证**。先确认 --artifacts 指向的目录对不对', {});
+  }
+
+  // 2026-11-20：被忽略的非 .md 文件必须可见。
+  // 没有这条时，一个塞满 `findings/*.json` 的目录会报告「扫描 5 个文件、全部通过」——
+  // 而 `output-contract.md:36` 与 `report-naming.md:29` 都要求产物是 `.md`。
+  // 判 WARN 而非 FAIL：这些文件可能确实不是产物；但**它们被跳过了这件事必须写出来**。
+  if (ignoredNonMd.length > 0) {
+    const shown = ignoredNonMd.slice(0, 5).join('、');
+    warn('G0', `有 ${ignoredNonMd.length} 个非 .md 文件未被检查（${shown}`
+      + `${ignoredNonMd.length > 5 ? ' …' : ''}）——契约要求产物是带 JSON 信封的 .md。`
+      + '**这些文件一条规则都没有被核对过**；若它们确实是产物，请按 report-naming.md §1 改名并补信封。', {});
   }
 
   checkLedger(repo, artifactsRoot);
@@ -1138,6 +1233,27 @@ function main() {
 
   if ((counts.FAIL ?? 0) > 0) process.exit(1);
   if (args.strict && (counts.WARN ?? 0) > 0) process.exit(3);
+  // 2026-11-20 补：**全 SKIP 不是通过**。
+  //
+  // 单一守卫 `envelopes.length === 0` 只挡住「一份产物都没有」。一份格式合法、
+  // 但所有检查都无从下手的信封能穿过它：
+  //
+  //   $ node verify-artifacts.mjs --repo . --artifacts .probe
+  //   合计: 0 FAIL / 0 WARN / 0 PASS / 6 SKIP   ← 6 项全跳过，0 项通过
+  //   EXIT=0
+  //
+  // 对比：真失败的产物（SUCCESS + 空 files_read）→ 2 FAIL → EXIT=1。
+  // 也就是说退出码逻辑本身是对的，**错的只有这一个边界**：
+  // 它把「无从验证」和「验证通过」混成了同一个信号。
+  //
+  // 判 4 而非 1：1 已经被「有 FAIL」占用，混在一起会让人以为产物违规。
+  // 「一条检查都没真正跑过」是**验证仪的问题**，不是产物的问题。
+  if ((counts.PASS ?? 0) === 0 && (counts.SKIP ?? 0) > 0) {
+    console.error('\n[什么都没验证] 0 项检查通过、' + counts.SKIP
+      + ' 项跳过——这份报告的「无 FAIL」不代表产物合规，只代表没有检查被执行过。'
+      + '\n  退出码 4 专指这种状态。先确认 --artifacts 指向的目录和产物形态。\n');
+    process.exit(4);
+  }
   process.exit(0);
 }
 
