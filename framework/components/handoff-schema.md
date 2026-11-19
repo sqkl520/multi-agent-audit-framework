@@ -22,6 +22,13 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 9 轮)
 > 只允许包含：指针（artifact_path）、摘要（summary）、裁决（verdict）、以及未闭合项的结构化表示。
 > 违反此规则的 Resume Packet 视为 CONTRACT_VIOLATION，不得进入下一波。
 
+> **本节的机械执行**（2026-11-19 补：此前本文件零校验器，所有约束只有散文）：
+> `tools/check-handoff.mjs` 实现上述要求 —— 必填字段缺失（`missing_field`）、
+> 版本不符（`bad_schema_version`）、`wave_id` / `wave_status` / `open_items[].kind`
+> 三个枚举越界（`bad_wave_id` / `bad_wave_status` / `bad_open_item_kind`）、
+> 以及「塞入了原始正文或 findings 片段」（`raw_body_in_packet`）。
+> 用法：`node tools/check-handoff.mjs <packet.json>` 或 `--dir <产物目录>`。
+
 ## 第 1 节：Resume Packet 的顶层结构
 
 Resume Packet 是一个**不可变快照**，在每个波次闭合时由主Agent生成，写入账本。下一波的主Agent调度只读取这个包，不回头读上一波的子 Agent产出正文。

@@ -206,6 +206,15 @@ const CHECKS = [
     desc: '用例：存量不判 / 点名脚本算出口 / 点名真实 rule 名算出口 / DISCRETIONARY 须带理由 / 代码块不算 / --gate 只拦新增 / 分母为 0 须 exit2 / 非 git 须 exit2',
   },
   {
+    name: 'Resume Packet 校验（波次间传递格式）',
+    // 2026-11-19 补：handoff-schema.md 定义了 7 个必填字段、3 套枚举、10 种 open_items.kind，
+    // 并写着「缺失时行为：拒绝整个包」「违反视为 CONTRACT_VIOLATION」——
+    // 但此前 grep 不到任何校验器。这份契约的每一条约束从写下那天起就没被执行过。
+    // 这是「根本没有检测器」，比「引用断了」更彻底。
+    script: 'check-handoff.test.mjs',
+    desc: '用例：合规通过 / 缺必填 / 版本错 / wave_id 错 / wave_status 错 / kind 非法 / 塞原始正文 / round_id 形态 / 10 种 kind 全合法 / 非 JSON / 空目录 exit2',
+  },
+  {
     name: '术语一致性（同一个概念是否只有一个写法）',
     // 与 lint-autonomy 同源：那个钉「同一条规则被复制到多处而不同步」，
     // 这个钉「同一个概念有多个名字」。

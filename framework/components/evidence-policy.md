@@ -25,6 +25,14 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 7 轮)
 - **配置/依赖发现**：回显配置文件中的确切键值对或依赖声明行。
 - **行为声明**：回显支撑该行为判断的调用链、测试输出或日志片段，**不能只引用函数定义位置**。
 
+> **门 0 的机械执行**（2026-11-19 补：此前本节只有散文约束，没有指明由谁强制）：
+> `tools/check-payload.mjs` 的这几条规则实现了上述要求 ——
+> `evidence_wrong_shape`（`evidence` 必须是对象 `{file, line, quote}` 而非数组或字符串）、
+> `inference_wrong_shape`（`inference` 必须是对象 `{claim, basis, alternatives}`）、
+> `confirmed_without_evidence`（`CONFIRMED` 却没有证据）。
+> 逐字回显本身由 `tools/verify-artifacts.mjs` 的门 0 探针核对
+> （读取源文件、比对 quote 是否逐字存在、行号是否对得上）。
+
 **门 0 的失败条件**（任一即触发）：
 
 - 引用来自“记忆”而非本回合读取；
