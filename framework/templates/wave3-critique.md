@@ -433,6 +433,22 @@ Arbiter 按以下顺序执行判定，**不允许跳过或合并步骤**：
 
 ## 第 6 节：返回前的自检清单（锐评Agent执行）
 
+> **本波次的机械执行**（2026-11-19 补：此前本模板 51 条规则句没有一条点名校验器）：
+> 下列约束由 `tools/check-payload.mjs` 的 critique 分支强制，逐条对应关系 ——
+>
+> | 模板约束 | 校验器规则 |
+> |---|---|
+> | 每个 `target_finding_ids` 都要有 verdict | `verdict_missing_for_target` |
+> | `verdict` 只能取 `UPHELD`/`DOWNGRADED`/`REVOKED`/`EVIDENCE_GAP` | `invalid_verdict_enum` |
+> | Devil's Advocate 不得输出 verdict | `devils_advocate_has_verdicts` |
+> | `refuted` 必须给 `direct_contradiction` | `refuted_without_contradiction` |
+> | 并发类 `refuted` 门槛更高 | `sensitive_refuted_without_contradiction` |
+> | `sub_claims` 必须逐条裁决 | `missing_sub_claims` / `incomplete_sub_claim` / `invalid_sub_verdict` |
+> | 子主张被反驳要有依据 | `sub_refuted_without_basis` |
+> | 子主张混合结论须解释 | `mixed_sub_claims_unexplained` |
+>
+> 跑法：`node tools/check-payload.mjs <产物> --role critique`。
+
 #### Skeptic 自检
 
 > **⚠ 每条 `verdict` 都必填两个字段，缺任一判 `CONTRACT_VIOLATION`：**
