@@ -206,6 +206,17 @@ const CHECKS = [
     desc: '用例：存量不判 / 点名脚本算出口 / 点名真实 rule 名算出口 / DISCRETIONARY 须带理由 / 代码块不算 / --gate 只拦新增 / 分母为 0 须 exit2 / 非 git 须 exit2',
   },
   {
+    name: '轮次探测（round_id 是怎么算出来的）',
+    // 2026-11-19 补：round-detection.md 把探测规则写成了完全可判定的形式
+    // （正则 / 大小写 / 前导零 / 上限 / 后缀 / 边界表），自己还写着「不含任何主观判断」，
+    // 但 grep -rl round-detection tools/*.mjs 是 0 —— 这份规格零校验。
+    // check-deliverables.mjs 虽用 round{N} 这个形状，却只做字符串拼接。
+    //
+    // 代价：轮次号算错会静默复用已审过的轮次。框架历史里 round31 就卡过这件事。
+    script: 'check-round-detection.test.mjs',
+    desc: '用例：13 条匹配模式 / 5 条计算 / 异常分类 / 空目录 / 目录不存在 / 非目录阻塞 / 无参数 exit2 / 可疑值不回退',
+  },
+  {
     name: 'Resume Packet 校验（波次间传递格式）',
     // 2026-11-19 补：handoff-schema.md 定义了 7 个必填字段、3 套枚举、10 种 open_items.kind，
     // 并写着「缺失时行为：拒绝整个包」「违反视为 CONTRACT_VIOLATION」——
