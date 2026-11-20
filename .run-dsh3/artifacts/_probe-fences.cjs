@@ -1,0 +1,13 @@
+const fs = require('fs');
+const p = process.argv[2];
+const t = fs.readFileSync(p, 'utf8');
+const lines = t.split(/\r?\n/);
+const fence = String.fromCharCode(96).repeat(3);
+const hits = [];
+lines.forEach((l, i) => { if (l.startsWith(fence)) hits.push([i + 1, l.slice(0, 40)]); });
+console.log('len', t.length, 'lines', lines.length);
+console.log('fence lines', JSON.stringify(hits, null, 1));
+const re = new RegExp(fence + 'json\\s*\\n([\\s\\S]*?)' + fence, 'g');
+const blocks = [...t.matchAll(re)];
+console.log('json blocks', blocks.length);
+console.log('tail', JSON.stringify(t.slice(-40)));

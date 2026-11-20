@@ -1,0 +1,699 @@
+{
+  "schema_version": "run-state-v1",
+  "trace_id": "trace-r1-20260215-hilltop-dsh3",
+  "round_id": "round1",
+  "path_mode": "AUDIT_ONLY",
+  "phase": "wave2a",
+  "status": "RUNNING",
+  "target_repo": "D:\\Server\\MCServers\\Server plugin\\Hilltop Village\\Hilltop Village Plugin",
+  "budget": {
+    "total_cap": 60,
+    "spent": 0,
+    "reserved_for_downstream": 8,
+    "planned_sweep_agents": 26,
+    "spawned_deep_dive": 0,
+    "failed_sweep": 0,
+    "failed_deep_dive": 0,
+    "spawned_fix_agents": 0
+  },
+  "slices": {
+    "slice-01": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/admin/AdminDeployManager.java",
+        "src/main/java/com/hilltopvillage/admin/ArenaAdminService.java",
+        "src/main/java/com/hilltopvillage/admin/ArenaResetService.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-02": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/admin/LocationParticlePreview.java",
+        "src/main/java/com/hilltopvillage/admin/PointKind.java",
+        "src/main/java/com/hilltopvillage/admin/PointParticleRenderer.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-03": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/admin/gui/AbstractAdminMenu.java",
+        "src/main/java/com/hilltopvillage/admin/gui/ArenaManageGUI.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-04": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/ai/AirdropSpawnGoal.java",
+        "src/main/java/com/hilltopvillage/ai/DropperAttackGoal.java",
+        "src/main/java/com/hilltopvillage/ai/ExplodeBeetleGoal.java",
+        "src/main/java/com/hilltopvillage/ai/HookClawHunterGoal.java",
+        "src/main/java/com/hilltopvillage/ai/NodeAttackGoal.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-05": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/arena/ArenaDefinition.java",
+        "src/main/java/com/hilltopvillage/arena/ArenaInstance.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-06": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/arena/ArenaManager.java",
+        "src/main/java/com/hilltopvillage/arena/ArenaRegistry.java",
+        "src/main/java/com/hilltopvillage/arena/ArenaStatus.java",
+        "src/main/java/com/hilltopvillage/arena/IArena.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-07": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/arena/MultiArenaManager.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-08": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/command/ArenaCommand.java",
+        "src/main/java/com/hilltopvillage/command/DeployMenuSender.java",
+        "src/main/java/com/hilltopvillage/command/HilltopCommandHandler.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-09": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/command/HilltopTabCompleter.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-10": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/command/SetupWizard.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-11": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/config/ConfigManager.java",
+        "src/main/java/com/hilltopvillage/config/ConfigPermission.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-12": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/config/DisplayConfig.java",
+        "src/main/java/com/hilltopvillage/config/DisplayConfigLoader.java",
+        "src/main/java/com/hilltopvillage/config/GameConfig.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-13": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/config/menu/AbstractConfigMenu.java",
+        "src/main/java/com/hilltopvillage/config/menu/GameRulesMenu.java",
+        "src/main/java/com/hilltopvillage/config/menu/ItemSettingsMenu.java",
+        "src/main/java/com/hilltopvillage/config/menu/MainConfigMenu.java",
+        "src/main/java/com/hilltopvillage/config/menu/MonsterSettingsMenu.java",
+        "src/main/java/com/hilltopvillage/config/menu/NodeSettingsMenu.java",
+        "src/main/java/com/hilltopvillage/config/menu/NumericInputHandler.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-14": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/config/menu/WaveSettingsMenu.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-15": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/core/GameManager.java",
+        "src/main/java/com/hilltopvillage/core/GameState.java",
+        "src/main/java/com/hilltopvillage/HilltopVillagePlugin.java",
+        "src/main/java/com/hilltopvillage/core/PlayerData.java",
+        "src/main/java/com/hilltopvillage/core/PlayerGoodsManager.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-16": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/core/WaveManager.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-17": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/diagnostic/TpsDiagnostic.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-18": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/doc/CommandsDocumentGenerator.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-19": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/gui/ArenaSelectionGUI.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-20": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/mechanics/ArenaAccessListener.java",
+        "src/main/java/com/hilltopvillage/mechanics/ArenaScoreboard.java",
+        "src/main/java/com/hilltopvillage/mechanics/FireballListener.java",
+        "src/main/java/com/hilltopvillage/mechanics/FriendlyFireListener.java",
+        "src/main/java/com/hilltopvillage/mechanics/HammerEffectRenderer.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-21": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/mechanics/HammerListener.java",
+        "src/main/java/com/hilltopvillage/mechanics/LobbyProtectionListener.java",
+        "src/main/java/com/hilltopvillage/mechanics/MapRestoreManager.java",
+        "src/main/java/com/hilltopvillage/mechanics/NodeListener.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-22": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/mechanics/NodeSystem.java",
+        "src/main/java/com/hilltopvillage/mechanics/PlayerLifecycleListener.java",
+        "src/main/java/com/hilltopvillage/mechanics/TabListManager.java",
+        "src/main/java/com/hilltopvillage/mechanics/VillagerPreviewManager.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-23": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/mechanics/VillagerSystem.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-24": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/shop/NpcManager.java",
+        "src/main/java/com/hilltopvillage/shop/ShopConfig.java",
+        "src/main/java/com/hilltopvillage/shop/ShopConfigLoader.java",
+        "src/main/java/com/hilltopvillage/shop/ShopGUI.java",
+        "src/main/java/com/hilltopvillage/shop/ShopItem.java",
+        "src/main/java/com/hilltopvillage/shop/ShopListener.java",
+        "src/main/java/com/hilltopvillage/shop/ShopManager.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-25": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/stats/StatsManager.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    },
+    "slice-26": {
+      "state": "PENDING",
+      "files": [
+        "src/main/java/com/hilltopvillage/util/DisplayEntityManager.java",
+        "src/main/java/com/hilltopvillage/util/LanguageManager.java",
+        "src/main/java/com/hilltopvillage/util/MessageTextSync.java",
+        "src/main/java/com/hilltopvillage/util/SafeSpawnUtil.java",
+        "src/main/java/com/hilltopvillage/util/YamlFileGate.java",
+        "src/main/java/com/hilltopvillage/util/YamlFiles.java"
+      ],
+      "reachability": null,
+      "sweep_artifact": null,
+      "lead_count": 0,
+      "deep_dive_dims": [],
+      "deep_dive_done": [],
+      "deep_dive_pending": [],
+      "artifact_paths": [],
+      "attempt": 0,
+      "failure": {
+        "error_type": null,
+        "observed": null,
+        "artifact_bytes": 0,
+        "last_write_at": null,
+        "inferred_cause": null
+      }
+    }
+  },
+  "in_flight": [
+    {
+      "agent_id": "a7ccb769-a8ac-4b37-91b4-b61eb6f70068",
+      "slice_id": "slice-01",
+      "task": "sweep",
+      "started_at": "2026-11-20T21:00:00Z"
+    },
+    {
+      "agent_id": "b119b9aa-9e4f-401d-885a-28a716350d1c",
+      "slice_id": "slice-02",
+      "task": "sweep",
+      "started_at": "2026-11-20T21:00:00Z"
+    },
+    {
+      "agent_id": "37421d55-6a83-4bb8-b3d3-c8adda50fd6d",
+      "slice_id": "slice-03",
+      "task": "sweep",
+      "started_at": "2026-11-20T21:00:00Z"
+    },
+    {
+      "agent_id": "0b00fb55-b64c-47ff-9c24-360da051b539",
+      "slice_id": "slice-04",
+      "task": "sweep",
+      "started_at": "2026-11-20T21:00:00Z"
+    }
+  ],
+  "current_plan": {
+    "phase": "wave2a",
+    "written_at": "2026-11-20T12:56:49.623Z",
+    "steps": [
+      {
+        "id": 1,
+        "action": "按切片分 7 批派宽扫 agent（每批 4 个）",
+        "done_when": "26 个宽扫 agent 全部到终态"
+      },
+      {
+        "id": 2,
+        "action": "读全部 sweep 产物，统计 lead 并选深挖切片",
+        "done_when": "lead 总数与 lead 分布落盘"
+      },
+      {
+        "id": 3,
+        "action": "按预算派深挖 agent（单切片单维度）",
+        "done_when": "深挖实例全部到终态且产物合规"
+      }
+    ],
+    "exit_condition": "26 个宽扫 + 全部深挖 agent 终态，账本更新完",
+    "current_step": 1,
+    "revised_at": null,
+    "revision_reason": null
+  },
+  "discipline_log": [
+    {
+      "seq": 1,
+      "wave": "wave1",
+      "discretion_type": "SLICE_SIZE_DEVIATION",
+      "action": "保留 9 个物理行数 >1800 的切片（最大 slice-01=2290；slice-10 为单文件 oversized），未重新切分",
+      "basis": "侦察按非空行数装箱（1778 等），verify-artifacts G8 用物理行数口径；物理行数实测 34954，偏差 13–27%。重新切分会把切片数从 26 推到 31+，超出本轮预算；9 个切片均在 2300 物理行以内，单 agent 可在 20 文件预算内读完",
+      "evidence_ref": ".run-dsh3/artifacts/round1-01-recon-slices.md（payload.audit_slices[].line_count）+ .run-dsh3/summarize.mjs 的 declared/physical 对账输出",
+      "mechanical_check": "node .run-dsh3/summarize.mjs \".run-dsh3/artifacts/round1-01-recon-slices.md\" \"<repo>\" 逐片打印 declared 与 physical，偏差应为 0.0%；>1800 的片号可由同一输出直接数出",
+      "reversible": true
+    }
+  ],
+  "failure_stats": {
+    "NO_OUTPUT": 0,
+    "SKELETON_ONLY": 0,
+    "TOOL_REJECTED": 0,
+    "EMPTY_RESULT": 0,
+    "CONTRACT_VIOLATION": 0
+  },
+  "wave2_completed": [],
+  "report": {
+    "dir_ready": true,
+    "dir_path": "D:\\Projects\\AI prompt\\many-agents_multi-prompt-files_token-heavy\\multi-agent-audit-framework\\.run-dsh3\\artifacts",
+    "final_report_path": null,
+    "written_at": null,
+    "is_complete": false
+  },
+  "baseline": {
+    "captured_at": "2026-02-15T00:00:00Z",
+    "head": "e223e20836af4dbde6b23410c3e7ddbb796bd211",
+    "git_status_short": []
+  }
+}
