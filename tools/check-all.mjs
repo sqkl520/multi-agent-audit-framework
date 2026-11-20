@@ -327,6 +327,23 @@ const CHECKS = [
     script: 'dsh-driver.test.mjs',
     desc: '用例：一次闭合即停 / 无进展判 STALLED / 有产物不算空转 / 起始已闭合不跑 / PARTIALLY_CLOSED 也算闭合 / 占位符未注入须 exit2',
   },
+  {
+    name: '并发上限（主 Agent 有没有突破 concurrency_window）',
+    // 2026-11-20 补，来自一次真实运行的自述：
+    //
+    //   discretion_type: CONCURRENCY_CAP_BREACH
+    //   action: 并发峰值达到 5–6（上限 4）…
+    //   mechanical_check: …（不可完全机械化，故同时给出自述）
+    //
+    // 那句「不可完全机械化」是错的。用 dsh 会话日志里每个子 agent session 的
+    // 首/末事件时间戳当存活区间，扫描线求最大重叠，就是并发峰值——
+    // 实测这套数据算出来是 13，而它自己估的是 5–6，**低估了一半以上**。
+    //
+    // 「诚实地报了一个偏小的数字」比「不申报」更难被发现，
+    // 所以自述与实测不符单独判一条 FAIL。
+    script: 'check-concurrency-cap.test.mjs',
+    desc: '用例：不重叠放行 / 全重叠超限 / 自述低估被抓 / --cap 覆盖兜底 / 相邻不算并发 / 空目录须 exit2 / --since 过滤',
+  },
 ];
 
 let failed = 0;
