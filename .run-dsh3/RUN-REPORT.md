@@ -142,15 +142,41 @@ Claude Code 有 Stop hook 能拦住这一刻。**dsh 没有**——
 
 ---
 
-## 六、它自己申报的一条 L0 违规
+## 六、它自己申报的 L0 违规——**申报的数字是错的**
 
-报告 §4 如实写了：
+报告 §4 与 `state.json` 的 `discipline_log` 里如实写了：
 
 > **并发上限突破** `L0_VIOLATION`：峰值 **6** 个并发（上限 4）：
 > 主 Agent 用「产物已落盘」当作「agent 已终态」补位
+>
+> `mechanical_check`: 按 harness 的 agent 起止时间做区间重叠计数；
+> 或按产物 mtime 与 agent 派发顺序人工复核（**不可完全机械化，故同时给出自述**）
 
-框架写了并发上限（`scale-mapping.md`），但**没有任何校验器读它**。
-这条违规是被「自觉」抓住的，不是被机器抓住的。
+我用 `check-concurrency-cap.mjs` 真的去算了：
+
+```
+$ node tools/check-concurrency-cap.mjs --state .run-dsh3/artifacts/state.json \
+    --sessions ~/.dsh/sessions --project "<本项目>" --since 2026-11-20T12:30:00Z
+  上限            4（FALLBACK(scale-mapping §312)）
+  实测峰值        13 于 2026-11-20T14:18:48.712Z
+  子 agent 区间   75 个
+  自述峰值        6
+
+  ✗ 超过上限 9：峰值 13 > 上限 4
+  ✗ 自述低于实测：申报 6，实测 13（低估 7）
+```
+
+**两件事**：
+
+1. **「不可完全机械化」这个判断是错的。** 会话日志里每个子 agent session 的
+   首/末事件时间戳就是它的存活区间，扫描线求最大重叠就是并发峰值。
+2. **它申报 6，实测 13，低估了一半以上。** 这比不申报更危险——
+   读者看到「已申报、已记录、还附了 mechanical_check」，就不会再查了。
+
+这也解释了为什么框架此前抓不住它：`scale-mapping.md` 写了并发上限，
+`protocol.md` §1.2 L0 写了槽位释放条件，**两者都没有任何校验器读**。
+
+现在有了 `check-concurrency-cap.mjs`。
 
 ---
 
