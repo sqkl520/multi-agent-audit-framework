@@ -152,7 +152,18 @@ function collectToolSurface() {
     }
   };
   walkMd(fwRoot);
-  return { scripts, ruleNames, artifacts };
+
+  // 2026-11-20：哪些 .md 真的被某个校验器读过。
+  // 只扫**非测试**脚本——测试里出现某文件名只说明有 fixture 覆盖它，
+  // 不说明有执行者在运行时读它并因它报错。
+  const artifactReadByTool = new Set();
+  for (const f of readdirSync(TOOLS)) {
+    if (!f.endsWith('.mjs') || f.includes('.test.') || f === 'check-rule-ledger.mjs') continue;
+    const src = readFileSync(join(TOOLS, f), 'utf8');
+    for (const a of artifacts) if (src.includes(a)) artifactReadByTool.add(a);
+  }
+
+  return { scripts, ruleNames, artifacts, artifactReadByTool };
 }
 
 // ── 枚举框架文档 ──
@@ -175,7 +186,7 @@ function collectDocs() {
   return out;
 }
 
-const { scripts, ruleNames, artifacts } = collectToolSurface();
+const { scripts, ruleNames, artifacts, artifactReadByTool } = collectToolSurface();
 const docs = collectDocs();
 
 if (docs.length === 0) {
@@ -231,7 +242,21 @@ for (const abs of docs) {
         window.indexOf(m[1]) + m[1].length + 40,
       );
       if (!/(按|依|见|遵循|符合|规定|参见|参照|依据|要求)/.test(near)) continue;
-      exits.push(`artifact:${m[1]}`);
+      // 2026-11-20 补：二级判据 —— 所指的那份 `.md` 是否真的被某个校验器读取过。
+      //
+      // 起因：226 条「有出口」里 123 条的**唯一**出口是另一个 `.md` 的文件名。
+      // 抽样核对，其中确实有真的（`planner.md` 说「score 必须等于七项之和」，
+      // 由 check-payload 的 score_mismatch 执行），也确实有纯装饰的
+      //（正文顺手提到 protocol.md）。判据本身分不开这两者。
+      //
+      // 分得开的机械办法只有一个：**那份规范有没有被 tools/ 里任何一个脚本读过**。
+      // 没被读过 = 没有任何执行者会因它而报错 = 它不是出口。
+      //
+      // 实测：123 条里 115 条所指的 .md 确实被 tools/ 读取，只有 8 条是孤儿。
+      // 所以这条判据很温和（只筛掉 6.5%），但它把「真假混在一起」变成了
+      // 两类可分开的出口，报告里分别计数。
+      const isReadByTool = artifactReadByTool.has(m[1]);
+      exits.push(isReadByTool ? `artifact:${m[1]}` : `artifact_orphan:${m[1]}`);
     }
     for (const m of window.matchAll(SNAKE_RE)) {
       if (ruleNames.has(m[1])) exits.push(`rule:${m[1]}`);
@@ -248,7 +273,11 @@ for (const abs of docs) {
     rows.push({
       line: i + 1,
       text: text.trim().slice(0, 200),
-      hasExit: exits.some((e) => e !== 'discretionary-noreason'),
+      // 2026-11-20：`artifact_orphan:` 不算出口 —— 它指的是一个**没有任何校验器读过**
+      // 的 .md 文件，因此没有任何执行者会因这条规则而报错。
+      // 保留该标记是为了在报告里区分「指向活规范」与「指向死文档」，
+      // 但只有后者的话，这句话仍然是「没人执行的规则」。
+      hasExit: exits.some((e) => e !== 'discretionary-noreason' && !e.startsWith('artifact_orphan:')),
       discretionaryNoReason: exits.includes('discretionary-noreason'),
       exits: [...new Set(exits)],
     });

@@ -1,7 +1,7 @@
 {
   "baseline_date": "2026-11-20",
   "rule_sentences": 1118,
-  "with_exit": 251,
-  "without_exit": 867,
-  "exit_rate_pct": 22.5
+  "with_exit": 243,
+  "without_exit": 875,
+  "exit_rate_pct": 21.7
 }

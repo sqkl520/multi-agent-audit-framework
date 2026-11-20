@@ -227,16 +227,39 @@ console.log('\ncase 15: `finding_id` 不应被当成命令示例，吃掉 `.md` 
   // 这条用例钉住两个方向：
   //   ① `finding_id` 附近提到规范文件 → 算出口
   //   ② 真的命令示例（`grep foo.md`）→ 仍不算出口（不能矫枉过正）
+  //
+  // 注意 2026-11-20 晚补的二级判据：所指的 .md 必须**被某个 tools 脚本读过**，
+  // 否则算 `artifact_orphan` 而不算出口。所以这里要给个真读 spec.md 的工具。
   const d = makeFramework({
     docs: {
       'spec.md': '# SPEC\n\n这份规范定义 finding 的形状。\n',
       'a.md': '# A\n\n每条 finding_id 必须符合 spec.md 的规定。\n',
       'b.md': '# B\n\n必须这样做。\n\n    xargs grep foo spec.md\n',
     },
+    tools: [{ name: 'reader.mjs', body: "const f = 'spec.md';\nerrors.push({ rule: 'shape_wrong' });\n" }],
   });
   const r = run(d);
-  ok('finding_id 附近 → 算出口', /a\.md\s+1\/1/.test(r.out) || /有机器出口\s+[12]/.test(r.out), r.out);
+  ok('finding_id 附近 + 规范被读 → 算出口', /a\.md\s+1\/1/.test(r.out) || /有机器出口\s+[12]/.test(r.out), r.out);
   ok('真命令示例仍不算出口', /有机器出口\s+1/.test(r.out), r.out);
+  rmSync(d, { recursive: true, force: true });
+}
+
+console.log('\ncase 15b: 所指 .md 从未被任何校验器读取 → 不算出口（artifact_orphan）');
+{
+  // 2026-11-20 晚：226 条「有出口」里 123 条的唯一出口是另一个 .md 的文件名，
+  // 抽样发现真假混在一起。唯一能机械分开的判据是「那份规范有没有被读过」——
+  // 没被读过 = 没有任何执行者会因它而报错 = 它不是出口。
+  //
+  // 实测全仓库 123 条里 115 条所指的 .md 确实被读，只有 8 条是孤儿，所以这条判据很温和。
+  const d = makeFramework({
+    docs: {
+      'dead.md': '# DEAD\n\n没有任何工具读这份文件。\n',
+      'a.md': '# A\n\n必须按 dead.md 的规定做。\n',
+    },
+    tools: [{ name: 'other.mjs', body: "errors.push({ rule: 'x' });\n" }],
+  });
+  const r = run(d);
+  ok('孤儿文档不算出口', /有机器出口\s+0/.test(r.out), r.out);
   rmSync(d, { recursive: true, force: true });
 }
 
