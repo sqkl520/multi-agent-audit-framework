@@ -3,34 +3,39 @@
   "trace_id": "trace-r1-20260215-hilltop-dsh3",
   "round_id": "round1",
   "path_mode": "AUDIT_ONLY",
-  "phase": "wave2a",
-  "status": "RUNNING",
+  "phase": "closed",
+  "status": "PARTIALLY_CLOSED",
   "target_repo": "D:\\Server\\MCServers\\Server plugin\\Hilltop Village\\Hilltop Village Plugin",
   "budget": {
     "total_cap": 60,
-    "spent": 0,
+    "spent": 41,
     "reserved_for_downstream": 8,
     "planned_sweep_agents": 26,
-    "spawned_deep_dive": 0,
+    "spawned_deep_dive": 15,
     "failed_sweep": 0,
     "failed_deep_dive": 0,
     "spawned_fix_agents": 0
   },
   "slices": {
     "slice-01": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/admin/AdminDeployManager.java",
         "src/main/java/com/hilltopvillage/admin/ArenaAdminService.java",
         "src/main/java/com/hilltopvillage/admin/ArenaResetService.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-01.md",
+      "lead_count": 6,
       "deep_dive_dims": [],
-      "deep_dive_done": [],
+      "deep_dive_done": [
+        "data-consistency"
+      ],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-sweep-slice-01.md",
+        "round1-02-audit-slice-01-data-consistency.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -41,19 +46,21 @@
       }
     },
     "slice-02": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/admin/LocationParticlePreview.java",
         "src/main/java/com/hilltopvillage/admin/PointKind.java",
         "src/main/java/com/hilltopvillage/admin/PointParticleRenderer.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-02.md",
+      "lead_count": 6,
       "deep_dive_dims": [],
       "deep_dive_done": [],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-sweep-slice-02.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -64,18 +71,20 @@
       }
     },
     "slice-03": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/admin/gui/AbstractAdminMenu.java",
         "src/main/java/com/hilltopvillage/admin/gui/ArenaManageGUI.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-03.md",
+      "lead_count": 5,
       "deep_dive_dims": [],
       "deep_dive_done": [],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-sweep-slice-03.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -86,7 +95,7 @@
       }
     },
     "slice-04": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/ai/AirdropSpawnGoal.java",
         "src/main/java/com/hilltopvillage/ai/DropperAttackGoal.java",
@@ -94,13 +103,18 @@
         "src/main/java/com/hilltopvillage/ai/HookClawHunterGoal.java",
         "src/main/java/com/hilltopvillage/ai/NodeAttackGoal.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-04.md",
+      "lead_count": 6,
       "deep_dive_dims": [],
-      "deep_dive_done": [],
+      "deep_dive_done": [
+        "logic"
+      ],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-sweep-slice-04.md",
+        "round1-02-audit-slice-04-logic.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -111,18 +125,23 @@
       }
     },
     "slice-05": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/arena/ArenaDefinition.java",
         "src/main/java/com/hilltopvillage/arena/ArenaInstance.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-05.md",
+      "lead_count": 6,
       "deep_dive_dims": [],
-      "deep_dive_done": [],
+      "deep_dive_done": [
+        "data-consistency"
+      ],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-audit-slice-05-data-consistency.md",
+        "round1-02-sweep-slice-05.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -133,20 +152,22 @@
       }
     },
     "slice-06": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/arena/ArenaManager.java",
         "src/main/java/com/hilltopvillage/arena/ArenaRegistry.java",
         "src/main/java/com/hilltopvillage/arena/ArenaStatus.java",
         "src/main/java/com/hilltopvillage/arena/IArena.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-06.md",
+      "lead_count": 5,
       "deep_dive_dims": [],
       "deep_dive_done": [],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-sweep-slice-06.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -157,17 +178,19 @@
       }
     },
     "slice-07": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/arena/MultiArenaManager.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-07.md",
+      "lead_count": 5,
       "deep_dive_dims": [],
       "deep_dive_done": [],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-sweep-slice-07.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -178,19 +201,24 @@
       }
     },
     "slice-08": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/command/ArenaCommand.java",
         "src/main/java/com/hilltopvillage/command/DeployMenuSender.java",
         "src/main/java/com/hilltopvillage/command/HilltopCommandHandler.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-08.md",
+      "lead_count": 6,
       "deep_dive_dims": [],
-      "deep_dive_done": [],
+      "deep_dive_done": [
+        "error-handling"
+      ],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-audit-slice-08-error-handling.md",
+        "round1-02-sweep-slice-08.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -201,17 +229,19 @@
       }
     },
     "slice-09": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/command/HilltopTabCompleter.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-09.md",
+      "lead_count": 4,
       "deep_dive_dims": [],
       "deep_dive_done": [],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-sweep-slice-09.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -222,17 +252,22 @@
       }
     },
     "slice-10": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/command/SetupWizard.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-10.md",
+      "lead_count": 6,
       "deep_dive_dims": [],
-      "deep_dive_done": [],
+      "deep_dive_done": [
+        "error-handling"
+      ],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-sweep-slice-10.md",
+        "round1-02-audit-slice-10-error-handling.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -243,18 +278,23 @@
       }
     },
     "slice-11": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/config/ConfigManager.java",
         "src/main/java/com/hilltopvillage/config/ConfigPermission.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-11.md",
+      "lead_count": 6,
       "deep_dive_dims": [],
-      "deep_dive_done": [],
+      "deep_dive_done": [
+        "data-consistency"
+      ],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-audit-slice-11-data-consistency.md",
+        "round1-02-sweep-slice-11.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -265,19 +305,21 @@
       }
     },
     "slice-12": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/config/DisplayConfig.java",
         "src/main/java/com/hilltopvillage/config/DisplayConfigLoader.java",
         "src/main/java/com/hilltopvillage/config/GameConfig.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-12.md",
+      "lead_count": 6,
       "deep_dive_dims": [],
       "deep_dive_done": [],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-sweep-slice-12.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -288,7 +330,7 @@
       }
     },
     "slice-13": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/config/menu/AbstractConfigMenu.java",
         "src/main/java/com/hilltopvillage/config/menu/GameRulesMenu.java",
@@ -298,13 +340,18 @@
         "src/main/java/com/hilltopvillage/config/menu/NodeSettingsMenu.java",
         "src/main/java/com/hilltopvillage/config/menu/NumericInputHandler.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-13.md",
+      "lead_count": 6,
       "deep_dive_dims": [],
-      "deep_dive_done": [],
+      "deep_dive_done": [
+        "contract"
+      ],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-sweep-slice-13.md",
+        "round1-02-audit-slice-13-contract.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -315,17 +362,19 @@
       }
     },
     "slice-14": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/config/menu/WaveSettingsMenu.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-14.md",
+      "lead_count": 5,
       "deep_dive_dims": [],
       "deep_dive_done": [],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-sweep-slice-14.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -336,7 +385,7 @@
       }
     },
     "slice-15": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/core/GameManager.java",
         "src/main/java/com/hilltopvillage/core/GameState.java",
@@ -344,13 +393,18 @@
         "src/main/java/com/hilltopvillage/core/PlayerData.java",
         "src/main/java/com/hilltopvillage/core/PlayerGoodsManager.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-15.md",
+      "lead_count": 6,
       "deep_dive_dims": [],
-      "deep_dive_done": [],
+      "deep_dive_done": [
+        "concurrency"
+      ],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-audit-slice-15-concurrency.md",
+        "round1-02-sweep-slice-15.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -361,17 +415,22 @@
       }
     },
     "slice-16": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/core/WaveManager.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-16.md",
+      "lead_count": 6,
       "deep_dive_dims": [],
-      "deep_dive_done": [],
+      "deep_dive_done": [
+        "error-handling"
+      ],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-sweep-slice-16.md",
+        "round1-02-audit-slice-16-error-handling.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -382,17 +441,19 @@
       }
     },
     "slice-17": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/diagnostic/TpsDiagnostic.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-17.md",
+      "lead_count": 7,
       "deep_dive_dims": [],
       "deep_dive_done": [],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-sweep-slice-17.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -403,17 +464,19 @@
       }
     },
     "slice-18": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/doc/CommandsDocumentGenerator.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-18.md",
+      "lead_count": 5,
       "deep_dive_dims": [],
       "deep_dive_done": [],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-sweep-slice-18.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -424,17 +487,19 @@
       }
     },
     "slice-19": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/gui/ArenaSelectionGUI.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-19.md",
+      "lead_count": 6,
       "deep_dive_dims": [],
       "deep_dive_done": [],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-sweep-slice-19.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -445,7 +510,7 @@
       }
     },
     "slice-20": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/mechanics/ArenaAccessListener.java",
         "src/main/java/com/hilltopvillage/mechanics/ArenaScoreboard.java",
@@ -453,13 +518,20 @@
         "src/main/java/com/hilltopvillage/mechanics/FriendlyFireListener.java",
         "src/main/java/com/hilltopvillage/mechanics/HammerEffectRenderer.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-20.md",
+      "lead_count": 6,
       "deep_dive_dims": [],
-      "deep_dive_done": [],
+      "deep_dive_done": [
+        "concurrency",
+        "security"
+      ],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-audit-slice-20-concurrency.md",
+        "round1-02-sweep-slice-20.md",
+        "round1-02-audit-slice-20-security.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -470,20 +542,25 @@
       }
     },
     "slice-21": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/mechanics/HammerListener.java",
         "src/main/java/com/hilltopvillage/mechanics/LobbyProtectionListener.java",
         "src/main/java/com/hilltopvillage/mechanics/MapRestoreManager.java",
         "src/main/java/com/hilltopvillage/mechanics/NodeListener.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-21.md",
+      "lead_count": 6,
       "deep_dive_dims": [],
-      "deep_dive_done": [],
+      "deep_dive_done": [
+        "concurrency"
+      ],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-audit-slice-21-concurrency.md",
+        "round1-02-sweep-slice-21.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -494,20 +571,25 @@
       }
     },
     "slice-22": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/mechanics/NodeSystem.java",
         "src/main/java/com/hilltopvillage/mechanics/PlayerLifecycleListener.java",
         "src/main/java/com/hilltopvillage/mechanics/TabListManager.java",
         "src/main/java/com/hilltopvillage/mechanics/VillagerPreviewManager.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-22.md",
+      "lead_count": 6,
       "deep_dive_dims": [],
-      "deep_dive_done": [],
+      "deep_dive_done": [
+        "data-consistency"
+      ],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-sweep-slice-22.md",
+        "round1-02-audit-slice-22-data-consistency.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -518,17 +600,19 @@
       }
     },
     "slice-23": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/mechanics/VillagerSystem.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-23.md",
+      "lead_count": 7,
       "deep_dive_dims": [],
       "deep_dive_done": [],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-sweep-slice-23.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -539,7 +623,7 @@
       }
     },
     "slice-24": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/shop/NpcManager.java",
         "src/main/java/com/hilltopvillage/shop/ShopConfig.java",
@@ -549,13 +633,18 @@
         "src/main/java/com/hilltopvillage/shop/ShopListener.java",
         "src/main/java/com/hilltopvillage/shop/ShopManager.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-24.md",
+      "lead_count": 6,
       "deep_dive_dims": [],
-      "deep_dive_done": [],
+      "deep_dive_done": [
+        "data-consistency"
+      ],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-audit-slice-24-data-consistency.md",
+        "round1-02-sweep-slice-24.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -566,17 +655,19 @@
       }
     },
     "slice-25": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/stats/StatsManager.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-25.md",
+      "lead_count": 6,
       "deep_dive_dims": [],
       "deep_dive_done": [],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-sweep-slice-25.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -587,7 +678,7 @@
       }
     },
     "slice-26": {
-      "state": "PENDING",
+      "state": "DONE",
       "files": [
         "src/main/java/com/hilltopvillage/util/DisplayEntityManager.java",
         "src/main/java/com/hilltopvillage/util/LanguageManager.java",
@@ -596,13 +687,18 @@
         "src/main/java/com/hilltopvillage/util/YamlFileGate.java",
         "src/main/java/com/hilltopvillage/util/YamlFiles.java"
       ],
-      "reachability": null,
-      "sweep_artifact": null,
-      "lead_count": 0,
+      "reachability": "PROD",
+      "sweep_artifact": "round1-02-sweep-slice-26.md",
+      "lead_count": 6,
       "deep_dive_dims": [],
-      "deep_dive_done": [],
+      "deep_dive_done": [
+        "data-consistency"
+      ],
       "deep_dive_pending": [],
-      "artifact_paths": [],
+      "artifact_paths": [
+        "round1-02-sweep-slice-26.md",
+        "round1-02-audit-slice-26-data-consistency.md"
+      ],
       "attempt": 0,
       "failure": {
         "error_type": null,
@@ -613,32 +709,7 @@
       }
     }
   },
-  "in_flight": [
-    {
-      "agent_id": "a7ccb769-a8ac-4b37-91b4-b61eb6f70068",
-      "slice_id": "slice-01",
-      "task": "sweep",
-      "started_at": "2026-11-20T21:00:00Z"
-    },
-    {
-      "agent_id": "b119b9aa-9e4f-401d-885a-28a716350d1c",
-      "slice_id": "slice-02",
-      "task": "sweep",
-      "started_at": "2026-11-20T21:00:00Z"
-    },
-    {
-      "agent_id": "37421d55-6a83-4bb8-b3d3-c8adda50fd6d",
-      "slice_id": "slice-03",
-      "task": "sweep",
-      "started_at": "2026-11-20T21:00:00Z"
-    },
-    {
-      "agent_id": "0b00fb55-b64c-47ff-9c24-360da051b539",
-      "slice_id": "slice-04",
-      "task": "sweep",
-      "started_at": "2026-11-20T21:00:00Z"
-    }
-  ],
+  "in_flight": [],
   "current_plan": {
     "phase": "wave2a",
     "written_at": "2026-11-20T12:56:49.623Z",
@@ -670,9 +741,39 @@
       "wave": "wave1",
       "discretion_type": "SLICE_SIZE_DEVIATION",
       "action": "保留 9 个物理行数 >1800 的切片（最大 slice-01=2290；slice-10 为单文件 oversized），未重新切分",
-      "basis": "侦察按非空行数装箱（1778 等），verify-artifacts G8 用物理行数口径；物理行数实测 34954，偏差 13–27%。重新切分会把切片数从 26 推到 31+，超出本轮预算；9 个切片均在 2300 物理行以内，单 agent 可在 20 文件预算内读完",
+      "basis": "侦察按非空行数装箱（1778 等），verify-artifacts G8 用物理行数口径；物理行数实测 34954，初版声明值与实测偏差 13–27%，修正后 26/26 片偏差 0.0%。9 个切片物理行数 >1800（最大 slice-01=2290；slice-10 为单文件 oversized）。重切会把 26 片推到 31+，超出本轮预算。",
       "evidence_ref": ".run-dsh3/artifacts/round1-01-recon-slices.md（payload.audit_slices[].line_count）+ .run-dsh3/summarize.mjs 的 declared/physical 对账输出",
-      "mechanical_check": "node .run-dsh3/summarize.mjs \".run-dsh3/artifacts/round1-01-recon-slices.md\" \"<repo>\" 逐片打印 declared 与 physical，偏差应为 0.0%；>1800 的片号可由同一输出直接数出",
+      "mechanical_check": "node .run-dsh3/summarize.mjs \".run-dsh3/artifacts/round1-01-recon-slices.md\" \"<repo>\" 应逐片打印 declared=physical、delta=0.0%；>1800 的片号可由同一输出数出（共 9 个）。注意：该命令验证的是「修正后一致」，不能复现「初版偏差 13–27%」——那一项只有旧值被覆盖前的对照才能复现，属不可回溯声明。",
+      "reversible": true
+    },
+    {
+      "seq": 3,
+      "wave": "wave2b",
+      "discretion_type": "DIMENSION_ASSIGNMENT",
+      "action": "10 条深挖记录的 dimension_assigned_by_discretion 全为 false，但 state.json 的 slices[*].deep_dive_dims 为空数组，没有「线索→维度」映射留痕",
+      "basis": "维度是按各 sweep 的 dimension_histogram 直接取的，未做主观调整；但字段留空使复核者无法从账本还原指派依据（Skeptic A 的 U2）",
+      "evidence_ref": "round1-03-critique-skeptic-a.md 的 discipline_audit；各 round1-02-sweep-*.md 的 payload.dimension_histogram",
+      "mechanical_check": "对每个 slice，`wave2_completed` 里的 dimension 必须出现在该片 sweep 产物的 dimension_histogram 键中且计数 >0",
+      "reversible": true
+    },
+    {
+      "seq": 4,
+      "wave": "wave2a",
+      "discretion_type": "CONCURRENCY_CAP_BREACH",
+      "action": "并发峰值达到 5–6（上限 4），原因是用「产物已落盘」当作「agent 已到终态」补位；共两次（宽扫阶段一次、锐评阶段一次）",
+      "basis": "违反 protocol.md §1.2 L0（槽位释放条件是进入终态，不是文件已落盘）；属主 Agent 操作违规，不是子 Agent 失败",
+      "evidence_ref": "round1-03-critique-skeptic-a.md 的 discipline_audit.l0_violations；RUN-REPORT.md 记录的并行实例",
+      "mechanical_check": "按 harness 的 agent 起止时间做区间重叠计数；或按产物 mtime 与 agent 派发顺序人工复核（不可完全机械化，故同时给出自述）",
+      "reversible": false
+    },
+    {
+      "seq": 2,
+      "wave": "wave2b",
+      "discretion_type": "DEEP_DIVE_SELECTION",
+      "action": "在 12 个计划深挖之外增派 5 个实例（s26-DC、s04-logic、s20-security、s22-DC、s10-error-handling），并把 s22 的维度由 concurrency 改为 data-consistency；计划中的 s07-DC 未派。",
+      "basis": "s26 有 2 条 HIGH（YAML 原子降级、隔离文件写回），s04 有 2 条 HIGH（跨世界 distanceSquared、NaN 伤害），s20 有世界准入绕过线索，s22 的 nodes.yml 静默删除风险高于其唯一一条 LOW 并发线索，s10 有「无法校验即放行」的 HIGH；s07 的 2 条 MEDIUM 留给报告 §D。最终预算 26 宽扫 + 15 深挖 + 4 锐评 = 45 ≤ 60。",
+      "evidence_ref": ".run-dsh3/deep-dive-plan.md；.run-dsh3/artifacts/round1-02-audit-slice-26-data-consistency.md、-slice-04-logic.md、-slice-20-security.md、-slice-22-data-consistency.md、-slice-10-error-handling.md",
+      "mechanical_check": "node -e \"const fs=require('fs');const d='.run-dsh3/artifacts';console.log(fs.readdirSync(d).filter(f=>/^round1-02-audit-/.test(f)).length)\" 应为 15；state.json.wave2_completed 中 task=deep_dive 的条数应同为 15；s07 无 audit 产物。",
       "reversible": true
     }
   ],
@@ -683,12 +784,454 @@
     "EMPTY_RESULT": 0,
     "CONTRACT_VIOLATION": 0
   },
-  "wave2_completed": [],
+  "wave2_completed": [
+    {
+      "agent_id": "audit-slice-01-data-consistency",
+      "slice_id": "slice-01",
+      "task": "deep_dive",
+      "dimension": "data-consistency",
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-audit-slice-01-data-consistency.md",
+      "lead_or_finding_count": 2
+    },
+    {
+      "agent_id": "audit-slice-04-logic",
+      "slice_id": "slice-04",
+      "task": "deep_dive",
+      "dimension": "logic",
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-audit-slice-04-logic.md",
+      "lead_or_finding_count": 1
+    },
+    {
+      "agent_id": "audit-slice-05-data-consistency",
+      "slice_id": "slice-05",
+      "task": "deep_dive",
+      "dimension": "data-consistency",
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-audit-slice-05-data-consistency.md",
+      "lead_or_finding_count": 1
+    },
+    {
+      "agent_id": "audit-slice-08-error-handling",
+      "slice_id": "slice-08",
+      "task": "deep_dive",
+      "dimension": "error-handling",
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-audit-slice-08-error-handling.md",
+      "lead_or_finding_count": 1
+    },
+    {
+      "agent_id": "audit-slice-10-error-handling",
+      "slice_id": "slice-10",
+      "task": "deep_dive",
+      "dimension": "error-handling",
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-audit-slice-10-error-handling.md",
+      "lead_or_finding_count": 3
+    },
+    {
+      "agent_id": "audit-slice-11-data-consistency",
+      "slice_id": "slice-11",
+      "task": "deep_dive",
+      "dimension": "data-consistency",
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-audit-slice-11-data-consistency.md",
+      "lead_or_finding_count": 5
+    },
+    {
+      "agent_id": "audit-slice-13-contract",
+      "slice_id": "slice-13",
+      "task": "deep_dive",
+      "dimension": "contract",
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-audit-slice-13-contract.md",
+      "lead_or_finding_count": 2
+    },
+    {
+      "agent_id": "audit-slice-15-concurrency",
+      "slice_id": "slice-15",
+      "task": "deep_dive",
+      "dimension": "concurrency",
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-audit-slice-15-concurrency.md",
+      "lead_or_finding_count": 3
+    },
+    {
+      "agent_id": "audit-slice-16-error-handling",
+      "slice_id": "slice-16",
+      "task": "deep_dive",
+      "dimension": "error-handling",
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-audit-slice-16-error-handling.md",
+      "lead_or_finding_count": 3
+    },
+    {
+      "agent_id": "audit-slice-20-concurrency",
+      "slice_id": "slice-20",
+      "task": "deep_dive",
+      "dimension": "concurrency",
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-audit-slice-20-concurrency.md",
+      "lead_or_finding_count": 2
+    },
+    {
+      "agent_id": "audit-slice-20-security",
+      "slice_id": "slice-20",
+      "task": "deep_dive",
+      "dimension": "security",
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-audit-slice-20-security.md",
+      "lead_or_finding_count": 2
+    },
+    {
+      "agent_id": "audit-slice-21-concurrency",
+      "slice_id": "slice-21",
+      "task": "deep_dive",
+      "dimension": "concurrency",
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-audit-slice-21-concurrency.md",
+      "lead_or_finding_count": 1
+    },
+    {
+      "agent_id": "audit-slice-22-data-consistency",
+      "slice_id": "slice-22",
+      "task": "deep_dive",
+      "dimension": "data-consistency",
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-audit-slice-22-data-consistency.md",
+      "lead_or_finding_count": 2
+    },
+    {
+      "agent_id": "audit-slice-24-data-consistency",
+      "slice_id": "slice-24",
+      "task": "deep_dive",
+      "dimension": "data-consistency",
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-audit-slice-24-data-consistency.md",
+      "lead_or_finding_count": 3
+    },
+    {
+      "agent_id": "audit-slice-26-data-consistency",
+      "slice_id": "slice-26",
+      "task": "deep_dive",
+      "dimension": "data-consistency",
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-audit-slice-26-data-consistency.md",
+      "lead_or_finding_count": 3
+    },
+    {
+      "agent_id": "sweep-slice-01",
+      "slice_id": "slice-01",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-01.md",
+      "lead_or_finding_count": 6
+    },
+    {
+      "agent_id": "sweep-round1-slice-02",
+      "slice_id": "slice-02",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-02.md",
+      "lead_or_finding_count": 6
+    },
+    {
+      "agent_id": "sweep-slice-03",
+      "slice_id": "slice-03",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-03.md",
+      "lead_or_finding_count": 5
+    },
+    {
+      "agent_id": "sweep-slice-04",
+      "slice_id": "slice-04",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-04.md",
+      "lead_or_finding_count": 6
+    },
+    {
+      "agent_id": "sweep-slice-05",
+      "slice_id": "slice-05",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-05.md",
+      "lead_or_finding_count": 6
+    },
+    {
+      "agent_id": "sweep-slice-06",
+      "slice_id": "slice-06",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-06.md",
+      "lead_or_finding_count": 5
+    },
+    {
+      "agent_id": "sweep-slice-07",
+      "slice_id": "slice-07",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-07.md",
+      "lead_or_finding_count": 5
+    },
+    {
+      "agent_id": "sweep-slice-08",
+      "slice_id": "slice-08",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-08.md",
+      "lead_or_finding_count": 6
+    },
+    {
+      "agent_id": "sweep-slice-09",
+      "slice_id": "slice-09",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-09.md",
+      "lead_or_finding_count": 4
+    },
+    {
+      "agent_id": "sweep-slice-10",
+      "slice_id": "slice-10",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-10.md",
+      "lead_or_finding_count": 6
+    },
+    {
+      "agent_id": "sweep-slice-11",
+      "slice_id": "slice-11",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-11.md",
+      "lead_or_finding_count": 6
+    },
+    {
+      "agent_id": "sweep-slice-12",
+      "slice_id": "slice-12",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-12.md",
+      "lead_or_finding_count": 6
+    },
+    {
+      "agent_id": "sweep-slice-13",
+      "slice_id": "slice-13",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-13.md",
+      "lead_or_finding_count": 6
+    },
+    {
+      "agent_id": "sweep-slice-14-r1",
+      "slice_id": "slice-14",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-14.md",
+      "lead_or_finding_count": 5
+    },
+    {
+      "agent_id": "sweep-slice-15",
+      "slice_id": "slice-15",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-15.md",
+      "lead_or_finding_count": 6
+    },
+    {
+      "agent_id": "sweep-slice-16",
+      "slice_id": "slice-16",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-16.md",
+      "lead_or_finding_count": 6
+    },
+    {
+      "agent_id": "sweep-slice-17",
+      "slice_id": "slice-17",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-17.md",
+      "lead_or_finding_count": 7
+    },
+    {
+      "agent_id": "sweep-slice-18",
+      "slice_id": "slice-18",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-18.md",
+      "lead_or_finding_count": 5
+    },
+    {
+      "agent_id": "sweep-slice-19",
+      "slice_id": "slice-19",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-19.md",
+      "lead_or_finding_count": 6
+    },
+    {
+      "agent_id": "sweep-slice-20",
+      "slice_id": "slice-20",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-20.md",
+      "lead_or_finding_count": 6
+    },
+    {
+      "agent_id": "sweep-slice-21",
+      "slice_id": "slice-21",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-21.md",
+      "lead_or_finding_count": 6
+    },
+    {
+      "agent_id": "sweep-slice-22",
+      "slice_id": "slice-22",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-22.md",
+      "lead_or_finding_count": 6
+    },
+    {
+      "agent_id": "sweep-slice-23",
+      "slice_id": "slice-23",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-23.md",
+      "lead_or_finding_count": 7
+    },
+    {
+      "agent_id": "sweep-slice-24",
+      "slice_id": "slice-24",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-24.md",
+      "lead_or_finding_count": 6
+    },
+    {
+      "agent_id": "sweep-slice-25",
+      "slice_id": "slice-25",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-25.md",
+      "lead_or_finding_count": 6
+    },
+    {
+      "agent_id": "sweep-slice-26",
+      "slice_id": "slice-26",
+      "task": "sweep",
+      "dimension": null,
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-02-sweep-slice-26.md",
+      "lead_or_finding_count": 6
+    },
+    {
+      "agent_id": "critique-skeptic-a",
+      "slice_id": null,
+      "task": "critique",
+      "dimension": null,
+      "dispatched_at": "2026-11-20T14:40:30.515Z",
+      "terminal_at": "2026-11-20T14:40:30.515Z",
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-03-critique-skeptic-a.md",
+      "lead_or_finding_count": 0,
+      "dimension_assigned_by_discretion": false
+    },
+    {
+      "agent_id": "critique-skeptic-b1",
+      "slice_id": null,
+      "task": "critique",
+      "dimension": null,
+      "dispatched_at": "2026-11-20T14:40:30.515Z",
+      "terminal_at": "2026-11-20T14:40:30.515Z",
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-03-critique-skeptic-b1.md",
+      "lead_or_finding_count": 0,
+      "dimension_assigned_by_discretion": false
+    },
+    {
+      "agent_id": "critique-skeptic-b2",
+      "slice_id": null,
+      "task": "critique",
+      "dimension": null,
+      "dispatched_at": "2026-11-20T14:40:30.516Z",
+      "terminal_at": "2026-11-20T14:40:30.516Z",
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-03-critique-skeptic-b2.md",
+      "lead_or_finding_count": 0,
+      "dimension_assigned_by_discretion": false
+    },
+    {
+      "agent_id": "critique-skeptic-c",
+      "slice_id": null,
+      "task": "critique",
+      "dimension": null,
+      "dispatched_at": "2026-11-20T14:40:30.516Z",
+      "terminal_at": "2026-11-20T14:40:30.516Z",
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-03-critique-skeptic-c.md",
+      "lead_or_finding_count": 0,
+      "dimension_assigned_by_discretion": false
+    },
+    {
+      "agent_id": "critique-devils-advocate",
+      "slice_id": null,
+      "task": "critique",
+      "dimension": null,
+      "dispatched_at": "2026-11-20T14:40:30.517Z",
+      "terminal_at": "2026-11-20T14:40:30.517Z",
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-03-critique-devils-advocate.md",
+      "lead_or_finding_count": 0,
+      "dimension_assigned_by_discretion": false
+    },
+    {
+      "agent_id": "critique-arbiter",
+      "slice_id": null,
+      "task": "critique",
+      "dimension": null,
+      "dispatched_at": "2026-11-20T14:40:30.517Z",
+      "terminal_at": "2026-11-20T14:40:30.517Z",
+      "final_status": "SUCCESS",
+      "artifact_path": "round1-03-critique-arbiter.md",
+      "lead_or_finding_count": 0,
+      "dimension_assigned_by_discretion": false
+    }
+  ],
   "report": {
     "dir_ready": true,
     "dir_path": "D:\\Projects\\AI prompt\\many-agents_multi-prompt-files_token-heavy\\multi-agent-audit-framework\\.run-dsh3\\artifacts",
-    "final_report_path": null,
-    "written_at": null,
+    "final_report_path": "D:\\Projects\\AI prompt\\many-agents_multi-prompt-files_token-heavy\\multi-agent-audit-framework\\.run-dsh3\\artifacts/round1-final-report.md",
+    "written_at": "2026-11-20T14:40:30.512Z",
     "is_complete": false
   },
   "baseline": {

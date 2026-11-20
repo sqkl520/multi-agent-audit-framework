@@ -1,200 +1,187 @@
 # round1 深挖（audit）— slice-11 / data-consistency
 
-- trace_id: `trace-r1-20260215-hilltop-dsh3`
-- round_id: `round1`
-- slice_id: `slice-11`
-- dimension: `data-consistency`（本产物只报这一个维度）
+- trace_id：`trace-r1-20260215-hilltop-dsh3` / round_id：`round1`
+- slice_id：`slice-11` / dimension：`data-consistency`（只报这一个维度）
+- agent_id：`audit-slice-11-data-consistency`
 - 被审仓库（只读）：`D:\Server\MCServers\Server plugin\Hilltop Village\Hilltop Village Plugin`
-- 被审文件：`src/main/java/com/hilltopvillage/config/ConfigManager.java`（2133 行）、`src/main/java/com/hilltopvillage/config/ConfigPermission.java`（22 行）
-- 结论：**1 HIGH / 3 MEDIUM / 2 LOW**，全部 `CONFIRMED`，均有本回合逐字引用。
+- 切片文件：`ConfigManager.java`（实测 2133 行）、`ConfigPermission.java`（22 行）
+- shared_dependencies：`GameConfig.java`、`YamlFileGate.java`、`YamlFiles.java`
+- 控制流/自检补充读取：`MainConfigMenu.java`、`VillagerSystem.java`、`ConfigManagerTest.java`、`ConfigLoadClampTest.java`、`YamlNullMechanismTest.java`
+- 结论：**5 条 CONFIRMED**（1 HIGH / 3 MEDIUM / 1 LOW），**0 条 NO_EVIDENCE_FOUND**；6 条 lead 全部处置（5 升级 + 1 判「不构成本维度缺陷」）。
 
-## 0. 发现一览
+## 0. 结论摘要
 
-| # | id | 严重性 | 位置 | 一句话 |
+| finding | 严重性 | 位置 | 一句话 |
+|---|---|---|---|
+| F-slice-11-data-consistency-01 | HIGH | `ConfigManager.java:1425` | reload 失败分支无条件推进 `lastSavedSnapshot`，内存中未落盘的 GUI 改动被洗成「已保存」，保存按钮熄灭且无关服兜底 |
+| F-slice-11-data-consistency-02 | MEDIUM | `ConfigManager.java:1442` | `contains()` 与 `getString()` 不互斥：非字符串标量 → `null` 写入 `worldName`，下一次保存把磁盘键删掉；同形态另有 5 处 |
+| F-slice-11-data-consistency-03 | MEDIUM | `ConfigManager.java:1469` | `villager-health` 无归一化：`.nan`/`.inf`/负值原样进 `GameConfig` 并写回磁盘，同文件同类键有专门 clamp |
+| F-slice-11-data-consistency-04 | MEDIUM | `ConfigManager.java:644` | `Number.intValue()` 无上界与整数性校验：1e18 饱和成 `Integer.MAX_VALUE`、小数截断、NaN→0，全部零诊断 |
+| F-slice-11-data-consistency-05 | LOW | `ConfigManager.java:1577` | 载入中途用开头的整份 YAML 全量写盘做旧键迁移，不经过 `saveToFile` 的 mtime 外部修改检测（另见 1695） |
+
+## 1. 线索处置（L1–L6，逐条）
+
+| lead | 原判维度/置信 | 处置 | finding / 去向 | 本回合重读后的依据 |
 |---|---|---|---|---|
-| 1 | F-slice-11-data-consistency-01 | **HIGH** | ConfigManager.java:1425 | 读盘失败分支把「保留在内存的未保存改动」登记成已落盘快照，脏标志被洗白、保存按钮消失 |
-| 2 | F-slice-11-data-consistency-02 | LOW | ConfigManager.java:1442 | `contains()` 为真但 `getString()` 为 null 时 `worldName` 被写成 null，下一次保存把该键从磁盘删掉 |
-| 3 | F-slice-11-data-consistency-03 | MEDIUM | ConfigManager.java:1469 | `villager-health` 无有限性/区间闸门，`.nan` 穿过 `Math.max` 一路进实体属性 |
-| 4 | F-slice-11-data-consistency-04 | MEDIUM | ConfigManager.java:644 | `readWaveInt` 只钳负数；`intValue()` 的 NaN→0、1e18→MAX、小数截断全部静默通过 |
-| 5 | F-slice-11-data-consistency-05 | LOW | ConfigManager.java:1577 | 载入途中用开头读到的整份 YAML 直接写盘做旧键迁移，绕过 mtime 外部修改检测 |
-| 6 | F-slice-11-data-consistency-06 | MEDIUM | ConfigManager.java:2006 | `monsters-config.yml` 缺失（隔离后 ABSENT）被当成可用空配置，怪物扩展字段回落出厂值并被登记为新基线，下一次保存据此重建文件 |
+| L1 `:1425` 失败分支推进快照 | data-consistency / HIGH | **CONFIRMED** | F-slice-11-data-consistency-01（HIGH） | `:1425` 在 `:1419` 的三合一失败条件后**无条件**执行，紧接着 `:1426 return false`。这是 `loadFromFile()` 唯一的 `false` 返回点，不存在「失败但不推进」的路径；`hasUnsavedChanges()`（`:339-345`）只比内存与快照，推进即变干净 |
+| L2 `:1442` contains 真但 getString null | data-consistency / HIGH | **CONFIRMED（机制修正）** | F-slice-11-data-consistency-02（MEDIUM） | 机制成立，但 sweep 举的「空值」不触发：YAML 的 null 值会被 `YamlConfiguration` 整个丢弃（本仓库 `YamlFiles.java:351-356` 有同款说明），`contains()` 为 false。真正触发的是**非字符串标量/段**（如 `world-name: 123`）。另：sweep 说「消费者是 `Bukkit.getWorld(...)`」系误归属——那些 `getWorldName()` 命中全是 `ArenaDefinition`，`GameConfig#getWorldName` 在 `src/main/java` 内的唯一读取点是 `:851` 的写盘 |
+| L3 `:1469` villager-health 无闸门 | data-consistency / MEDIUM | **CONFIRMED** | F-slice-11-data-consistency-03（MEDIUM） | `:1469` 裸 `getDouble`；`mergeExternalChanges()` 的 `:441-444` 同样裸取。对照 `:776-784` 的 `normalizeExplodeDamageMultiplier` 与 `:762-769` 的另两个 normalize，确认是「逐键手写 clamp 漏了一键」 |
+| L4 `:644` readWaveInt 溢出/小数 | data-consistency / MEDIUM | **CONFIRMED** | F-slice-11-data-consistency-04（MEDIUM） | `:639-643` 只挡「非 Number」，`:644` 直接 `intValue()`，`:645-648` 只挡负数；饱和/截断/NaN 三条都不进 `problems`，故 `:1930-1933` 的汇总 warning 不会出现 |
+| L5 `:1577` 载入中途全量写盘 | data-consistency / MEDIUM | **CONFIRMED（降为 LOW）** | F-slice-11-data-consistency-05（LOW） | `:1577` 与 `:1695` 两处 `settingsGate.write(settingsYaml)` 前均无 `lastModified` 比对（对照 `:840` 的保存路径有）。窗口是「`:1414` 读盘 → `:1577` 写盘」之间的解析耗时，写入内容又是刚读到的磁盘快照减去旧键，故影响面小 |
+| L6 `:2006` 半份 reload 报成功 | contract / MEDIUM | **REFUTED（本维度）** | `off_dimension_notes[0]` | 该观察指向返回值契约（`loadMonstersConfig()` 为 void，`loadFromFile()` 仍返回 true），不是「磁盘与内存的数据不一致」：怪物闸门只读/文件不可用时 `saveMonstersConfig()` 会拒写（`:1044-1046`），磁盘内容保持不变。按维度隔离纪律不塞进 findings |
 
-上游线索 L1/L2/L3/L4/L5 全部升级为 CONFIRMED（见 §2），**L6 判为 contract 维度**，只写入 `off_dimension_notes`（见 §5）。
+## 2. `loadFromFile()` 的分支与快照推进点（逐条走完）
 
-## 1. 范围与方法
+| 行 | 分支 | 条件 | 动作 | 快照是否推进 |
+|---|---|---|---|---|
+| 1405–1410 | defaultWave 空值修复 | `getDefaultWave() == null`（标注 unreachable） | 用新 `GameConfig` 模板补回 | 否 |
+| 1413 | 展示配置 | 无条件 | `loadDisplayConfig()` | 否 |
+| 1414 | 读 game-settings | 无条件 | `settingsGate.load()`（可能隔离并上闩） | 否 |
+| **1419–1426** | **失败早退** | `!loaded.usable() \|\| status == ABSENT \|\| settingsGate.isReadOnly()` | `settingsLoadedFromDisk=false`；`loadMonstersConfig()`；**`:1425 lastSavedSnapshot = activeConfig.snapshot();`**；`:1426 return false` | **是（无条件）** |
+| 1428–1440 | 成功读盘 + 重建 | 上条不成立 | `settingsYaml = loaded.config()`；`activeConfig = new GameConfig()`；清 `loadTimeNormalizationPending` | 否（此刻） |
+| 1442–1770 | 逐键读取 | 各自 `contains` / `isSet` / `isList` 守卫 | 写 `activeConfig` | 否 |
+| 1544–1585 | 旧键迁移写盘 | 存在 `nodes.repair-item` / `nodes.repair-amount` | `:1577 settingsGate.write(settingsYaml)`；成功才更新 `settingsLastModified` | 否 |
+| 1660–1703 | 旧键迁移写盘 | 存在 `shop.currency-drop-amount` | `:1695 settingsGate.write(settingsYaml)` | 否 |
+| 1955 | 怪物配置 | 无条件 | `loadMonstersConfig()`（void；内部失败只 SEVERE 后 return） | 否 |
+| 1957 | 成功路径快照 | 走到这里 | `lastSavedSnapshot = activeConfig.snapshot();` | 是 |
+| 1964 | 成功返回 | — | `return true` | — |
 
-- 读全 `ConfigManager.java` 的 12 个关键区段：字段与构造器（1–145）、`hasUnsavedChanges`/`removeWave`（330–360）、`mergeExternalChanges`（386–607）、`readWaveInt`/`readComposition`（614–700）、`saveToFile`/`saveMonstersConfig`/`adoptExternalMonsterChanges`（826–1155）、`loadFromFile`（1392–1731）、收尾与 `loadMonstersConfig`/`revertAll`（1925–2133）。
-- 控制流证据来自 4 个直接调用方/被调用方：`MainConfigMenu`（保存/重载按钮）、`HilltopCommandHandler`（`/hilltop reloadconfig`）、`VillagerSystem`（`villager-health` 消费者）、`YamlFileGate`/`YamlFiles`（ABSENT 与只读语义）。它们不扩大切片，只用于坐实「入口 → 问题点」。
-- 自带测试抽验 2 个：`ConfigLoadClampTest`、`YamlNullMechanismTest`（见 §6）。
-- 数据一致性检查面：写入集合 ↔ 合并白名单 ↔ 读取集合的三方对账；脏标志与快照的语义；部分写入与事务边界；ABSENT/不可用/只读三种降级；类型与数值边界。
+补充两点（决定「异常分支」的结论）：
 
-## 2. 逐条发现
+1. `loadFromFile()` 全程**没有 try/catch**：`1442–1953` 之间若抛出未预期的 `RuntimeException`，`:1425`/`:1957` 都不会执行，异常直接抛给调用方（`MainConfigMenu:151` 未捕获，菜单不会 `reopen()`）。也就是说，**「失败」只有两种形态：受控早退（必推进快照）与异常逃逸（不推进、但也没有 `return false`）**。
+2. 早退分支的三合一条件里，`ABSENT` 是唯一「闸门仍可写」的情形（`YamlFileGate.load()` 对 ABSENT 不改 `readOnly`，见 `YamlFileGate.java:52-62`）。因此 `:1425` 之后并非「反正也存不了」：文件被外部删除后保存本来可以成功，但保存按钮已经被 `hasUnsavedChanges()==false` 藏掉了。
 
-### F-01（HIGH）失败路径把内存当成磁盘：脏标志被洗白
+## 3. 发现详情
 
-**证据（ConfigManager.java:1419–1426，逐字）**
+### F-slice-11-data-consistency-01（HIGH）reload 失败把「内存」写成「已落盘基线」
 
-```java
-        if (!loaded.usable() || loaded.status() == YamlFiles.Status.ABSENT || settingsGate.isReadOnly()) {
-            // 不可用时不套用磁盘值（保留内存/默认值），也不做任何迁移写回
-            plugin.getLogger().severe("game-settings.yml is unusable; keeping the in-memory values "
-                    + "(nothing will be read from or written to the file this run)");
-            settingsLoadedFromDisk = false;
-            loadMonstersConfig();
-            lastSavedSnapshot = activeConfig.snapshot();
-            return false;
-        }
-```
+**证据（本回合 read，`ConfigManager.java:1425`）**：`lastSavedSnapshot = activeConfig.snapshot();`
 
-**推断**：`lastSavedSnapshot` 的语义是「上一次真正落盘的配置」。这个分支没有写任何文件（日志自己说 "nothing will be read from or written to the file"），却把**当前内存**（含本会话所有未保存的 GUI 改动）复制成基线。`hasUnsavedChanges()`（同文件 339–345）就是 `!activeConfig.snapshot().equals(lastSavedSnapshot)`，于是返回 false。
+- 条件在 `:1419`：`if (!loaded.usable() || loaded.status() == YamlFiles.Status.ABSENT || settingsGate.isReadOnly()) {`
+- 该分支没有写入任何文件，却在 `:1425` 把快照推进到当前内存，`:1426` 立刻 `return false`。
 
-**调用链（入口 → 问题点）**：
-`/hilltop reloadconfig`（`HilltopCommandHandler.java:422`）或配置 GUI「重新加载」（`MainConfigMenu.java:151`）→ `ConfigManager.loadFromFile()` → 1419 守卫命中（文件被删/被隔离/只读）→ 1425 推进快照 → 返回 false。
-调用方随后 `reopen()`（`MainConfigMenu.java:162`）→ `buildMenu()` 读 `configManager.hasUnsavedChanges()`（`MainConfigMenu.java:96`）→ 现在为 false → 底部槽位从 LIME_WOOL「保存」变成 GREEN_WOOL「已是最新」，保存入口消失。
+**推断**：`hasUnsavedChanges()`（`:339-345`）的判据是 `!activeConfig.snapshot().equals(lastSavedSnapshot)`（外加 `loadTimeNormalizationPending`）。`:1425` 之后两者相等，方法返回 false。`MainConfigMenu:96` 正是用这个返回值决定渲染 LIME_WOOL「保存」还是 GREEN_WOOL「已是最新」（`:126-128`）。链路是：管理员先在 GUI 改了若干项（未保存）→ 执行「重新加载」（`MainConfigMenu:151` 或 `/hilltop reloadconfig`，`HilltopCommandHandler:422`）→ 配置文件恰好不可用/被删/已只读 → 界面提示「重载失败」（`:156-161`）→ `reopen()` 后保存按钮**同时消失**，此前的改动再也没有入口可保存。全库 `saveToFile()` 的调用点只有菜单保存（`MainConfigMenu:106`）、`HilltopCommandHandler:626`、`SetupWizard:1680/1704`，**没有关服或定时兜底**，因此这些改动在重启后静默丢失。
 
-**为什么是 HIGH 而不是 CRITICAL**：丢失的是「本会话尚未落盘的编辑」（崩溃/关服本来也会丢），磁盘上的既有配置没有被破坏，所以不到 CRITICAL；但「失败提示 + 保存按钮消失」同时发生，管理员会以为改动已随重载保住，实际只能等重启后全部蒸发。同文件 119–120 行的注释明确承诺「失败时 hasUnsavedChanges() 仍为 true，保存按钮必须继续可见」——本条正是该承诺在 reload 路径上的反例。
+值得注意：仓库自己的测试 `ConfigManagerTest:93-96` 已把这条不变式写成断言（「monsters 落盘失败时快照不得推进，否则保存按钮熄灭、这批改动永远不再重试」），`MainConfigMenu:119-120` 的注释也写着「失败时 `hasUnsavedChanges()` 仍为 true（快照未推进）」——两处都只对 `saveToFile()` 成立，`loadFromFile()` 的失败分支恰好违反同一不变式且无测试覆盖。
 
-**alternatives**
-1. 如果 `hasUnsavedChanges()` 在 reload 失败后被别的标志兜住（例如 `loadTimeNormalizationPending` 恰好为 true），保存按钮不会消失——需检查 `ConfigManager.java:339-345` 与本次会话是否发生过归一化（`loadTimeNormalizationPending` 只在归一化改写时置位，普通 GUI 编辑不置位）。
-2. 如果调用方在调用 `loadFromFile()` 之前会先把未保存改动落盘或显式回滚，则没有可被洗白的改动——需检查 `HilltopCommandHandler.java:419-422` 与 `MainConfigMenu.java:148-151`（两处调用前均无 save/revert 调用）。
+**alternatives（HIGH 需 ≥2）**
 
-### F-02（LOW）`contains` 与 `getString` 不互斥：worldName 收下 null
+1. 如果进入该分支前内存与 `lastSavedSnapshot` 本就相等（管理员没做过未落盘编辑），推进快照无副作用，问题不成立——需检查重载前是否调用过任何 `activeConfig` setter 或 GUI 编辑入口（`MainConfigMenu:106` 之外）。
+2. 如果管理员在重载失败后又通过其它显式入口（`HilltopCommandHandler:626` / `SetupWizard:1680`）触发一次保存，改动仍会落盘、损失被缓解——需检查这些入口分别由哪条命令或向导步骤可达。
 
-**证据（ConfigManager.java:1442，逐字）**
+### F-slice-11-data-consistency-02（MEDIUM）`contains()` + `getString()`：真值守卫放进 null
 
-```java
-        if (settingsYaml.contains("world-name")) activeConfig.setWorldName(settingsYaml.getString("world-name"));
-```
+**证据（本回合 read，`ConfigManager.java:1442`）**：`if (settingsYaml.contains("world-name")) activeConfig.setWorldName(settingsYaml.getString("world-name"));`
 
-**推断**：`contains()` 判的是「路径存在」，`getString()` 只在值**是 String** 时返回非 null（空值 `world-name:`、数字/布尔标量都会得到 null）。`GameConfig.setWorldName`（`GameConfig.java:672`）没有任何 null 守卫，于是 `worldName` 变成 null；下一次 `saveToFile()` 的 `settingsYaml.set("world-name", activeConfig.getWorldName())`（`ConfigManager.java:851`）会以 null 值**删除该键**——磁盘上原本「存在但写错」的键被静默抹掉，而不是保留原样等管理员修。
+**推断**：`contains(path)` 的语义是「`get(path)` 非 null」，`getString(path)` 的语义是「值 `instanceof String` 才返回，否则 null」。两者之间有一整个缝隙：数字、布尔、段都能让 `contains` 为真而 `getString` 返回 null。于是 `world-name: 123`（或 `world-name: {x: y}`）会把 `null` 写进一个刚在 `:1437` 重建、本来持有合法默认值 `"world"` 的字段。保存时 `:851 settingsYaml.set("world-name", activeConfig.getWorldName())` 收到 null，而 Bukkit 的 `set(path, null)` 是**删键**——磁盘上那一行连同管理员的输入一起消失，全程零 warning；下一次载入 `contains` 为 false，回落到默认 `"world"`，形成「磁盘值 → null → 键消失 → 默认值」的静默改写链。
 
-同文件对 `hammer.material`（1477–1486）、`nodes.repair-cost-item`（1518–1529）都做了 null + 合法性双判，唯独这一行与 `fireball.item-name`（1645）没有。项目自己的 `YamlNullMechanismTest`（src/test/.../config/YamlNullMechanismTest.java:17-30）就是为这个机制写的，说明作者知道 `contains==true && getString==null` 存在。
+同一种写法在本方法还有 5 处：`:1487`（`hammer.itemsadder-id`）、`:1499`（`hammer.item-name`）、`:1517`（`nodes.repair-cost-name`）、`:1645`（`fireball.item-name`）、`:1752`（`monsters.*.display-name`）。对照 `:1477-1486`（`hammer.material`）与 `:1518-1529`（`nodes.repair-cost-item`）——那两处是「先 `getString` 判 null，再 `Material` 判合法，非法就 warning 并保留默认」，说明作者知道该怎么写，只是这一族没套用。`:1487` 的同类实例还有运行期后果：`HammerListener:97` 是 `cfg.getHammerItemsAdderId().isEmpty()`，null 会直接 NPE（需 `hammer.use-itemsadder: true`）。
 
-**为什么只有 LOW**：全仓 grep 显示 `GameConfig#getWorldName` 除 `ConfigManager.java:851`（写回）外没有任何运行期消费者——它是死键，所以 null 不会引发 NPE/世界加载失败；实际损害限于「下一次保存删掉一个本就写错的键」。
+严重性定 MEDIUM 而非 HIGH：`GameConfig#getWorldName` 在 `src/main/java` 内**没有运行期消费者**（唯一读取点是 `:851` 的写盘），故 `world-name` 这一实例的后果限于「磁盘键被删 + 内存值对象含 null」；`hammer.itemsadder-id` 的 NPE 路径虽然存在，但需要非字符串输入且开关打开。
 
 **alternatives**
-1. 如果目标 Bukkit 版本的 `MemorySection#getString` 对非 String 标量返回 `String.valueOf(value)` 而不是 null，则只有空值形态成立——需按实际服务端版本核对 `getString` 实现（本项目 `YamlNullMechanismTest` 的前提是它会返回 null）。
-2. 如果 `world-name` 在切片外确有消费者（例如某处 `Bukkit.getWorld(config.getWorldName())`），影响会升级为运行期 NPE——需在 `src/main/java` 全量搜索 `getActiveConfig().getWorldName()`（本回合 grep 未命中）。
 
-### F-03（MEDIUM）`villager-health` 漏掉有限性闸门
+1. 如果所用服务端的 `MemorySection#contains` 内部走的是 `getString` 而不是 `get`，非字符串值不会进入该分支，问题不成立——需核对服务端 `MemorySection` 实现；本仓库 `YamlFiles.java:351-356` 只证明了「null 值被丢弃」（因此空值确实不触发），未覆盖数字/布尔标量。
+2. 如果 `GameConfig#getWorldName` 的消费者（含切片外代码）对 null 做了判空回退，则影响仅限于磁盘键被删、不会运行期失败——需对 `getWorldName` 做全仓检索（本回合 grep `src/main/java` 仅命中 `GameConfig:671` 与 `ConfigManager:851`）。
 
-**证据（ConfigManager.java:1469，逐字）**
+### F-slice-11-data-consistency-03（MEDIUM）`villager-health` 缺 NaN/Infinity 闸门
 
-```java
-        if (settingsYaml.contains("villager-health")) activeConfig.setVillagerHealth(settingsYaml.getDouble("villager-health"));
-```
+**证据（本回合 read，`ConfigManager.java:1469`）**：`if (settingsYaml.contains("villager-health")) activeConfig.setVillagerHealth(settingsYaml.getDouble("villager-health"));`
 
-**推断**：同文件对同类「来自磁盘的 double」有明确的归一化范式：`normalizeExplodeDamageMultiplier`（776 起）显式挡 NaN / +Infinity / 负值并夹到 [0,10]；`victory-waves`、`repair-cost-amount`、`wave-timeout-seconds` 也各有 normalize。`villager-health` 从磁盘 `getDouble` 后原样进入 `GameConfig`，没有经过任何 `Double.isFinite` 或下界检查；`mergeExternalChanges` 的 441–444 行同样没有。
+**推断**：SnakeYAML 会把 `villager-health: .nan` / `.inf` 解析成 `Double.NaN` / `Double.POSITIVE_INFINITY`，`getDouble` 原样返回，`setVillagerHealth` 原样收下。同文件对同类风险键都有专门闸门：`:776-784` 的 `normalizeExplodeDamageMultiplier`（显式挡 NaN、+Infinity、负值并夹到 0..10）、`:762-764` 的 `normalizeVictoryWaves`、`:767-769` 的 `normalizeRepairCostAmount`；唯独 `villager-health` 在**载入**（`:1469`）与**外部修改合并**（`:441-444`）两条路径上都是裸取。更糟的是 `:861 settingsYaml.set("villager-health", activeConfig.getVillagerHealth())` 会把 NaN 写回磁盘（SnakeYAML 输出 `.NaN`），使非法值在「保存 → 重载」之间自我固化。
 
-消费点 `VillagerSystem.spawnAll()`：`double health = ...getVillagerHealth();`（`VillagerSystem.java:121`）→ `maxHealth.setBaseValue(Math.max(1.0, health));`（`VillagerSystem.java:142`）。`Math.max(1.0, Double.NaN)` 按 Java 语义返回 **NaN**，所以下界兜底对 NaN 无效；负值则被这一行兜到 1.0（这一点上游线索说「负值无 clamp」不准确，应修正为「负数由消费者兜底，NaN/Infinity 没有」）。
-
-**影响**：YAML 的 `.nan` / `.inf` 会被 SnakeYAML 读成 `Double.NaN` / `Infinity` 并作为 Number 通过 `getDouble`。之后要么在 `setBaseValue` 处抛 `IllegalArgumentException`（刷村民中途中断，已生成一半，属部分状态），要么把非有限值写进实体属性。两条路都不是「可玩」状态。
-
-**为什么是 MEDIUM**：需要管理员手写 `.nan`/`.inf` 才会触发，且不会破坏磁盘文件；但它把「载入期数值卫生」的既有承诺撕开一个键的口子，且发生在每个竞技场开局路径上。
+消费者是 `VillagerSystem:121`，随后 `:142-144` 用 `Math.max(1.0, health)` 兜底——但 `Math.max(1.0, Double.NaN)` 按 Java 规范仍返回 `NaN`：负值能被兜住，NaN/Infinity 不能。NaN 最终进入 `AttributeInstance#setBaseValue` / `LivingEntity#setHealth`；这两者对非有限值的处置取决于服务端实现（Paper 各版本有差异），因此本条只把「配置值域被污染并回写磁盘」作为确认结论，运行期异常列为待验证分支。
 
 **alternatives**
-1. 如果 `AttributeInstance#setBaseValue` 对 NaN 有服务端侧夹取/忽略（而不是抛异常），症状会从「刷村民中断」变成「血量显示/结算异常」——需在 `VillagerSystem.java:142` 用 NaN 实测一次。
-2. 如果 GUI 的村民血量输入已经限制了取值范围、且手改文件被视为不支持的操作，本条可降为 LOW——需检查村民血量菜单项的输入边界（本回合未读到该菜单，属切片外）。
 
-### F-04（MEDIUM）`readWaveInt` 只兑现了注释里的三分之一
+1. 如果所用 Paper 版本在 `setBaseValue`/`setHealth` 前对 NaN/Infinity 做了钳制或忽略，运行期异常不成立，但 `.nan` 仍会在内存与磁盘间往返——需检查 `VillagerSystem:140-144` 与对应服务端实现。
+2. 如果该版本的 YAML 解析器把 `.nan`/`.inf` 当字符串而非 Double，`getDouble` 会回落 0.0，该路径不成立——需用 `YamlConfiguration.loadFromString("villager-health: .nan")` 实测（本回合受零写入约束未运行）。
 
-**证据（ConfigManager.java:644，逐字）**
+### F-slice-11-data-consistency-04（MEDIUM）`readWaveInt` 的饱和、截断与 NaN
 
-```java
-        int value = number.intValue();
-```
+**证据（本回合 read，`ConfigManager.java:644`）**：`int value = number.intValue();`
 
-**推断**：方法注释（617–622）声明「把三种非法形态（缺键 / 非数值 / 负数）全部显式化」，实现只有 `value < 0` 一档（645–648）。`Number#intValue()` 对 `Double.NaN` 返回 0、对 `1e18` 饱和到 `Integer.MAX_VALUE`、对 `2.9` 截断为 2，三种都不进 `problems`，也没有日志：
-- `total-mobs: .nan` → 0 只 → 该波静默空转（与注释里「把该波静默变成 0 只」要防的形态一模一样，只是入口从「缺键」换成了「NaN」）；
-- `total-mobs: 1e18` → 21 亿 → 波次永不结束；
-- `count: 2.7` → 2，静默改小。
+**推断**：`readWaveInt` 在 `:639-643` 只排除「不是 Number」，在 `:645-648` 只排除负数，中间这一步把 `Number` 直接压成 `int`，三种失真全部静默：
 
-这是「注释声称的覆盖面大于实现」的形态（模式 5），也是数值边界（4c/模式 3）的漏网。
+- `total-mobs: 1e18` → `Double.intValue()` 按 JLS 5.1.3 饱和为 `Integer.MAX_VALUE`（2147483647）；
+- `count: 1.9` → 截断为 1（小数部分无声消失）；
+- `total-mobs: .nan` → 转为 0，恰好落进「本波不刷怪」的语义，却不会被 `:645` 的负数分支接住。
+
+这三种都不会向 `problems` 写条目，因此 `:1930-1933` 的 `numericProblems` 汇总 warning 保持沉默——管理员看到的是一份「加载成功、无任何提示」的配置，而内存值与磁盘值已经不同。方法 javadoc（`:614-630`）声称把「缺键 / 非数值 / 负数」三种非法形态显式化，实现与之一致，但溢出、小数、NaN 属于同一问题域里未被覆盖的三类。
 
 **alternatives**
-1. 如果所有写入该键的路径都经过 GUI 的整数输入且已 clamp，`1e18`/`NaN` 只能来自手改文件，影响面限于手改场景——需检查 `WaveSettingsMenu` 的 `total-mobs` 输入范围（切片外）。
-2. 如果 `number` 对 `1e18` 被 SnakeYAML 解析为 `Long` 而非 `Double`，`Long.intValue()` 取低 32 位，结果可能不是 `Integer.MAX_VALUE`——结论（静默通过）不变，具体数值需以实际解析类型核对。
 
-### F-05（LOW）载入途中的全量写盘绕过外部修改检测
+1. 如果所有波次数值都只能由 GUI 写入且 GUI 已限制范围，手写 `1e18` 才是唯一触发方式，暴露面较小——需检查 `WaveSettingsMenu` 的输入校验（本切片外）。
+2. 如果 SnakeYAML 把 `1e18` 解析成 `Long`/`BigInteger` 而非 `Double`，`intValue()` 的截断规则不同，但「静默失真」的结论不变——需实测该字面量的解析类型后再定影响面。
 
-**证据（ConfigManager.java:1577–1579，逐字）**
+### F-slice-11-data-consistency-05（LOW）载入中途的全量写盘绕过 mtime 检测
 
-```java
-            if (settingsGate.write(settingsYaml)) {
-                // M-15：本次写盘更新 mtime 记录，避免随后的保存误判为「外部修改」
-                settingsLastModified = settingsFile.lastModified();
-```
+**证据（本回合 read，`ConfigManager.java:1577`）**：`if (settingsGate.write(settingsYaml)) {`
 
-**推断**：`loadFromFile()` 在 1414 行读入 `settingsYaml`，到 1577 行（以及 1695 行的 shop 迁移）直接把**开头读到的那份整份 YAML** 写回磁盘做旧键迁移。这条写路径既没有 `saveToFile()` 的 mtime 前置比对（840），也不经过 `mergeExternalChanges()`；写成功后 1579 行还把基线更新成新 mtime，于是「读盘之后、写盘之前」发生的任何外部手改被整份旧内容覆盖，且此后再也检测不到（基线已被刷新）。
+**推断**：`:1577`（`nodes.repair-item` 迁移）与 `:1695`（`shop.currency-drop-amount` 迁移）都在 `loadFromFile()` 内部直接写盘，写入的是 `:1428` 读到的整份 `settingsYaml`。`saveToFile()` 在写前会比对 `settingsFile.lastModified()` 与 `settingsLastModified`（`:840-849`），发现外部修改就先 `mergeExternalChanges()`；这两处迁移写盘没有这道检查，也不经过 `mergeExternalChanges()`。若在 `:1414` 读盘与 `:1577` 写盘之间有人（编辑器/另一进程）改了文件，改动会被整份旧内容覆盖，且写成功后 `:1579` 立即把 `settingsLastModified` 对齐到新 mtime，后续保存也不会再发现。
 
-**为什么只有 LOW**：触发需要「存在 `nodes.repair-item`/`nodes.repair-amount`/`shop.currency-drop-amount` 旧键」且「外部编辑恰好落在同一次 reload 的毫秒级窗口内」；迁移本身是幂等的、下一次启动会重试。但丢失是永久且无日志的，属于「事务边界外的写」。
+定 LOW 的理由：窗口是同一次方法调用内的解析耗时（毫秒级），且写入内容除迁移键外逐字来自刚读到的磁盘快照，不会引入内存旧值；`YamlFiles.write`（`111-131`）用同目录临时文件 + `ATOMIC_MOVE`，不存在半截文件。这是一条「纪律不一致 + 极小窗口」，不是可直接利用的数据覆盖。
 
 **alternatives**
-1. 如果 `YamlFiles.load` 与 `YamlFiles.write` 全程对同一文件加排它锁，使窗口内的外部写入不可能发生，则本条不成立——需检查 `YamlFiles.java` 的 load/write 是否有文件锁（本回合读到的 79–98 行与 `YamlFileGate.write` 均无锁）。
-2. 如果这两处写盘后会重新从磁盘读回并据此重建内存，覆盖造成的分歧会被立刻发现——需检查 1577 之后到 1957 之间是否有二次 `settingsGate.load()`（实测没有）。
 
-### F-06（MEDIUM）monsters 侧把 ABSENT 当权威：同族守卫不一致
+1. 如果 `/hilltop reloadconfig` 与 `loadFromFile()` 只在服务器启动或主线程空闲时执行，且管理员不可能在同一毫秒内保存文件，窗口实际不可利用——需检查 `HilltopCommandHandler:422` 的调用上下文与文件编辑工具的时间尺度。
+2. 如果 `:1577` 之前对 `settingsYaml` 的所有 `set` 都只涉及迁移键（本回合核对 `:1544-1576`：仅 `nodes.repair-cost-item` / `nodes.repair-amount-per-cost` 与两个 null），则除窗口内的外部改动外不会引入其它偏差——这一条成立，故严重性不再上调。
 
-**证据（ConfigManager.java:2005–2010，逐字）**
+## 4. 覆盖、检查清单与自检
 
-```java
-        YamlFiles.Loaded loaded = monstersGate.load();
-        if (!loaded.usable() || monstersGate.isReadOnly()) {
-            plugin.getLogger().severe("monsters-config.yml is unusable; keeping monster defaults "
-                    + "(nothing will be read from or written to the file this run)");
-            return;
-        }
-```
+### 4.1 读过的文件
 
-**推断**：`YamlFiles.Loaded.usable()` 只判 `config != null`（`YamlFiles.java:49-51`），而文件缺失时 `load()` 返回 `new Loaded(new YamlConfiguration(), Status.ABSENT, null)`（`YamlFiles.java:80-81`）——ABSENT 是 usable。所以这个守卫**拦不住「文件不存在」**。
-
-对比 settings 侧：同一方法 1419 行显式把 `loaded.status() == YamlFiles.Status.ABSENT` 列为拒绝条件，并在 1415–1418 的注释里写明理由——「隔离后文件不存在 → 返回 ABSENT，照走会把空配置当权威再迁移写回……管理员配置被洗成默认值」。monsters 侧缺的正是这半条守卫。
-
-**触发条件（可复现）**：
-1. 启动时 `monsters-config.yml` 损坏 → `YamlFiles.load` 把它隔离成 `.corrupt`，`monstersGate` 上闩（`YamlFileGate.load` 54–55）。
-2. 管理员按提示修好后执行 `/hilltop reloadconfig`；该命令先 `getMonstersGate().reset()`（`HilltopCommandHandler.java:406`）解闩。
-3. 若管理员没有把 `.corrupt` 还原成 `monsters-config.yml` 就重载：`load()` 得到 ABSENT（不重新上闩，`YamlFileGate.load` 56–60 只在 OK 时解闩、ABSENT 既不上闩也不解闩，但 reset 已把闩清掉）→ 2006 守卫通过 → `monstersConfigYaml` = 空配置。
-4. `activeConfig` 已在 1437 重建为出厂默认，`loadMonstersConfig` 对空配置逐键 `contains` 全为 false → `base-damage`、`itemsadder-id`、`custom-model-data`、六部位装备保持默认；随后 1957 行把这份内存登记为 `lastSavedSnapshot`（脏标志读作干净）。
-5. 下一次 GUI 保存 → `saveMonstersConfig()` 的 mtime 比对是 `0 == 0`（文件不存在），不触发 `adoptExternalMonsterChanges`，`writable()` 为 true → 用一个「默认装备 + 默认伤害」的新文件重建 `monsters-config.yml`。磁盘上真实值只剩在 `.corrupt` 里，日志只有启动期那一条 SEVERE 和一条「reload 成功」。
-
-**为什么是 MEDIUM**：`.corrupt` 保留了原始内容，可人工恢复；但插件会静默生成一份看起来正常的默认文件，且脏标志被清掉（与 F-01 同一机制），管理员很难察觉。
-
-**alternatives**
-1. 如果 `YamlFileGate.reset()` 之后 `load()` 对 ABSENT 仍保持只读（例如 reset 不禁用闩而另有标志），2006 守卫会拦住——需检查 `YamlFileGate.java:52-62`（实测 reset 只清 `readOnly` 与 `warned`）。
-2. 如果管理员按提示先把 `.corrupt` 还原再 reload，`load()` 返回 OK，本条不成立——这取决于恢复步骤，而插件文案只写「Repair/restore it」，未要求先还原文件名。
-3. 如果 `saveToFile()` 在 monsters 闸门为 ABSENT 时拒绝写，重建不会发生——需检查 `saveMonstersConfig` 的 `writable()` 前置（`ConfigManager.java:1044`，ABSENT 下为 true）。
-
-## 3. 上游线索处置
-
-| lead | 处置 | 说明 |
+| 文件 | 角色 | 是否产出独立 finding |
 |---|---|---|
-| L1 | **CONFIRMED → F-01（HIGH）** | 事实成立；补充了调用链与「保存按钮消失」的可观察后果，并修正为「返回 false 但快照仍被推进」 |
-| L2 | **CONFIRMED → F-02（LOW）** | 机制成立；下调为 LOW，因为 `worldName` 无运行期消费者，损害限于下一次保存删键 |
-| L3 | **CONFIRMED（修正后）→ F-03（MEDIUM）** | 成立，但「负值无 clamp」不准确：`VillagerSystem:142` 的 `Math.max(1.0, health)` 已兜负数；真缺口是 NaN/Infinity |
-| L4 | **CONFIRMED → F-04（MEDIUM）** | 成立；补充 NaN→0、1e18→MAX、2.9→2 三种具体形态 |
-| L5 | **CONFIRMED → F-05（LOW）** | 成立；窗口为毫秒级且仅旧键迁移路径可达，故定 LOW |
-| L6 | **REFUTED（本维度）** | 见 §5：这是「返回值/契约」问题，不是数据一致性问题；其数据面后果已由 F-06 以同一切片内的守卫不一致形式单列 |
+| `src/main/java/com/hilltopvillage/config/ConfigManager.java` | 切片主体 | 是（5 条） |
+| `src/main/java/com/hilltopvillage/config/ConfigPermission.java` | 切片主体 | 否（枚举 6 节点与 `plugin.yml:30-51` 全对齐） |
+| `src/main/java/com/hilltopvillage/config/GameConfig.java` | shared dependency | 否（`snapshot()` 深拷贝完整，`equals` 字段集与 `snapshot` 一致） |
+| `src/main/java/com/hilltopvillage/util/YamlFileGate.java` | shared dependency | 否（`ABSENT` 不解锁的行为已核对 `52-62`） |
+| `src/main/java/com/hilltopvillage/util/YamlFiles.java` | shared dependency | 否（原子写 + 隔离逻辑已核对 `111-131`、`166-178`） |
+| `src/main/java/com/hilltopvillage/config/menu/MainConfigMenu.java` | 直接调用方（控制流） | 否（`:96`/`:126-128`/`:151-162` 用于 F-01 的调用链） |
+| `src/main/java/com/hilltopvillage/mechanics/VillagerSystem.java` | 直接调用方（控制流） | 否（`:121`/`:142-144` 用于 F-03 的影响面） |
+| `src/test/java/com/hilltopvillage/config/ConfigManagerTest.java` | 自带自检抽验 | 否（`:68-97` 只覆盖 save 侧快照门控） |
+| `src/test/java/com/hilltopvillage/config/ConfigLoadClampTest.java` | 自带自检抽验 | 否（覆盖 victory/repair/explode，未覆盖 villager-health） |
+| `src/test/java/com/hilltopvillage/config/YamlNullMechanismTest.java` | 自带自检抽验 | 否（零断言，见 4.3） |
 
-## 4. 已排查但未立条的候选（避免下游重复劳动）
+### 4.2 维度检查清单
 
-- `saveToFile()` 的「settings 写成功、monsters 写失败」部分写入：返回 false 且不推进快照（1023–1033），GUI 消费返回值（`MainConfigMenu.java:106-121`）并保留保存按钮，重试可收敛。原子性确实跨两个文件，但失败可重入，未立条。
-- `removedWaveKeys` 在 settings 写成功后立即 `clear()`（1022）：墓碑的职责只覆盖那一次 settings 写盘，且判据读当前内存，未发现删除被撤销的路径。
-- `revertAll()` 不清 `loadTimeNormalizationPending`（2124–2131）：注释已说明「回滚到的是上次落盘快照，归一化仍未落盘」，语义自洽。
-- 外部修改合并白名单 vs `saveToFile` 写集合：逐键核对后，未进白名单的写键（`nodes.repair-amount-per-cost`、`nodes.self-destruct-multiplier`、`spawning.spawn-radius-min/max`、`hammer.material` 等）都有 GUI/命令编辑入口（`NodeSettingsMenu.java:42,52`、`GameRulesMenu.java:58,69`、`HilltopCommandHandler.java:622`），符合「游戏内为权威」的设计，未发现漏网。
-- `ConfigPermission`：纯枚举，无持久化/键名映射，不在 data-consistency 的问题域内。
+| # | 模式 | 结果 | 说明 |
+|---|---|---|---|
+| 1 | 返回值暴露内部状态 | 未命中 | `GameConfig#getNodeBuffEffects`/`getStarterKitItems` 返回内部容器，但切片内唯一写入方是 `ConfigManager` 自身的载入逻辑（`:1604-1605`、`:1720`），无外部调用方就地改写；`snapshot()` 对集合与元素逐项深拷贝（`GameConfig:631`、`:664-667`） |
+| 2 | 同族函数守卫一致性 | 命中 | 材质族有 null+`isItem` 双判（`:1477-1486`、`:1518-1529`），`world-name` 只有 `contains`（F-02）；`explode-damage-multiplier` 有 normalize（`:776-784`），`villager-health` 没有（F-03） |
+| 3 | 数值边界 | 命中 | `intValue()` 无上界与整数性检查（F-04）；`villager-health` 无非有限值闸门（F-03） |
+| 4a | 原型链/裸下标 | 不适用 | Java 实现；外部键只经 `ConfigurationSection#getKeys` 进入 `LinkedHashMap`，无 `obj[key]` 式反射查表 |
+| 4b | 假值 vs 缺值 | 命中 | `contains` 被当作「有值」使用（F-02）；正确用法 `isSet` 出现在 `:1595`（buff-effects）与 `:1712`（starter-kit.items） |
+| 4c | NaN/Infinity/小数 | 命中 | F-03、F-04；`normalizeExplodeDamageMultiplier` 证明作者已知该风险 |
+| 4d | 嵌套结构校验 | 未命中 | `monsters`/`waves` 段先 `getConfigurationSection` 判 null，再逐键类型守卫；`:1819-1836` 对「段头/标量/列表」三种形态分别告警；`:1849-1853` 有「解析后为空不清空」守卫 |
+| 5 | 能力是否真实现 | 命中（部分） | `readWaveInt` 的 javadoc 覆盖声明与实现对得上（三类），但漏掉溢出/小数/NaN；clamp 家族逐键手写，因此漏一键（F-03） |
+| 6 | 转义/编码顺序 | 不适用 | 本切片无多层转义/编码；`YamlFiles.write` 统一 UTF-8 单次写出 |
+| 7 | 边界符号（负数/下标） | 未命中 | 负数在 `:645-648` 归 0；`waves` 键 `parseInt` 有 try（`:1788-1793`、`:1887-1891`）；`starter-kit` 数量 `Math.max(1, amount)`（`:721`） |
+| 8 | 引用绑定是否存在 | 未命中 | 全部符号编译期解析；`PotionEffectType.getByName` 有 null 判（`:372-376`）；未发现「调用了未导入的名字」形态 |
+| 9 | YAML 写入成对性 / 原子写 / 部分写入 | 命中 | 原子写本身合格（`YamlFiles.java:111-131`）；但迁移写盘绕过 mtime 检测（F-05）。`set`+`save` 在 `saveToFile` 内成对，失败路径返回 false |
 
-## 5. off_dimension_notes
+### 4.3 三项必做自检
 
-1. **L6（contract）**：`loadMonstersConfig()` 返回 void，读盘失败只打一条 SEVERE 就 return（`ConfigManager.java:2006-2010`），`loadFromFile()` 仍走到 `return true`（1964）。调用方（`HilltopCommandHandler.java:438-444`、`MainConfigMenu.java:151-161`）据此宣告「已重载」。这是返回值语义/契约问题，应由 contract 维度立项；本维度只报其数据面（F-06）。
-2. **`world-name` 疑似死键**：全仓仅 `ConfigManager.java:851`（写）与 1442（读）触及 `GameConfig#getWorldName`，没有运行期消费者。若确认，属「配置项存在但能力未实现」（模式 5），建议另立 logic/contract 条目。
-3. **monsters-config 的 9 个「写而不读」键**（`MONSTERS_CONFIG_NON_EFFECTIVE_KEYS`，119–121）：作者已在 2101–2102 做了一次性告警，属可观测性设计，不是一致性问题。
-4. **`world-name` / `core.*` 的类型形状未校验**：`getDouble`/`getInt` 对标量类型不符时静默回落到 0，与 F-02 同族但影响仅限数值错误，未单列，留给后续类型校验议题。
+**标识符对账（DONE）**：`ConfigPermission` 的 6 个权限节点与 `plugin.yml:30-51` 逐一比对，6/6 全部声明、差集为空（`hilltopvillage.config.admin/rules/waves/monsters/items/nodes`）。`saveToFile()` 写集合（`:851-996`）与 `loadFromFile()` 读集合（`:1442-1770`）对账：`world-name`、`villager-health` 等为 `contains`+`getString/getDouble` 形态（F-02/F-03）；`hammer.tier.low.charge`（`:879`）与 5 个 `hammer.damage-*`（`:1979-1983`）是双向墓碑，读写两侧一致，属刻意漂移而非漏配。
 
-## 6. 自检
+**自带自检抽验（DONE）**：项目无 `check-*.mjs` 类脚本，自检载体是 JUnit。抽验 3 个：
 
-- **标识符对账（DONE）**：把 `saveToFile` 的写集合（60+ 键）、`mergeExternalChanges` 白名单、`loadFromFile` 的读集合、GUI 编辑入口做四方对账。差集结论：`villager-health` 读写两端都在、却没有 normalize（F-03）；`world-name` 读写两端都在、无消费者（§5.2）；`nodes.repair-amount-per-cost` / `self-destruct-multiplier` / `spawn-radius-min|max` 有 GUI 入口，故不在合并白名单是正确设计；未发现「写了但读不到」或「读了但从不写」的键。
-- **自带自检抽验（DONE，静态）**：抽验 `ConfigLoadClampTest` 与 `YamlNullMechanismTest`。前者为 `victory-waves` / `repair-cost-amount` / `explode-damage-multiplier` 钉了「载入期钳制 + 计入脏标志」的断言（第 69–152 行），其中**没有任何 `villager-health` 用例**——这正好证明 F-03 是同一策略的漏网键，而不是设计选择；后者证明项目已知 `contains==true / getString==null` 机制，但只用于排查 `airdrop-mob-type`，没有推广到 `world-name`。注入故障（4.7-d）未执行，原因同下：构建会写 `target/`。
-- **运行时验证（SKIPPED）**：需要 Maven 构建（写 `target/`）并启动 Paper 服务端才能复现 reload/隔离路径，违反零写入约束；改用「入口 → 调用点 → 问题行」的静态调用链坐实（见各条 `basis`）。
+- `ConfigManagerTest:68-97`：有真实断言（`assertFalse(saved)` + `assertTrue(hasUnsavedChanges())`），并对「快照不得在失败时推进」给了与 F-01 完全相同的理由；但只覆盖 `saveToFile()` 的 monsters 失败，**没有覆盖 `loadFromFile()` 的早退分支**——F-01 正好落在该缺口，故本测试不构成反证。
+- `ConfigLoadClampTest`：5 个用例对 `victory-waves`/`repair-cost-amount`/`explode-damage-multiplier` 的上下界与 ±Infinity 都有断言（`:79-151`），有效；但 `villager-health` 不在覆盖范围，故不构成对 F-03 的反证。
+- `YamlNullMechanismTest`：3 个测试**全部只有 `System.out.printf`，零 `assert`/`fail`**，永远不会变红；且 `getString=%s` 对 `String "null"` 与 `null` 打印同形（都是 `null`），无法区分二者——它声称要验证的 `contains==true / getString==null` 机制其实从未被真正断言过。按 §4.7 判 `UNRELIABLE_SELF_CHECK`，其输出不得采信。
+
+**运行时验证（SKIPPED）**：任务书禁止 maven/gradle 构建（会写 `target/`，破坏零写入），本机也没有可启动的 Paper 服务端，因此 `.nan` 解析、`contains/getString` 实测、`setHealth(NaN)` 行为均未运行；对应的验证方法已逐条写入各 finding 的 `alternatives`。
+
+## 5. 维度外观察（不进 findings）
+
+1. **L6 / contract**：`loadMonstersConfig()` 返回 `void`，`monsters-config.yml` 不可用或闸门只读时只打一条 SEVERE 就 return（`:2006-2010`），`loadFromFile()` 随后照常 `loadMonstersConfig(); ... return true`（`:1955`、`:1964`）。调用方 `MainConfigMenu:151-161` 与 `HilltopCommandHandler:422` 据此宣告「已重载」，实际是「game-settings 生效、monsters-config 静默未生效」，且 `:1957` 把这份「默认怪」快照成基线。属返回值契约缺陷，建议由 contract/error-handling 维度接手。
+2. **error-handling**：`loadFromFile()` 无 try/catch，`:1442-1953` 的未预期异常会直接抛给 `MainConfigMenu:151` 的点击处理器（未捕获、菜单不 reopen），且快照不推进。
+3. **error-handling**：`VillagerSystem:142-144` 用 `Math.max(1.0, health)` 兜底，对 NaN 无效；`setBaseValue`/`setHealth` 收到 NaN 的行为依赖服务端版本，需运行期确认。
+4. **contract/style**：`ConfigPermission.description` 有赋值无 getter，是死字段（不影响权限判定）。
+5. **test-quality**：`YamlNullMechanismTest` 零断言且输出歧义（详见 4.3），属「自带自检本身不可靠」，不是产品代码缺陷。
+
+## 6. 产物信封
 
 ```json
 {
@@ -213,35 +200,34 @@
         "dimension": "data-consistency",
         "evidence": {
           "file": "src/main/java/com/hilltopvillage/config/ConfigManager.java",
-          "line": 1419,
-          "quote": "        if (!loaded.usable() || loaded.status() == YamlFiles.Status.ABSENT || settingsGate.isReadOnly()) {\n            // 不可用时不套用磁盘值（保留内存/默认值），也不做任何迁移写回\n            plugin.getLogger().severe(\"game-settings.yml is unusable; keeping the in-memory values \"\n                    + \"(nothing will be read from or written to the file this run)\");\n            settingsLoadedFromDisk = false;\n            loadMonstersConfig();\n            lastSavedSnapshot = activeConfig.snapshot();\n            return false;\n        }"
+          "line": 1425,
+          "quote": "lastSavedSnapshot = activeConfig.snapshot();"
         },
         "inference": {
-          "claim": "读盘失败的早退分支在未写入任何文件的情况下把当前内存登记为「已落盘快照」，使本会话所有未保存的 GUI 改动被 hasUnsavedChanges() 判成已保存；调用链 /hilltop reloadconfig → loadFromFile → 1425 之后，配置主菜单把保存按钮换成「已是最新」，改动无法再保存，重启即丢。",
-          "basis": "1419 的守卫只处理「文件不可用/ABSENT/只读」，日志明确写着 nothing will be read from or written to the file，但 1425 仍执行 lastSavedSnapshot = activeConfig.snapshot()；hasUnsavedChanges()（339-345）正是 activeConfig.snapshot() 与 lastSavedSnapshot 的比较，因此该赋值等价于清除脏标志。入口与消费点：HilltopCommandHandler.java:422 调用 loadFromFile() 并在 438-444 消费返回值；MainConfigMenu.java:151 同样调用，162 行 reopen() 后 buildMenu() 在 96 行读 hasUnsavedChanges() 决定渲染 LIME_WOOL 保存按钮还是 GREEN_WOOL「已是最新」。同文件 119-120 的注释明确承诺失败时该标志应保持 true，与本路径相反。",
+          "claim": "当 game-settings.yml 不可用、不存在或闸门只读时，loadFromFile() 在未写入任何文件的情况下把 lastSavedSnapshot 推进为当前内存快照并 return false；hasUnsavedChanges() 随即变为 false，主菜单把保存按钮换成「已是最新」，此前的 GUI 改动失去唯一保存入口，重启后静默丢失。",
+          "basis": "调用链：MainConfigMenu:151（或 HilltopCommandHandler:422）→ ConfigManager.loadFromFile():1419 三合一失败条件 → :1425 无条件推进快照 → :1426 return false → hasUnsavedChanges():343-344 比较内存与快照得 false → MainConfigMenu:96 判假、:126-128 渲染 GREEN_WOOL。该分支是 loadFromFile() 唯一的 false 返回点，不存在失败但不推进的路径；全库 saveToFile() 调用点仅 MainConfigMenu:106 / HilltopCommandHandler:626 / SetupWizard:1680,1704，无关服或定时兜底。",
           "alternatives": [
-            "如果本会话此前发生过归一化（loadTimeNormalizationPending 为 true），保存按钮不会消失，本条的可观察后果被缓解——需检查 ConfigManager.java:339-345 与本次会话是否触发过 1453/1464/1535/1718 的置位；普通 GUI 编辑不会置位。",
-            "如果两个调用方在调用 loadFromFile() 前会先落盘或回滚未保存改动，则没有可被洗白的改动——需检查 HilltopCommandHandler.java:419-422 与 MainConfigMenu.java:148-151（两处调用前均无 save/revert）。",
-            "如果主菜单的保存按钮不是 hasUnsavedChanges() 的唯一消费者（例如另有监听器在关服时无条件 saveToFile），丢失会被兜住——需检查插件的 onDisable 路径（本回合未读到，属切片外）。"
+            "如果进入该分支前内存与 lastSavedSnapshot 本就相等（管理员未做过未落盘编辑），推进快照无副作用，问题不成立——需检查重载前是否调用过 activeConfig 的 setter 或 GUI 编辑入口（MainConfigMenu:106 之外）。",
+            "如果管理员在重载失败后又通过其它显式入口（HilltopCommandHandler:626 / SetupWizard:1680）触发一次保存，改动仍会落盘、损失被缓解——需检查这些入口分别由哪条命令或向导步骤可达。"
           ]
         },
         "status": "CONFIRMED"
       },
       {
         "finding_id": "F-slice-11-data-consistency-02",
-        "severity": "LOW",
+        "severity": "MEDIUM",
         "dimension": "data-consistency",
         "evidence": {
           "file": "src/main/java/com/hilltopvillage/config/ConfigManager.java",
           "line": 1442,
-          "quote": "        if (settingsYaml.contains(\"world-name\")) activeConfig.setWorldName(settingsYaml.getString(\"world-name\"));"
+          "quote": "if (settingsYaml.contains(\"world-name\")) activeConfig.setWorldName(settingsYaml.getString(\"world-name\"));"
         },
         "inference": {
-          "claim": "world-name 写成空值或非字符串标量时，contains() 为真而 getString() 返回 null，setWorldName(null) 直接落地；下一次 saveToFile() 用 settingsYaml.set(\"world-name\", null) 回写，会把该键从磁盘删除，而不是保留管理员写错的原值。",
-          "basis": "contains 判路径存在，getString 仅在值为 String 时非 null（空值 world-name: 与数字/布尔标量都会得到 null）；GameConfig.java:672 的 setWorldName 无 null 守卫；ConfigManager.java:851 的全量回写直接把 null 交给 YamlConfiguration#set，null 即删除键。同文件相邻的 hammer.material（1477-1486）与 nodes.repair-cost-item（1518-1529）都做了 null 与合法性双判，唯独此键与 fireball.item-name（1645）没有。",
+          "claim": "contains() 判的是 get(path) 非 null，getString() 判的是值 instanceof String，两者之间的缝隙让数字/布尔/段形态的值把 null 写进 worldName；保存时 :851 以 null 调用 set() 等价于删键，磁盘上那一行静默消失，下一次载入回落到默认 \"world\"。",
+          "basis": "控制流：loadFromFile():1437 先以 new GameConfig() 重建（worldName 默认 \"world\"）→ :1442 用 contains 守卫 + getString 取值 → 非字符串标量时 getString 返回 null → setWorldName(null)；saveToFile():851 settingsYaml.set(\"world-name\", null) 删除该键。同形态另有 5 处（:1487 hammer.itemsadder-id、:1499 hammer.item-name、:1517 nodes.repair-cost-name、:1645 fireball.item-name、:1752 monsters.*.display-name），其中 :1487 的 null 会在 HammerListener:97 的 .isEmpty() 处解引用。对照 :1477-1486 与 :1518-1529 的材质键：先判 null 再判 isItem，非法则 warning 并保留默认。",
           "alternatives": [
-            "如果目标 Bukkit 版本的 MemorySection#getString 对非 String 标量返回 String.valueOf(value) 而非 null，则只有空值形态成立——需按实际服务端版本核对 getString 实现；项目自带的 YamlNullMechanismTest（src/test/java/com/hilltopvillage/config/YamlNullMechanismTest.java:17-30）以 contains=true/getString=null 为前提。",
-            "如果 world-name 在切片外存在运行期消费者（如 Bukkit.getWorld(config.getWorldName())），null 会升级为 NPE——需在 src/main/java 搜索 getActiveConfig().getWorldName()（本回合 grep 仅命中 ConfigManager.java:851/1442，未发现消费者）。"
+            "如果所用服务端的 MemorySection#contains 内部走 getString 而不是 get，非字符串值不会进入该分支，问题不成立——需核对服务端 MemorySection 实现（本仓库 YamlFiles.java:351-356 只证明 null 值会被丢弃，故空值确实不触发）。",
+            "如果 GameConfig#getWorldName 的消费者对 null 做了判空回退，影响仅限于磁盘键被删、不会运行期失败——需对 getWorldName 做全仓检索（本回合 grep src/main/java 仅命中 GameConfig:671 与 ConfigManager:851）。"
           ]
         },
         "status": "CONFIRMED"
@@ -253,15 +239,14 @@
         "evidence": {
           "file": "src/main/java/com/hilltopvillage/config/ConfigManager.java",
           "line": 1469,
-          "quote": "        if (settingsYaml.contains(\"villager-health\")) activeConfig.setVillagerHealth(settingsYaml.getDouble(\"villager-health\"));"
+          "quote": "if (settingsYaml.contains(\"villager-health\")) activeConfig.setVillagerHealth(settingsYaml.getDouble(\"villager-health\"));"
         },
         "inference": {
-          "claim": "villager-health 从磁盘 getDouble 后原样进入 GameConfig，没有 NaN/Infinity/下界闸门；.nan 会穿过 VillagerSystem.spawnAll 的 Math.max(1.0, health)（该表达式对 NaN 返回 NaN）进入 Attribute#setBaseValue，导致刷村民抛异常中断或血量非有限值。",
-          "basis": "同文件对同类磁盘 double 有成熟范式：normalizeExplodeDamageMultiplier（776 起）显式挡 NaN/+Infinity/负值并夹到 [0,10]，victory-waves 与 repair-cost-amount 也各有 normalize；本条与 mergeExternalChanges 的 441-444 行都没有。消费链：ConfigManager.getActiveConfig().getVillagerHealth() → VillagerSystem.java:121 取出 → VillagerSystem.java:142 maxHealth.setBaseValue(Math.max(1.0, health))，Java 的 Math.max 对 NaN 传播 NaN，因此下界兜底只覆盖负数。",
+          "claim": "villager-health 从磁盘读入后不做任何归一化，.nan / .inf / 负值原样进入 GameConfig，并在下一次保存时被写回磁盘；同文件的同类风险键（explode-damage-multiplier、victory-waves、repair-cost-amount）都有专门 clamp，唯独这一键在载入与外部合并两条路径上都裸取。",
+          "basis": "两条路径：loadFromFile():1469 直接 getDouble + setVillagerHealth；mergeExternalChanges():441-444 在 hasNumber 守卫下同样直接 getDouble。对照 :776-784 normalizeExplodeDamageMultiplier（显式挡 NaN/+Inf、夹 0..10）、:762-764、:767-769。saveToFile():861 把该值原样写回，SnakeYAML 会输出 .NaN，使非法值在保存—重载之间自我固化。消费者 VillagerSystem:121 取值后，:142-144 的 Math.max(1.0, health) 对 NaN 无效（Java 规范：任一参数为 NaN 则结果为 NaN），NaN 会进入 setBaseValue/setHealth。",
           "alternatives": [
-            "如果 AttributeInstance#setBaseValue 对 NaN 自行夹取或忽略而不是抛异常，症状会从「刷村民中途中断（部分村民已生成）」变成「血量显示/结算异常」——需在 VillagerSystem.java:142 用 Double.NaN 实测一次服务端行为。",
-            "如果村民血量的 GUI 输入已限制为有限的合理区间，且手改 YAML 被视为不受支持，则本条可降为 LOW——需检查村民血量菜单项的输入边界（切片外）。",
-            "如果 SnakeYAML 对 .nan/.inf 的解析被 Bukkit 的 getDouble 拒绝（返回默认 0.0），本条不成立——需确认 getDouble 只做 instanceof Number 判定（Number 包含 NaN/Infinity，故推测成立，但需以实际版本复核）。"
+            "如果所用 Paper 版本在 setBaseValue/setHealth 前对 NaN/Infinity 做了钳制或忽略，运行期异常不成立，但 .nan 仍会在内存与磁盘间往返——需检查 VillagerSystem:140-144 与对应服务端实现。",
+            "如果该版本解析器把 .nan/.inf 当字符串而非 Double，getDouble 会回落 0.0，该路径不成立——需用 YamlConfiguration.loadFromString(\"villager-health: .nan\") 实测（本回合受零写入约束未运行）。"
           ]
         },
         "status": "CONFIRMED"
@@ -273,15 +258,14 @@
         "evidence": {
           "file": "src/main/java/com/hilltopvillage/config/ConfigManager.java",
           "line": 644,
-          "quote": "        int value = number.intValue();"
+          "quote": "int value = number.intValue();"
         },
         "inference": {
-          "claim": "readWaveInt 只把负数显式化，Number#intValue() 对 NaN 返回 0、对 1e18 饱和到 Integer.MAX_VALUE、对小数截断，三种都静默通过且无日志；total-mobs: .nan 会让该波静默变成 0 只，正是方法注释声称要防的形态。",
-          "basis": "方法注释（617-622）声称「三种非法形态（缺键 / 非数值 / 负数）全部显式化」，实现只在 645-648 判 value < 0；640 行的 instanceof Number 放行 Double.NaN 与 Infinity，644 行的 intValue() 完成静默转换，随后 649 行直接 return，没有任何 isFinite 或上界检查。调用点：readComposition 的 count/weight（673-674）与 waves 段的 total-mobs，均直接进入 GameConfig 的波次模型。",
+          "claim": "readWaveInt 只挡「非 Number」和负数，中间直接把 Number 压成 int：1e18 饱和成 Integer.MAX_VALUE、1.9 截断为 1、.nan 变成 0，三种失真都不写入 problems，所以加载结束时的 numericProblems 汇总 warning 不会出现，内存值与磁盘值静默分叉。",
+          "basis": "控制流：:639-643 取 raw 并判 instanceof Number（否则记 problems 并回落）→ :644 number.intValue() → :645-648 只判 value < 0。intValue() 对超出 int 范围的值按 JLS 5.1.3 饱和、对小数截断、对 NaN 得 0；三者在 :645 都不成立，直接 :649 return value。调用点 :673-674（count/weight）、:1827（default.total-mobs）、:1895（各波 total-mobs）共享同一入口，且 :1930-1933 只输出 problems 里已有的条目。方法 javadoc（:614-630）声称把「缺键/非数值/负数」三类显式化，实现与之一致，但未覆盖溢出/小数/NaN。",
           "alternatives": [
-            "如果所有写入这些键的路径都经过 GUI 的整数输入并已 clamp，极端值只能来自手改文件，影响面限于手改场景——需检查 WaveSettingsMenu 的 total-mobs 输入范围（切片外）。",
-            "如果 1e18 被 SnakeYAML 解析为 Long 而非 Double，Long.intValue() 取低 32 位，具体数值可能不是 Integer.MAX_VALUE——静默通过的结论不变，需以实际解析类型核对。",
-            "如果 WaveManager 对 total-mobs 另有上限夹取，超大值的运行期后果会被缓解——需检查 WaveManager 对 getTotalMobs 的使用（切片外）。"
+            "如果所有波次数值都只能由 GUI 写入且 GUI 已限制范围，手写 1e18 才是唯一触发方式，暴露面较小——需检查 WaveSettingsMenu 的输入校验（本切片外）。",
+            "如果 SnakeYAML 把 1e18 解析成 Long/BigInteger 而非 Double，intValue() 的截断规则不同，但「静默失真」的结论不变——需实测该字面量的解析类型后再定影响面。"
           ]
         },
         "status": "CONFIRMED"
@@ -293,35 +277,14 @@
         "evidence": {
           "file": "src/main/java/com/hilltopvillage/config/ConfigManager.java",
           "line": 1577,
-          "quote": "            if (settingsGate.write(settingsYaml)) {\n                // M-15：本次写盘更新 mtime 记录，避免随后的保存误判为「外部修改」\n                settingsLastModified = settingsFile.lastModified();"
+          "quote": "if (settingsGate.write(settingsYaml)) {"
         },
         "inference": {
-          "claim": "loadFromFile 在做旧键迁移时用开头（1414 行）读到的整份 settingsYaml 直接写盘，不经过 saveToFile 的 mtime 前置比对与 mergeExternalChanges；写成功后还把基线刷新为新 mtime，使「读盘后、写盘前」的外部手改被永久覆盖且不再可检测。",
-          "basis": "1414 行 settingsGate.load() 取得磁盘快照，1577 行（以及 1695 行的 shop.currency-drop-amount 迁移）直接 settingsGate.write(settingsYaml)；这条路径没有 840 行的 lastModified 比对，也没有 mergeExternalChanges 的白名单合并。1579 行随后把 settingsLastModified 设为新 mtime，等于把这次覆盖登记为新的「无外部修改」基线。触发前提是文件里存在 nodes.repair-item / nodes.repair-amount / shop.currency-drop-amount 旧键。",
+          "claim": "载入过程中的旧键迁移（:1577 nodes.repair-item、:1695 shop.currency-drop-amount）直接全量写盘，写前不比对新旧 mtime，也不经过 mergeExternalChanges；若在读盘（:1414）与写盘之间文件被外部修改，改动会被整份旧内容覆盖，且写成功后 :1579 立即对齐 mtime，后续保存也不会再发现。",
+          "basis": "控制流：:1414 settingsGate.load() 取得磁盘快照存入 settingsYaml → :1428 赋给字段 → :1544-1576 只对迁移键做 set → :1577 settingsGate.write(settingsYaml) 整份写回；对照 saveToFile():840-849 在写前比对 lastModified 并走 mergeExternalChanges。写入内容是刚读到的磁盘快照减去旧键，故偏差仅限窗口内的外部改动；YamlFiles.write(:111-131) 用同目录临时文件 + ATOMIC_MOVE，不会产生半截文件，因此定 LOW 而非更高。",
           "alternatives": [
-            "如果 YamlFiles.load 与 YamlFiles.write 对同一文件全程加排它锁，使窗口内不可能发生外部写入，本条不成立——需检查 YamlFiles.java 的 load/write（本回合读到的 79-98 行与 YamlFileGate.write 均无锁）。",
-            "如果迁移写盘后会重新从磁盘读回并据此重建内存，覆盖造成的分歧会被立刻发现——需检查 1577 到 1957 之间是否有二次 settingsGate.load()（实测没有）。",
-            "如果迁移只在服务器启动、尚无外部编辑者时执行，实际风险趋近于零——需确认 /hilltop reloadconfig 也会走到这段（会，loadFromFile 是同一入口）。"
-          ]
-        },
-        "status": "CONFIRMED"
-      },
-      {
-        "finding_id": "F-slice-11-data-consistency-06",
-        "severity": "MEDIUM",
-        "dimension": "data-consistency",
-        "evidence": {
-          "file": "src/main/java/com/hilltopvillage/config/ConfigManager.java",
-          "line": 2005,
-          "quote": "        YamlFiles.Loaded loaded = monstersGate.load();\n        if (!loaded.usable() || monstersGate.isReadOnly()) {\n            plugin.getLogger().severe(\"monsters-config.yml is unusable; keeping monster defaults \"\n                    + \"(nothing will be read from or written to the file this run)\");\n            return;\n        }"
-        },
-        "inference": {
-          "claim": "loadMonstersConfig 的守卫拦不住「文件不存在」：ABSENT 的 Loaded 是 usable（config 非 null），于是被隔离成 .corrupt 的 monsters-config.yml 在 /hilltop reloadconfig 解闩后会被当成权威空配置，怪物扩展字段回落出厂值并被登记为 lastSavedSnapshot，下一次保存据此重建一份默认 monsters-config.yml。",
-          "basis": "YamlFiles.Loaded.usable() 只判 config != null（YamlFiles.java:49-51）；文件缺失时 load() 返回 new Loaded(new YamlConfiguration(), Status.ABSENT, null)（YamlFiles.java:80-81），因此 2006 的条件为 false。对照同文件 1419：settings 侧显式把 status == ABSENT 列为拒绝条件，并在 1415-1418 注释说明「隔离后文件不存在 → ABSENT（usable）……会把空配置当权威重建内存（管理员配置被洗成默认值）」。触发链：启动期损坏隔离并上闩（YamlFileGate.java:54-55）→ /hilltop reloadconfig 先 reset 解闩（HilltopCommandHandler.java:406）→ 未还原 .corrupt 时 load() 得 ABSENT 且不再上闩（YamlFileGate.java:56-60）→ 2006 放行 → 空 YamlConfiguration 使 2019 起的 contains 全 false → activeConfig 保持 1437 重建出的出厂值 → 1957 登记快照 → 之后 saveMonstersConfig 的 mtime 比对为 0==0、writable 为 true，写出默认值。",
-          "alternatives": [
-            "如果 YamlFileGate.reset() 之后 load() 对 ABSENT 仍保持只读，2006 守卫会拦住——需检查 YamlFileGate.java:52-62（实测 reset 只清 readOnly/warned，ABSENT 分支既不上闩也不解闩）。",
-            "如果管理员按提示先把 .corrupt 还原成 monsters-config.yml 再 reload，load() 返回 OK，本条不成立——取决于恢复步骤，而插件文案只写 Repair/restore it，未要求先还原文件名。",
-            "如果 saveToFile 在 monsters 闸门为 ABSENT 时拒绝写，默认文件不会被重建——需检查 saveMonstersConfig 的 writable() 前置（ConfigManager.java:1044，ABSENT 下为 true）。"
+            "如果 /hilltop reloadconfig 与 loadFromFile() 只在服务器启动或主线程空闲时执行、管理员不可能在同一毫秒内保存文件，窗口实际不可利用——需检查 HilltopCommandHandler:422 的调用上下文与编辑工具的时间尺度。",
+            "如果 :1577 之前对 settingsYaml 的所有 set 都只涉及迁移键（本回合核对 :1544-1576 只有 nodes.repair-cost-item / nodes.repair-amount-per-cost 与两个 null），则除窗口内的外部改动外不会引入其它偏差——该条成立，故严重性不再上调。"
           ]
         },
         "status": "CONFIRMED"
@@ -332,69 +295,152 @@
         "src/main/java/com/hilltopvillage/config/ConfigManager.java",
         "src/main/java/com/hilltopvillage/config/ConfigPermission.java",
         "src/main/java/com/hilltopvillage/config/GameConfig.java",
-        "src/main/java/com/hilltopvillage/config/menu/MainConfigMenu.java",
-        "src/main/java/com/hilltopvillage/command/HilltopCommandHandler.java",
-        "src/main/java/com/hilltopvillage/mechanics/VillagerSystem.java",
         "src/main/java/com/hilltopvillage/util/YamlFileGate.java",
         "src/main/java/com/hilltopvillage/util/YamlFiles.java",
+        "src/main/java/com/hilltopvillage/config/menu/MainConfigMenu.java",
+        "src/main/java/com/hilltopvillage/mechanics/VillagerSystem.java",
+        "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java",
         "src/test/java/com/hilltopvillage/config/ConfigLoadClampTest.java",
         "src/test/java/com/hilltopvillage/config/YamlNullMechanismTest.java"
       ],
       "files_in_slice": 2,
       "shared_dependencies_read": [
         "src/main/java/com/hilltopvillage/config/GameConfig.java",
-        "src/main/java/com/hilltopvillage/config/menu/MainConfigMenu.java",
-        "src/main/java/com/hilltopvillage/command/HilltopCommandHandler.java",
-        "src/main/java/com/hilltopvillage/mechanics/VillagerSystem.java",
         "src/main/java/com/hilltopvillage/util/YamlFileGate.java",
-        "src/main/java/com/hilltopvillage/util/YamlFiles.java",
+        "src/main/java/com/hilltopvillage/util/YamlFiles.java"
+      ],
+      "supporting_files_read": [
+        "src/main/java/com/hilltopvillage/config/menu/MainConfigMenu.java",
+        "src/main/java/com/hilltopvillage/mechanics/VillagerSystem.java",
+        "src/test/java/com/hilltopvillage/config/ConfigManagerTest.java",
         "src/test/java/com/hilltopvillage/config/ConfigLoadClampTest.java",
         "src/test/java/com/hilltopvillage/config/YamlNullMechanismTest.java"
       ],
       "files_scanned_without_findings": [
-        "src/main/java/com/hilltopvillage/config/ConfigPermission.java",
-        "src/main/java/com/hilltopvillage/config/GameConfig.java",
-        "src/main/java/com/hilltopvillage/config/menu/MainConfigMenu.java",
-        "src/main/java/com/hilltopvillage/command/HilltopCommandHandler.java",
-        "src/main/java/com/hilltopvillage/mechanics/VillagerSystem.java",
-        "src/main/java/com/hilltopvillage/util/YamlFileGate.java",
-        "src/main/java/com/hilltopvillage/util/YamlFiles.java",
-        "src/test/java/com/hilltopvillage/config/ConfigLoadClampTest.java",
-        "src/test/java/com/hilltopvillage/config/YamlNullMechanismTest.java"
+        "src/main/java/com/hilltopvillage/config/ConfigPermission.java"
       ],
+      "unreadable_files": [],
       "dimension_checklist": [
-        { "pattern": "1 返回值暴露内部状态", "result": "命中", "note": "getActiveConfig() 返回可变的内部 GameConfig，GUI 直接改字段；这是本插件既定的编辑模型（revertAll 的注释专门讨论对象身份），本回合未发现由此产生的破坏性写回，故只记录不立条。" },
-        { "pattern": "2 同族函数守卫一致性", "result": "命中", "note": "settings 侧拒绝 ABSENT（1419）而 monsters 侧不拒绝（2006）→ F-06；hammer.material / repair-cost-item 有 null 判，world-name / fireball.item-name 没有 → F-02；explode/victory/repair 有 normalize，villager-health 没有 → F-03。" },
-        { "pattern": "3 数值边界", "result": "命中", "note": "readWaveInt 的 intValue() 对 NaN/溢出/小数无守卫 → F-04；villager-health 无 isFinite/下界 → F-03。" },
-        { "pattern": "4a 原型链/裸下标", "result": "不适用", "note": "Java 无原型链；YAML 键访问均经 contains/get/getConfigurationSection，未发现把外部键当继承表用的形态。" },
-        { "pattern": "4b 假值 vs 缺值", "result": "命中", "note": "contains 与 getString 不互斥导致「存在即 null」→ F-02；同文件对 nodes.buff-effects 与 starter-kit.items 正确使用 isSet 区分「键缺失」与「显式空」，形成对照。" },
-        { "pattern": "4c NaN/Infinity/小数", "result": "命中", "note": "villager-health 的 .nan/.inf 无闸门 → F-03；readWaveInt 的 NaN→0、1e18→MAX、小数截断 → F-04。" },
-        { "pattern": "4d 嵌套结构校验", "result": "命中", "note": "core.* / world-name 等标量键只判 contains、不判类型，段/字符串会被 getDouble/getInt 静默折成 0（与 F-02 同族，影响限于数值错误），未单列；waves/monsters 段的 section 判空已做。" },
-        { "pattern": "5 能力是否真实现", "result": "命中", "note": "readWaveInt 的注释声称三种非法形态全部显式化，实现只做负数一档 → F-04；world-name 写入/读取齐全但无消费者（疑似死键）→ off_dimension_notes。" },
-        { "pattern": "6 转义/编码顺序", "result": "不适用", "note": "本切片只做 YAML 值读写与数值转换，无多层转义或 HTML 编码路径。" },
-        { "pattern": "7 边界符号（负数/下标）", "result": "未命中", "note": "负值路径已逐一核对：victory-waves / repair-cost-amount / explode 有 normalize；readWaveInt 显式把负数钳到 0；removedWaveKeys 的波次号为 GUI 传入的正整数。" },
-        { "pattern": "8 引用绑定是否存在", "result": "未命中", "note": "Java 编译期绑定，本切片无动态导入；所有被调用的 ConfigManager/GameConfig 方法均能在源码中定位。" }
+        {
+          "pattern": "1 返回值暴露内部状态",
+          "result": "未命中",
+          "note": "GameConfig#getNodeBuffEffects/getStarterKitItems 返回内部容器，但切片内唯一写入方是 ConfigManager 自身；snapshot() 对集合与元素逐项深拷贝（GameConfig:631、664-667）"
+        },
+        {
+          "pattern": "2 同族函数守卫一致性",
+          "result": "命中",
+          "note": "材质族有 null+isItem 双判（1477-1486、1518-1529），world-name 只有 contains（F-02）；explode 有 normalize（776-784），villager-health 没有（F-03）"
+        },
+        {
+          "pattern": "3 数值边界",
+          "result": "命中",
+          "note": "intValue() 无上界与整数性检查（F-04）；villager-health 无非有限值闸门与区间（F-03）"
+        },
+        {
+          "pattern": "4a 原型链/裸下标",
+          "result": "不适用",
+          "note": "Java 实现；外部键只经 ConfigurationSection#getKeys 进入 LinkedHashMap，不存在 obj[key] 式反射查表"
+        },
+        {
+          "pattern": "4b 假值 vs 缺值",
+          "result": "命中",
+          "note": "contains 被当作「有值」使用（F-02）；正确用法 isSet 出现在 1595 与 1712，两处都能区分「键缺失」与「显式空」"
+        },
+        {
+          "pattern": "4c NaN/Infinity/小数",
+          "result": "命中",
+          "note": "F-03（villager-health 的 .nan/.inf）与 F-04（intValue 的 NaN→0、小数截断）"
+        },
+        {
+          "pattern": "4d 嵌套结构校验",
+          "result": "未命中",
+          "note": "monsters/waves 段先判 getConfigurationSection 为 null，再逐键类型守卫；1819-1836 对段头/标量/列表分别告警；1849-1853 有「解析后为空不清空」守卫"
+        },
+        {
+          "pattern": "5 能力是否真实现",
+          "result": "命中",
+          "note": "readWaveInt 的 javadoc 覆盖与实现一致但漏掉溢出/小数/NaN；clamp 家族逐键手写，导致 villager-health 漏键（F-03）"
+        },
+        {
+          "pattern": "6 转义/编码顺序",
+          "result": "不适用",
+          "note": "本切片无多层转义/编码；YamlFiles.write 统一 UTF-8 单次写出"
+        },
+        {
+          "pattern": "7 边界符号（负数/下标）",
+          "result": "未命中",
+          "note": "负数在 readWaveInt:645-648 归 0；waves 数字键 parse 有 try（1788-1793、1887-1891）；starter-kit 数量 Math.max(1, amount)（721）"
+        },
+        {
+          "pattern": "8 引用绑定是否存在",
+          "result": "未命中",
+          "note": "符号在编译期解析；PotionEffectType.getByName 有 null 判（372-376）；未发现调用未导入名字的形态"
+        },
+        {
+          "pattern": "9 YAML 写入成对性/原子写/部分写入",
+          "result": "命中",
+          "note": "原子写合格（YamlFiles:111-131，临时文件 + ATOMIC_MOVE）；但迁移写盘绕过 mtime 检测（F-05）；saveToFile 的 set+write 成对且失败返回 false"
+        }
       ]
     },
+    "lead_dispositions": [
+      {
+        "lead_id": "L1",
+        "disposition": "CONFIRMED",
+        "finding_id": "F-slice-11-data-consistency-01",
+        "note": "1425 在 1419 的三合一失败条件后无条件推进快照，1426 是唯一的 false 返回点"
+      },
+      {
+        "lead_id": "L2",
+        "disposition": "CONFIRMED",
+        "finding_id": "F-slice-11-data-consistency-02",
+        "note": "机制成立但触发条件修正为非字符串标量（空值会被 YAML 丢弃，contains 为 false）；sweep 的运行时消费者归属有误，严重性定 MEDIUM"
+      },
+      {
+        "lead_id": "L3",
+        "disposition": "CONFIRMED",
+        "finding_id": "F-slice-11-data-consistency-03",
+        "note": "载入 1469 与合并 441-444 双路径均无归一化，同文件 explode 键有专门 clamp"
+      },
+      {
+        "lead_id": "L4",
+        "disposition": "CONFIRMED",
+        "finding_id": "F-slice-11-data-consistency-04",
+        "note": "intValue 的饱和/截断/NaN→0 均不进入 problems，汇总 warning 静默"
+      },
+      {
+        "lead_id": "L5",
+        "disposition": "CONFIRMED",
+        "finding_id": "F-slice-11-data-consistency-05",
+        "note": "1577 与 1695 均无 mtime 比对；窗口为毫秒级且写入内容来自刚读到的磁盘快照，故降为 LOW"
+      },
+      {
+        "lead_id": "L6",
+        "disposition": "REFUTED",
+        "finding_id": null,
+        "note": "不构成本维度缺陷：观察指向返回值契约（void + 恒 true），且怪物闸门只读时磁盘内容不变，无内存/磁盘数据分叉；已记入 off_dimension_notes[0]"
+      }
+    ],
     "self_checks": {
       "identifier_reconcile": {
         "status": "DONE",
-        "note": "对账 saveToFile 写集合（60+ 键）× mergeExternalChanges 白名单 × loadFromFile 读集合 × GUI 编辑入口：villager-health 两端齐全但无 normalize（F-03）；world-name 两端齐全但无消费者；repair-amount-per-cost/self-destruct-multiplier/spawn-radius-min|max 有 GUI 入口故不在白名单属正确设计；未发现写了读不到或读了从不写的键。"
+        "note": "ConfigPermission 6 个权限节点对 plugin.yml:30-51 逐一比对，6/6 全部声明、差集为空；saveToFile 写集合（851-996）与 loadFromFile 读集合（1442-1770）对账，hammer.tier.low.charge 与 5 个 hammer.damage-* 为双向墓碑，其余为 contains/isSet 读取，world-name 与 villager-health 见 F-02/F-03"
       },
       "self_check_audit": {
         "status": "DONE",
-        "note": "抽验 ConfigLoadClampTest（为 victory/repair/explode 钉了钳制+脏标志断言，无任何 villager-health 用例，佐证 F-03 是漏网而非设计）与 YamlNullMechanismTest（证明项目已知 contains/getString 机制但只用于 airdrop-mob-type）。注入故障（4.7-d）因构建写 target/ 未执行。"
+        "note": "抽验 3 个自带测试：ConfigManagerTest:68-97 有真断言但只覆盖 save 侧快照门控，未覆盖 loadFromFile 早退（F-01 的缺口）；ConfigLoadClampTest 对 victory/repair/explode 的上下界有有效断言，未覆盖 villager-health；YamlNullMechanismTest 三个用例只有 printf、零 assert，且输出无法区分 String null 与 null，判 UNRELIABLE_SELF_CHECK"
       },
       "runtime_validation": {
         "status": "SKIPPED",
-        "note": "复现 reload/隔离路径需 Maven 构建（会写 target/）并启动 Paper 服务端，违反零写入约束；改用入口→调用点→问题行的静态调用链坐实，各条 basis 已写明行号。"
+        "note": "任务书禁止 maven/gradle 构建（会写 target/，破坏零写入），本机也无 Paper 服务端可启动；.nan 解析、contains/getString 实测、setHealth(NaN) 均未运行，验证方法已写入各条 alternatives"
       }
     },
     "off_dimension_notes": [
-      "contract（L6）：loadMonstersConfig() 返回 void，读盘失败只打一条 SEVERE 就 return（ConfigManager.java:2006-2010），loadFromFile() 仍 return true（1964），调用方 HilltopCommandHandler.java:438-444 / MainConfigMenu.java:151-161 据此宣告「已重载」。这是返回值契约问题，应由 contract 维度立项；其数据面后果已单列为 F-06。",
-      "logic/contract（模式 5）：world-name 疑似死键——全仓只有 ConfigManager.java:851（写）与 1442（读）触及 GameConfig#getWorldName，没有运行期消费者。",
-      "observability：monsters-config.yml 的 9 个「写而不读」键已有一次性告警（ConfigManager.java:2101-2102，MONSTERS_CONFIG_NON_EFFECTIVE_KEYS），属知情设计，不是一致性问题。",
-      "类型形状：core.* / world-name 等标量键只判 contains 不判类型，段或字符串会被 getDouble/getInt 静默折成 0，与 F-02 同族但影响仅限数值错误，未单列。"
+      "contract / L6：loadMonstersConfig() 返回 void，monsters-config.yml 不可用或闸门只读时只打 SEVERE 后 return（2006-2010），loadFromFile() 仍 return true（1955、1964）；MainConfigMenu:151-161 与 HilltopCommandHandler:422 据此宣告「已重载」，实际 game-settings 生效而 monsters-config 的扩展字段（entity-type / 装备 / base-damage）回落代码默认，静默未生效；1957 又把这些默认值登记为已落盘基线",
+      "error-handling：loadFromFile() 无 try/catch，1442-1953 的未预期异常会抛给 MainConfigMenu:151 的点击处理器（未捕获、菜单不 reopen），且快照不推进",
+      "error-handling：VillagerSystem:142-144 用 Math.max(1.0, health) 兜底，对 NaN 无效；setBaseValue/setHealth 收到 NaN 的行为依赖服务端版本，需运行期确认",
+      "contract/style：ConfigPermission.description 有赋值无 getter，是死字段，不影响权限判定",
+      "test-quality：YamlNullMechanismTest 零断言且 printf 输出对 String \"null\" 与 null 同形，其声称验证的 contains/getString 机制从未被真正断言，属自带自检不可靠"
     ]
   },
   "error": null

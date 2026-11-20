@@ -23,6 +23,6 @@ experiments/*/*/project/
 
 # dsh 驱动运行期生成的 patch（含真实上游地址，绝不入库）
 .patch-resolved-*.yml
-.run-dsh*/
+.run-dsh*/*.log
 driver*.log
 driver-iter-*.log

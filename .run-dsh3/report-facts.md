@@ -61,7 +61,46 @@ slice-01..16（16 片）+ 20/21/22/24/25/26（6 片）= 22 片。
   - slice-13：`MonsterSettingsMenu:82` 提前 return 导致菜单无返回按钮；`AbstractConfigMenu:154` 无 `InventoryDragEvent`
   - slice-08：`/hilltop config nodes repairitem` 静默落到打开 GUI
 
+## 宽扫线索被深挖推翻的记录（流程有效性证据）
+
+| 线索（宽扫） | 深挖结论 | 证据 |
+|---|---|---|
+| slice-08 L1 `handleStatsCommand` 先 `target.getName()` 后判空 → `/hilltop stats` NPE（宽扫定 HIGH） | **REFUTED** | `StatsManager.get(UUID)` 是 `cache.computeIfAbsent(...)`，永不返回 null；`PlayerStats.name` 默认 `""` 而非 null |
+| slice-08 L5 `ArenaCommand:39` 无参静默 return（宽扫定 contract） | **REFUTED（有意契约）** | `ArenaCommand` 未在 `plugin.yml` 注册，仅被 HCH 以固定实参调用；`ArenaCommandTest:381-392` 把静默写成断言 |
+| slice-05 L2 同一次收尾 `gameManager.stopGame()` 执行两次 → 重复记账 | **REFUTED** | `GameManager.stopGame()` 全文只写内存字段，无任何 Stats/YAML 调用；统计写点都要求「先从 players 移除成功」 |
+| slice-05 L5 `resetNow` 双发回滚 → `restoreStarted` 永不复位 | **REFUTED** | `restoreWithResult` 对同一世界合并回调（MapRestoreManager:515-520），`restoreNow` 必然触发 `complete()`，`reset()` 三条分支都复位 |
+| slice-21 L1 回滚任务异常 → Bukkit 取消任务 → `isRestoring` 永久 true | **REFUTED（前提为假）** | 作者在 TabListManager:326-332 记录了 CraftScheduler 反编译结论：异常分支**不 cancel**，period>0 会重新入队；任务仍会走到 `complete()` |
+| slice-15 L1/L2/L3/L5/L6（作为 concurrency） | **REFUTED** | 全部在 Bukkit 主线程，无跨线程写入；属 data-consistency/contract，转 off_dimension_notes |
+
+**意义**：宽扫的高置信线索有相当比例在深挖阶段被证伪（本轮 6 条 REFUTED，其中 2 条宽扫标 HIGH）。这正是两遍制设计意图——线索允许 70% 被证伪，发现必须过门 0 与控制流取证。
+
+## 本轮实际完成的覆盖（最终口径）
+
+- **宽扫 26/26 片全部完成**（其中 slice-17/18/19/23 由同一 trace_id 的续跑实例补完，见 §4 来源声明）
+- **深挖 10 片**：slice-01(DC)、05(DC)、08(EH)、11(DC)、13(contract)、15(concurrency)、20(concurrency)、21(concurrency)、24(DC)、26(DC)
+- 深挖维度分布：concurrency 4 / data-consistency 5 / error-handling 1 / contract 1（security、logic 未单独深挖）
+- 已确认发现（按审计产物自报）：15→3、20→2、21→1、24→3(+1 EVIDENCE_GAP)、05→1、11→6、08→1(+1 NEF)、13→2、26→3、01→(待补)
+  合计 ≥22 条 CONFIRMED
+- 锐评：skeptic A（15/20/21 共 6 条）、skeptic B（05/08/11/24 共 11 条）、skeptic C（26/13 共 5 条）、devils_advocate（覆盖缺口 + pattern_sweep）、arbiter（终裁）
+
+## 权威机械复核结果（verifier，22:12–22:15 静默后快照）
+
+- 产物 **38 份带信封**，`check-payload` **全部退出码 0**（NONZERO=0）
+- `verify-artifacts`：**0 FAIL / 8 WARN / 5 PASS**
+  - `G0 门 0 回显: 174/174 通过`（0 条 quote 与源文件不符）
+  - `G2 artifact_path: 37 个 SUCCESS 信封，0 缺失`；`G8 line_count: 26 切片 0 不符`；`G5 自述数字自洽: 53 项 0 不一致`；`G4 账本对账: 36 派发/1 裁量，0 不一致`
+  - 8 条 WARN：3 条 G7（声明读了 N 个文件但只有 1–2 条 quote 指向）、1 条 G3（slice-08 的 files_read 缺 ArenaCommand/DeployMenuSender）、1 条 G0 loose 匹配、1 条 state.json 非 .md、其余为同类
+- **27 条 finding = CONFIRMED 23（HIGH 4 / MEDIUM 14 / LOW 5）+ NO_EVIDENCE_FOUND 3 + EVIDENCE_GAP 1**
+- HIGH 4 条：`F-slice-11-data-consistency-01`、`F-slice-15-concurrency-01`、`F-slice-26-data-consistency-01`、`F-slice-26-data-consistency-02`
+- 骨架：仅 1 次 17 秒窗口（slice-13 占位条目），最终已填充；**结构校验抓不到骨架**（信封完整），可靠特征是内容词「骨架占位/待替换」
+
 ## 数字口径
 
-- 规划切片 26；已宽扫 22（84.6%）；深挖计划 12；锐评 3–4
-- 证据覆盖率：Q = verify-artifacts G0 的 ok 计数（最终由 verifier 产出）；F = 全部切片 files_read 去重数（75 或略多，因跨切片读上下文文件）
+
+
+- 规划切片 26；已宽扫 **26（100%）**；深挖 **10 片（38.5%）**；锐评 4 实例 + arbiter
+- 证据覆盖率：**Q = 174**（`verify-artifacts` G0 的 ok 计数，0 FAIL）、**F = 148**（全部产物 `files_read` 去重路径数，G3 实测 148 条、0 条不存在）
+  - **Q/F = 117.6%**。>100% 不是错误：Q 计 quote 条数，同一文件常有多条 quote；框架公式隐含「一文件一 quote」，本仓库不满足。
+  - 补充口径：**有 quote 指向的切片文件 = 75/75（100%）**（26 片文件并集全部至少被一条 quote 引用过）。
+- 发现计数：27 条 = CONFIRMED 23（HIGH 4 / MEDIUM 14 / LOW 5）+ NO_EVIDENCE_FOUND 3 + EVIDENCE_GAP 1
+- 宽扫线索：**151 条**（26 片合计）
