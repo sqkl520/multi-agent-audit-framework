@@ -51,7 +51,18 @@ const GATES = {
   close: {
     name: '收口门',
     when: '声明本轮 CLOSED 之前',
-    checks: ['check-state（状态机合法）', 'check-deliverables（交付物齐全）'],
+    checks: [
+      'check-state（状态机合法）',
+      'check-deliverables（交付物齐全）',
+      // 2026-11-20 补：这两个是唯一能拦住「38 条发现只修 6 条、框架全程无工具报错」
+      // 的机制（FIX-R1-R18-SUMMARY.md:10 记录的事故）。此前它们**不在任何门上**，
+      // check-all 注册的也只是它们的自测。
+      //
+      // 按需执行：只有在给了 --artifacts+--ledger / --state+--report 时才跑，
+      // 否则无法判定「该跑却没跑」——那种情况下宁可显式跳过也不要假装通过。
+      'check-disposition-coverage（每条发现是否都被表态过）',
+      'check-fix-instances（UPHELD 是否都进入了修复登记）',
+    ],
     onFail: '不得写 CLOSED，只能 PARTIALLY_CLOSED 或 BLOCKED。',
   },
   release: {
@@ -164,6 +175,38 @@ if (gate === 'close') {
     add('check-deliverables', r.ok, r.out);
   } else {
     add('check-deliverables', false, '未提供 --round-dir');
+  }
+
+  // 2026-11-20 补：把两个「发现去向」检查器真正接上收口门。
+  //
+  // 此前它们**不在任何门上**，check-all 注册的也只是 `.test.mjs` 自测
+  //（验证校验器在合成 fixture 上行为正确，与真实产物无关）。
+  // 于是框架史上最严重的那次事故——38 条发现只修 6 条、2 条 HIGH 仍在代码里、
+  // 框架全程没有任何工具报错（FIX-R1-R18-SUMMARY.md:10）——发生时，
+  // 唯一能拦住它的两个检查器一次都没被调用过。
+  //
+  // 参数缺失时判 FAIL 而不是跳过：收口门的意义就是「声明 CLOSED 之前必须过」。
+  // 允许「不给参数就自动跳过」等于给出一条不检查也能收口的路径，
+  // 而那正是 stop-hook.mjs 记过的失效形态（豁免数 ≥ 待检数 → 全量豁免 = 关掉检查）。
+  const artifactsDir = getArg('--artifacts');
+  const ledger = getArg('--ledger');
+  if (artifactsDir && ledger) {
+    const r = runScript('check-disposition-coverage.mjs', ['--artifacts', artifactsDir, '--ledger', ledger]);
+    add('check-disposition-coverage', r.ok, r.out);
+  } else {
+    add('check-disposition-coverage', false,
+      '未提供 --artifacts / --ledger。收口门要求每条发现都被表态过一次——'
+      + '不给参数就无法证明，而「无法证明」不得当作「通过」');
+  }
+
+  const reportPath = getArg('--report');
+  if (state && reportPath) {
+    const r = runScript('check-fix-instances.mjs', ['--state', state, '--report', reportPath]);
+    add('check-fix-instances', r.ok, r.out);
+  } else {
+    add('check-fix-instances', false,
+      '未提供 --state / --report。收口门要求 UPHELD 的发现都进入修复登记——'
+      + '没有最终报告里的裁决索引表，就只能比对主 Agent 的两份自述，而那是已被证明无效的');
   }
 }
 

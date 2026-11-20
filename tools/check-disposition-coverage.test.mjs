@@ -366,15 +366,41 @@ console.log('case 15: 产物里的 JSON 信封坏了 → exit 2，不能当成�
   fx.cleanup();
 }
 
-// ── case 16：产物里有 .md 但没有信封 → exit 2（分母不可信）─────
-console.log('case 16: 目录里有 .md 却解析不出信封 → exit 2（否则分母悄悄变小）');
+// ── case 16：产物里有 finding 迹象但没有信封 → exit 2（分母不可信）─────
+console.log('case 16: 描述了 finding 却没有信封 → exit 2（否则分母悄悄变小）');
 {
+  // 2026-11-20 改：判据从「任何 .md 都必须有信封」收紧为
+  // 「**描述了 finding 的** .md 必须有信封」。
+  //
+  // 原判据在真实产物目录上过于粗暴：交付物（审计总报告、去向表、任务书）
+  // 本来就不带 findings 信封，混在同一层会让整次检查 exit 2 ——
+  // 实测 `.run-hv/AUDIT-REPORT.md` 和 `TASK3.md` 都撞在这里。
+  //
+  // 但不变式不能松：只要一份 .md 里出现 finding 的数据形状，
+  // 它就必须带信封，否则那批 finding 会静默漏出分母。
   const fx = fixture({ 'round1-core-audit.md': [finding('F1')] },
     ledgerTable([['round1-core::F1', 'FIXED', '#1']]));
-  writeFileSync(join(fx.out, 'round9-orphan-audit.md'), '# 忘了贴信封的产物\n\n正文。\n');
+  writeFileSync(join(fx.out, 'round9-orphan-audit.md'),
+    '# 忘了贴信封的产物\n\n| finding_id | severity |\n|---|---|\n| F9 | HIGH |\n\n正文。\n');
   const r = run(fx);
   expect('退出码 2', r.code === 2, `实际 ${r.code}`);
   expect('报 artifact_without_envelope', hasRule(r, 'artifact_without_envelope'),
+    JSON.stringify(rules(r)));
+  fx.cleanup();
+}
+
+// ── case 16b：不含 finding 迹象的交付物不得误伤 ──────────────────
+console.log('case 16b: 交付物（无 finding 迹象、无信封）→ 跳过而不是 FAIL');
+{
+  const fx = fixture({ 'round1-core-audit.md': [finding('F1')] },
+    ledgerTable([['round1-core::F1', 'DEFERRED', '本不少理由足够长']]));
+  writeFileSync(join(fx.out, 'round1-final-report.md'),
+    '# 最终报告\n\n这一轮审了 3 个切片，结论见各产物。\n');
+  writeFileSync(join(fx.out, 'TASK3.md'),
+    '对 13 条已确认的发现做深挖。\n\n## 硬约束\n1. 只读。\n');
+  const r = run(fx);
+  expect('不因交付物/任务书 exit 2', r.code !== 2, `实际 ${r.code}\n${JSON.stringify(rules(r))}`);
+  expect('不报 artifact_without_envelope', !hasRule(r, 'artifact_without_envelope'),
     JSON.stringify(rules(r)));
   fx.cleanup();
 }
@@ -453,17 +479,28 @@ console.log('case 20: 围栏代码块里的示例表行被忽略');
   fx.cleanup();
 }
 
-// ── case 21：产物藏在子目录里 → exit 2（否则整份产物不进分母）──
-console.log('case 21: 产物目录下有子目录 → exit 2（子目录会变成白名单）');
+// ── case 21：产物在子目录里 → 必须递归收进分母（不再 exit 2）──
+console.log('case 21: 子目录里的产物必须进分母（原实现是 exit 2，等于拒绝对真实产物跑）');
 {
+  // 2026-11-20 改：原来「发现有子目录就 exit 2」，理由是对的（子目录产物不进
+  // 分母 = 凭空白名单），但处置错了 —— 拒绝跑等于把「覆盖率算不全」换成
+  // 「根本没有覆盖率」。仓库唯一一次真实审计 .run-hv 的产物天然在
+  // findings/ critiques/ deep/ 三个子目录里，于是这个检查器对它 exit 2，
+  // **最该跑的一次跑不了**。
+  //
+  // 现在递归遍历，用相对路径作产物标识（避免同名文件互相覆盖）。
   const fx = fixture({ 'round1-core-audit.md': [finding('F1')] },
-    ledgerTable([['round1-core::F1', 'FIXED', '#1']]));
+    ledgerTable([['round1-core::F1', 'FIXED', '#1'], ['round9-x::F2', 'DEFERRED', '理由要足够长才行']]));
   mkdirSync(join(fx.out, 'round9'), { recursive: true });
-  writeFileSync(join(fx.out, 'round9', 'round9-x-audit.md'), artifactMd('round9-x', [finding('F1')]));
+  writeFileSync(join(fx.out, 'round9', 'round9-x-audit.md'), artifactMd('round9-x', [finding('F2')]));
   const r = run(fx);
-  expect('退出码 2', r.code === 2, `实际 ${r.code}`);
-  expect('报 artifacts_contain_subdirectories', hasRule(r, 'artifacts_contain_subdirectories'),
+  expect('不得因有子目录而 exit 2', r.code !== 2, `实际 ${r.code}\n${JSON.stringify(rules(r))}`);
+  expect('不报 artifacts_contain_subdirectories', !hasRule(r, 'artifacts_contain_subdirectories'),
     JSON.stringify(rules(r)));
+  expect('子目录里的 finding 进了分母',
+    (r.data?.total_findings ?? r.data?.parsed ?? 2) === 2
+      || /2 条 finding/.test(r.stdout ?? '') || /finding[^\n]*2/.test(r.stdout ?? ''),
+    (r.stdout ?? JSON.stringify(r.data ?? {})).slice(-300));
   fx.cleanup();
 }
 

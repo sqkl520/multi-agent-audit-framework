@@ -93,7 +93,7 @@
  */
 
 import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
-import { join, basename, extname } from 'node:path';
+import { join, basename, extname, relative } from 'node:path';
 
 const DISPOSITIONS = ['FIXED', 'WONT_FIX', 'DEFERRED', 'NEW_FINDING'];
 const REASON_REQUIRED = new Set(['WONT_FIX', 'DEFERRED']);
@@ -220,26 +220,48 @@ if (!statSync(ARGS.artifacts).isDirectory()) {
   configError('artifacts_missing', `--artifacts 不是目录: ${ARGS.artifacts}`);
 }
 
-const mdFiles = readdirSync(ARGS.artifacts)
-  .filter((f) => /\.(md|markdown)$/i.test(f))
+// 2026-11-20 改：递归收集，不再拒绝子目录。
+//
+// 原来的做法是「发现有子目录就 exit 2」，理由是「子目录里的产物不会被
+// 顶层 readdirSync 看到，于是既没进分母也没触发 artifact_without_envelope——
+// 整份产物凭空消失，覆盖率照样 100%」。**这个担心是对的，但处置是错的**：
+// 拒绝跑，等于把「覆盖率算不全」换成了「根本没有覆盖率」。
+//
+// 实测代价：仓库里唯一一次真实 dsh 审计（`.run-hv`）的产物天然在
+// `findings/` `critiques/` `deep/` 三个子目录里。本检查器对它 exit 2，
+// 而它恰恰是唯一能拦住「38 条发现只修 6 条、框架全程无工具报错」的检查器
+//（FIX-R1-R18-SUMMARY.md:10）。也就是说：**最该跑的一次，它跑不了。**
+//
+// 现在递归遍历，用**相对路径**作为产物标识（避免不同子目录的同名文件互相覆盖）。
+const relFiles = [];
+const walkArtifacts = (dir, depth = 0) => {
+  if (depth > 4) return;      // 防御：产物目录不会更深，避免误入 node_modules
+  let ents;
+  try { ents = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+  for (const e of ents) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) walkArtifacts(p, depth + 1);
+    else if (/\.(md|markdown)$/i.test(e.name)) relFiles.push(relative(ARGS.artifacts, p).replace(/\\/g, '/'));
+  }
+};
+walkArtifacts(ARGS.artifacts);
+
+const mdFiles = relFiles
+  .filter((f) => {
+    // 2026-11-20：交付物不是「波次产物」，不该被要求带 findings 信封。
+    //   final-report 是给人读的汇总，ledger 是去向表本身，UNFIXED/README 同理。
+    // 判据用**文件名形状**而非路径：真实审计里它们常常和 findings/ 并列在同一层。
+    // 这与 verify-artifacts 的交付物豁免同源（那边是 `-(final-report|ledger)\.md$`）。
+    const b = basename(f).toLowerCase();
+    if (/(^|-)final-report\.md$/.test(b)) return false;
+    if (/(^|-)ledger\.md$/.test(b)) return false;
+    if (/^(readme|unfixed|summary|notes|index)\.md$/.test(b)) return false;
+    return true;
+  })
   .sort();
 
 if (mdFiles.length === 0) {
-  configError('artifacts_missing', `产物目录里没有任何 .md: ${ARGS.artifacts}`);
-}
-
-// 子目录里的产物不会被 readdirSync 的顶层列举看到，于是它们既没进分母、
-// 也没触发 artifact_without_envelope——整份产物凭空消失，覆盖率照样 100%。
-// 真实场景：产物按轮次分目录（out/round1/、out/round2/）。这时应当把
-// --artifacts 指向共同的父目录并保持扁平，或一次一个目录地跑并汇总。
-const subdirs = readdirSync(ARGS.artifacts, { withFileTypes: true })
-  .filter((d) => d.isDirectory())
-  .map((d) => d.name);
-if (subdirs.length > 0) {
-  configError('artifacts_contain_subdirectories',
-    `${ARGS.artifacts} 下有子目录（${subdirs.slice(0, 6).join('、')}${subdirs.length > 6 ? ' …' : ''}）`
-    + '——子目录里的产物不会进分母，等于凭空白名单。'
-    + '请对每个产物目录分别跑一次，或把产物摊平到同一层');
+  configError('artifacts_missing', `产物目录里没有任何 .md（含子目录）: ${ARGS.artifacts}`);
 }
 
 /** 从 markdown 正文里取出最后一个可用的 ```json 信封。 */
@@ -254,8 +276,19 @@ function extractEnvelope(text) {
     try { j = JSON.parse(blocks[i]); }
     catch (e) { lastParseError = e.message; continue; }
     const payload = (j && typeof j === 'object' && j.payload) ? j.payload : j;
+    // 2026-11-20 修：此前只认 `payload.findings`，于是**critique 产物永远进不了对账**。
+    //
+    // critique 承载的是对每条发现的裁决（`payload.verdicts[]`，见
+    // output-contract/critique.md §2.3），它不产出新发现，但它决定已有发现的去向。
+    // 只认 findings 的后果是：一个塞满 verdicts 的 critiques/ 目录会被判成
+    // 「no_findings → 无法作为对账分母」，于是锐评波的产物从未参与过去向核对。
+    //
+    // 现在两种都认，并在返回值里标明是哪一种，供下游区分「发现源」与「裁决源」。
     if (payload && Array.isArray(payload.findings)) {
-      return { ok: true, envelope: j, payload, blockIndex: i };
+      return { ok: true, envelope: j, payload, blockIndex: i, kind: 'findings', items: payload.findings };
+    }
+    if (payload && Array.isArray(payload.verdicts)) {
+      return { ok: true, envelope: j, payload, blockIndex: i, kind: 'verdicts', items: payload.verdicts };
     }
   }
   if (lastParseError) return { ok: false, reason: 'bad_json', detail: lastParseError };
@@ -269,6 +302,7 @@ function scopeOf(file) {
 }
 
 const artifacts = [];   // { file, scope, agentId, findings: [{ finding_id, severity, ... }] }
+const skippedDeliverables = [];  // 无 finding 迹象、无信封的 .md（交付物/说明文档）
 let rawFindingCount = 0;  // 未去重：产物里实际写了多少条 finding
 
 for (const file of mdFiles) {
@@ -280,19 +314,48 @@ for (const file of mdFiles) {
         `${file} 的 JSON 信封解析失败: ${r.detail}`
         + '——解析不出信封就不能当作「这份产物没有 finding」，否则分母会悄悄缩水', { file });
     }
-    if (r.reason === 'no_findings') {
-      configError('artifact_without_findings',
-        `${file} 的信封里没有 payload.findings[]，无法作为对账分母`, { file });
+    // 2026-11-20：用**内容**而不是文件名判断「这是不是波次产物」。
+    //
+    // 判据要同时满足两条，缺一不可：
+    //   (a) 文件里出现 finding 的**数据形状**（JSON 键、`字段: 值`、或表格列）
+    //   (b) 该文件**不是**任务书/说明文档
+    //
+    // 只用 (a) 会误伤一种真实存在的文件：**任务书**（`TASK3.md`）——
+    // 它用散文提到 "13 条已确认的发现"、列举 id，但它是写给子 Agent 的指令，
+    // 不是产物。实测就是被它卡住的。
+    //
+    // 表格形态必须单独覆盖：真实产物里「未修复清单」常常是 markdown 表格
+    //（`| F9 | HIGH |`），而早期判据只认 JSON 键和 `字段: 值`，会把它们漏掉，
+    // 于是「描述了 finding 却没信封」这份产物静默逃过分母。
+    const claimsFindings = /["'`]?(finding_id|local_id)["'`]?\s*[:：]/.test(text)
+      || /["'`]?severity["'`]?\s*[:：]\s*["'`]?(CRITICAL|HIGH|MEDIUM|LOW|critical|high|medium|low)/.test(text)
+      || /\|[^|\n]*(finding_id|local_id)[^|\n]*\|/i.test(text)                       // 表格表头有 finding_id 列
+      || /\|\s*[A-Z]\d{1,3}-F\d{1,3}\s*\|\s*(CRITICAL|HIGH|MEDIUM|LOW)\s*\|/i.test(text) // 表格行形如 | S01-F1 | HIGH |
+      || /\|\s*F\d{1,3}\s*\|\s*(CRITICAL|HIGH|MEDIUM|LOW)\s*\|/i.test(text);
+    const looksLikeTaskBrief = /^(你|请|对\s*\d+\s*条|任务[:：]|指令[:：])/.test(text.trim().slice(0, 60))
+      || /\*\*硬约束\*\*|## 硬约束|你（主 Agent）|必须派子 Agent/.test(text);
+    const looksLikeFindings = claimsFindings && !looksLikeTaskBrief;
+    if (looksLikeFindings) {
+      configError('artifact_without_envelope',
+        `${file} 里描述了 finding 但找不到可解析的 \`\`\`json 信封。`
+        + '**这份产物里的 finding 会静默漏出分母**——补上信封，或把它移出 --artifacts 目录', { file });
     }
-    configError('artifact_without_envelope',
-      `${file} 里找不到 \`\`\`json 信封。本目录下的每个 .md 都必须是审计产物`
-      + '（或把它移出 --artifacts 目录），否则未解析的产物等于凭空消失', { file });
+    for (const reason of [r.reason]) skippedDeliverables.push({ file, reason });
+    continue;
+  }
+  if (r.ok && r.reason === 'no_findings') {
+    configError('artifact_without_findings',
+      `${file} 的信封里既没有 payload.findings[] 也没有 payload.verdicts[]，无法作为对账分母`, { file });
   }
   artifacts.push({
     file,
     scope: scopeOf(file),
     agentId: r.envelope?.agent_id ?? null,
-    findings: r.payload.findings,
+    // 2026-11-20：critique 产物的条目是 verdicts，它们不产生新发现，
+    // 所以不进 findings 分母，但要在报告里显式计数——否则「锐评波做了多少裁决」
+    // 这件事在覆盖率里完全不可见。
+    findings: r.kind === 'findings' ? r.payload.findings : [],
+    verdictCount: r.kind === 'verdicts' ? r.items.length : 0,
   });
 }
 

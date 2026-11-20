@@ -109,8 +109,14 @@ console.log('case 4: accept 门 —— role 不匹配必须拒绝');
   rmSync(dir, { recursive: true, force: true });
 }
 
-console.log('case 5: close 门 —— 合规 state + 交付物放行');
+console.log('case 5: close 门 —— 缺发现去向证据必须拒绝（2026-11-20 收紧）');
 {
+  // 原来这条期望「合规 state + 交付物」就放行。2026-11-20 起收口门还要
+  // check-disposition-coverage 与 check-fix-instances —— 它们是唯一能拦住
+  // 「38 条发现只修 6 条、框架全程无工具报错」的机制，此前不在任何门上。
+  //
+  // 不给 --artifacts/--ledger/--report 时判 FAIL 而不是跳过：允许「不给参数就
+  // 自动通过」等于给出一条不检查也能收口的路径。
   const dir = mkdtempSync(join(tmpdir(), 'g-'));
   writeFileSync(join(dir, 'state.json'), JSON.stringify(GOOD_STATE));
   writeFileSync(join(dir, 'round1-final-report.md'),
@@ -118,8 +124,21 @@ console.log('case 5: close 门 —— 合规 state + 交付物放行');
   writeFileSync(join(dir, 'round1-ledger.md'),
     '# l\n\n## 1. 切片状态表\n\n## 2. 预算\n\n## 3. 失败分类\n\n## 4. 裁量日志\n');
   const r = run(['--gate', 'close', '--state', join(dir, 'state.json'), '--round-dir', dir]);
-  expect('放行', r.r?.passed === true,
+  expect('拒绝（缺发现去向证据）', r.r?.passed === false,
     JSON.stringify(r.r?.results?.map(x => x.name + ':' + x.ok)));
+  const names = (r.r?.results ?? []).map((x) => x.name);
+  expect('确实执行了 check-disposition-coverage', names.includes('check-disposition-coverage'), JSON.stringify(names));
+  expect('确实执行了 check-fix-instances', names.includes('check-fix-instances'), JSON.stringify(names));
+  rmSync(dir, { recursive: true, force: true });
+}
+
+console.log('case 5b: close 门 —— 「无法证明」不得当作「通过」必须说明理由');
+{
+  const dir = mkdtempSync(join(tmpdir(), 'g-'));
+  writeFileSync(join(dir, 'state.json'), JSON.stringify(GOOD_STATE));
+  const r = run(['--gate', 'close', '--state', join(dir, 'state.json'), '--round-dir', dir]);
+  const cov = (r.r?.results ?? []).find((x) => x.name === 'check-disposition-coverage');
+  expect('失败信息说明缺参数', /未提供 --artifacts/.test(cov?.out ?? ''), cov?.out?.slice(0, 200));
   rmSync(dir, { recursive: true, force: true });
 }
 

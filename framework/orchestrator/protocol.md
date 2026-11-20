@@ -1064,7 +1064,19 @@ Workflow Wave Dispatch 的纪律是：波次之间不是并行扇出，而是**�
 `protocol.md` 中每一波的闭合条件应写成布尔判定，而不是“大部分成功即可”：
 
 - **波次一（侦察）闭合条件**：侦察Agent返回 `SUCCESS`，且 `slice_count` 为整数、`audit_slices` 非空、`unverified` 已标注。若 `slice_count` 与 `len(audit_slices)` 不一致（契约违规），按第 4.1 节计数重派；达到 `PERMANENT_FAILURE` 时按下方「波次闭合的终态规则」处理。
-- **波次二（发现）闭合条件**：`spawned_agents` 中所有切片的状态均**已进入终态**（`SUCCESS` / `PERMANENT_FAILURE`），且没有**待重派的** `CONTRACT_VIOLATION`。**不要求「零发现」**——没有发现本身可以是一个合法结果，但必须是带证据的 "No evidence found"。**不要求「全部 SUCCESS」**——见下方「波次闭合的终态规则」。
+- **波次二（发现）闭合条件**：`agents` 中所有切片的状态均**已进入终态**（`SUCCESS` / `PERMANENT_FAILURE`），且没有**待重派的** `CONTRACT_VIOLATION`。**不要求「零发现」**——没有发现本身可以是一个合法结果，但必须是带证据的 "No evidence found"。**不要求「全部 SUCCESS」**——见下方「波次闭合的终态规则」。
+
+> **2026-11-20 修正**：本句此前写的是「`spawned_agents` 中所有切片的状态均已进入终态」。
+> 那是**字段用错了**：按上方 §2 的账本 schema，`spawned_agents` 是一个 **`int`**（实际已派发数），
+> 不是容器；承载「每个切片/实例的状态」的是 **`agents`** 数组（`agents[].status` / `agents[].attempt`）。
+>
+> 这不是措辞问题。一个读实现的人会看到两个互相矛盾的定义：
+> - `:1040` `spawned_agents: int   # 实际已派发数（含重派）`
+> - `:1067` 「`spawned_agents` **中**所有切片的状态」← 把它当成列表
+>
+> 而 `grep -rn spawned_agents tools/` 是 **0 命中** —— 这条闭合条件从来没有被任何东西执行过，
+> 所以两种含义并存了这么久也没人发现。**「有规则、没检测器」的代价不是规则写错了，
+> 是规则写错也不会有人知道。**
 - **波次三（锐评）闭合条件**：Skeptic 和 Devil's Advocate 均返回 `SUCCESS`（或已进入 `PERMANENT_FAILURE` 且对应发现按下方规则标记为 `unverified`）；`conflicts` 中每一项的 `resolution` 不再是 `PENDING`（要么已由Arbiter裁决，要么标记为 `ARBITRATING` 并已派发仲裁Agent）。
 - **波次四（修复）闭合条件**：每一条 `UPHELD` 的发现都有对应的修复Agent返回 `SUCCESS`（或 `PERMANENT_FAILURE` 并已记入 `unverified`），且修复Agent的返回中带有 `affected_issues` 列表（说明该修改可能影响的其他已发现缺陷）。
 - **波次五（验收）闭合条件**：每一个修复对应的验收Agent都返回了**终态**（`SUCCESS` 或 `RETRYABLE_FAILURE`），且每个有 `verdict` 的修复都明确给出了结论。三种情形分别处理：
