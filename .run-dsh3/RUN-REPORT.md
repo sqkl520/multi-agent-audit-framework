@@ -1,7 +1,7 @@
 # dsh 原生运行记录（2026-11-20）
 
 **运行方式**：`dsh --profile headless --patch .run-dsh3/patch.yml "$(cat task.md)"`
-**上游**：`http://47.108.197.93:33000`，模型 `virtual/opus`，`anthropic-messages` API
+**上游**：`http://<your-upstream>:33000`，模型 `virtual/opus`，`anthropic-messages` API
 **dsh 版本**：0.2.1-rc.2（`~/.dsh-win/versions/0.2.1-rc.2`）
 **目标**：Hilltop Village（Paper 1.21.4，75 个 Java 主源文件）
 **说明**：主线程只发起调用与读结果，**全部实际工作由 dsh 派子 Agent 完成**。

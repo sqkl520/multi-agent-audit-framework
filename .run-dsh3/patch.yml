@@ -12,7 +12,7 @@
         displayName: Audit Upstream
         apiKeyEnv: AUDIT_API_KEY
         api: anthropic-messages
-        baseURL: http://47.108.197.93:33000
+        baseURL: http://<your-upstream>:33000
         models:
           - id: virtual/opus
             name: virtual/opus
