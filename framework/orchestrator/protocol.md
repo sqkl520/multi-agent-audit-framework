@@ -965,7 +965,7 @@ node <FRAMEWORK_ROOT>/tools/check-all.mjs
 |---|---|---|---|
 | `--gate dispatch` | **每次派发子 Agent 之前** | attempt 计数、state.json 合法性 | **不得派发** |
 | `--gate accept` | **每次收到返回后** | 契约合规（`check-payload`）、门 0 回显（`verify-artifacts`） | 判 `CONTRACT_VIOLATION`，**不得进下游** |
-| `--gate close` | **声明 `CLOSED` 之前** | state.json 合法性、交付物齐全 | **不得写 `CLOSED`** |
+| `--gate close` | **声明 `CLOSED` 之前** | state.json 合法性、交付物齐全、**每条发现是否被表态过**（`check-disposition-coverage`）、**UPHELD 是否都进入修复登记**（`check-fix-instances`） | **不得写 `CLOSED`** |
 | `--gate release` | **交给用户之前** | 状态自洽、框架规则未被改坏 | **报告不得交付** |
 
 ```bash
@@ -975,14 +975,33 @@ node tools/gate.mjs --gate dispatch --payload <task.json> --ledger <attempt.json
 # 收到返回后
 node tools/gate.mjs --gate accept --artifact <产物.md> --role sweep --repo <被审仓库>
 
-# 声明 CLOSED 前
-node tools/gate.mjs --gate close --state <state.json> --round-dir <round{N}>
+# 声明 CLOSED 前 —— 四个参数缺一不可
+node tools/gate.mjs --gate close \
+  --state <state.json> --round-dir <round{N}> \
+  --artifacts <OUTDIR>/round{N} --ledger <OUTDIR>/round{N}/round{N}-ledger.md \
+  --report <OUTDIR>/round{N}/round{N}-final-report.md
 
 # 交付前
 node tools/gate.mjs --gate release --state <state.json>
 ```
 
-**四道门都是强制的，不得跳过。** 退出码 `0` 放行 / `1` 拒绝 / `2` 用法错误。
+> **2026-11-20 修订：close 门从 2 项检查扩到 4 项，参数也随之变多。**
+>
+> 加的两项是 `check-disposition-coverage`（每条发现是否都被表态过一次）与
+> `check-fix-instances`（裁决为 UPHELD 的是否都真的进入了修复登记）。
+> **它们是整套框架里唯一能拦住「38 条发现只修 6 条、框架全程无工具报错」的机制**
+> （见 `experiments/hilltop-dsh/FIX-R1-R18-SUMMARY.md:10`），而在此之前它们
+> **不在任何门上**——`grep -c "disposition" tools/gate.mjs` 是 0。
+>
+> 参数缺失时 close 门判 **FAIL 而不是跳过**。理由：允许「不给参数就自动通过」
+> 等于给出一条不检查也能收口的路径，而那正是 `stop-hook.mjs` 记过的失效形态
+>（豁免条目数 ≥ 待检总数 → 全量豁免 = 关掉检查）。
+>
+> **这条修订本身也踩过一次坑**：工具改了要求，本文档的调用示例没跟着改，
+> 于是照旧示例跑必然被拒——这正是 `output-contract/audit.md:180` 记过的
+>「校验器比契约严，子 Agent 照契约写会被判违规」。已同步。
+
+**四道门都是强制的，不得跳过**——由 `tools/gate.mjs` 强制执行。退出码 `0` 放行 / `1` 拒绝 / `2` 用法错误。
 
 > **为什么需要门而不是脚本**：2026-11-09 对比 `dsh-superagent` 后确定。它把「字段缺失」做成**工具调用失败**——
 > 错误在产生那一刻被挡住，不是靠「记得检查」。我们的 13 个脚本全是「记得要跑」。

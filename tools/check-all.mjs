@@ -283,6 +283,21 @@ const CHECKS = [
     script: 'verify-postfix-snapshot.test.mjs',
     desc: '用例：漏补点名 / 快照过期内容不同 / 多余文件仅 WARN / 空快照 exit 2 / 未跟踪目录展开 / --exclude 不误伤源码',
   },
+  {
+    name: '门禁文档同步（gate.mjs 参数 vs protocol.md 示例）',
+    // 2026-11-20 补：给 close 门加了两个强制检查、参数从 2 个变成 5 个之后，
+    // protocol.md §1.8.1 的调用示例没跟着改 —— **照文档跑必然被拒**。
+    //
+    // 这正是 components/output-contract/audit.md:180 记过的形态：
+    // 「校验器比契约严，结果是子 Agent 照契约写会被判违规」。
+    // 上次是靠人发现的，但这类漂移只要工具改一次参数就会重演一次。
+    //
+    // 这条注册的是自测：它内部有一条 case 用「改之前的 protocol.md」回放，
+    // 必须报出 3 个缺失参数。只在当前仓库上报绿的工具没有价值——
+    // 那可能只是它什么都没查。
+    script: 'check-gate-doc-sync.test.mjs',
+    desc: '用例：当前仓库一致 / 删必需参数被抓 / 旧文档回放被抓 3 项 / 未知参数被抓 / 未知门被抓 / 两份输入结构坏掉须 exit2',
+  },
 ];
 
 let failed = 0;
