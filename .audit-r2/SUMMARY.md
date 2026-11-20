@@ -452,3 +452,48 @@ Agent 报告称这 3 条是「引用了审计之后才提交的修复代码」�
 - P2 wrapper 与校验器对撞（`fix-worker.md:76` 说四字段、契约要 `disposition`）
 - P4 `spawned_agents` 死字段（`protocol.md:1040` 定义、`:1067` 当闭合条件、tools 里 0 命中）
 - P3 `--fail-on-regress` 恒 false（`check-rule-ledger.mjs:337`）
+
+---
+
+## 十一、第二轮续（2026-11-20 晚）—— 把「接错了地方」修掉
+
+第十节列的未修项里，P1 与 P2 已处理。
+
+| commit | 内容 |
+|---|---|
+| `61512bf` | wrapper 与契约对撞：照 wrapper 写产物必定被打回（fix 缺 disposition、audit 说空数组合法） |
+| `f660a16` | `--fail-on-regress` 死代码修活 + `--quiet` 从未生效 |
+| `6d2d7d0` | 发现去向检查器能吃真实产物 + 接进 close 门 |
+
+### 修的三类「声明了但没接上」
+
+这一轮反复撞见同一个形态，值得单独记：
+
+1. **`--fail-on-regress` 恒为 false**。判据写成 `noExit > totalSentences - totalWithExit`，
+   而 `noExit` 的定义就是这个差值。参数存在、文档宣称可用、**永远不生效**。
+2. **`--quiet` 解析后从未被引用**。同上，只是更无声。
+3. **两个最关键的检查器不在任何门上**。`check-disposition-coverage` 与
+   `check-fix-instances` 是唯一能拦住「38 条发现只修 6 条」的机制，
+   而 `gate.mjs` 的 close 门里 `grep -c "disposition"` 是 **0**。
+
+共同点：**代码是好的，只是没有地方调用它。** 这与第一轮修的「门 0 被正则绕过」
+是反方向的两极——那边是执行了但判据坏，这边是判据好但没执行。
+`check-all` 36 个套件里 29 个是自测，理由正当（它验证校验器在合成 fixture 上对不对），
+但代价是「全部通过」这句话对真实审计的证明力接近零。
+
+### 一处我一开始修错的
+
+`check-disposition-coverage` 里我先按**文件名**排除交付物
+（`final-report` / `readme` / `unfixed`…），结果 `.run-hv/AUDIT-REPORT.md`
+没被排除——真实文件名是 `-REPORT` 不是 `-final-report`。
+
+枚举文件名这个思路本身就是错的：真实审计里交付物的命名千变万化。
+改成按**内容**判断（出现 finding 的数据形状才要求信封），并补上表格形态
+（`| S01-F1 | HIGH |`）——真实清单常是表格，早期只认 JSON 键会漏掉它们，
+而那些漏掉的正好是「描述了 finding 却没信封」的文件，它们会静默逃出分母。
+
+### 仍未修
+
+- `check-fix-instances` 对真实产物 exit 2，缺口不在工具而在**报告真的没有裁决索引表**。
+  这需要下一轮审计按契约产出，不是改代码能解决的。
+- `check-rule-ledger` 的 artifact 出口仍占 41%（真假混在一起，不可用于决策）。
