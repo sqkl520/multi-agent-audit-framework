@@ -21,8 +21,24 @@ experiments/*/proto/out/fulltree/
 experiments/*/*/post-fix/
 experiments/*/*/project/
 
-# dsh 驱动运行期生成的 patch（含真实上游地址，绝不入库）
-.patch-resolved-*.yml
-.run-dsh*/*.log
-driver*.log
-driver-iter-*.log
+# ── 工作产物目录（2026-11-21 按 D:\Projects\docs\PROJECT-RULES.md 整改）──
+#
+# 规则 1.4「根目录不允许散落文件」+ 1.1「工作区和仓库分开」。
+#
+# 这三个目录是**某一次审计运行的输入/输出**，不是框架本身：
+#   .run-hv/     一次 Hilltop Village 审计的产物（71 个文件）
+#   .run-dsh3/   一次 dsh 原生运行的产物（100 个文件）
+#   .audit-r2/   一次框架自审的报告（11 个文件）
+#
+# 合计 182 个文件曾进过公开仓库。它们的问题不是"不该存在"，
+# 而是**不该在仓库里**：仓库发布的是框架，框架的产物属于工作区。
+#
+# 值得长期保留的部分已经整理进 docs/reports/：
+#   docs/reports/2026-11-20-framework-audit-round2.md
+#   docs/reports/2026-11-20-dsh-native-run.md
+#
+# 今后同类运行产物一律写在工作区层（仓库外），见 README「运行产物放哪里」。
+.run-*/
+.audit-*/
+.probe-*/
+

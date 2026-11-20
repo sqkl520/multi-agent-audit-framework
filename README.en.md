@@ -102,6 +102,7 @@ The concatenation **order** must be `evidence-policy` → `output-contract` → 
 | The Arbiter says the evidence is insufficient, but I don't want to collect more | That finding just stays hanging. There is no "insufficient evidence, fix it anyway" path in this framework |
 | I want to change the threshold (concurrency 8 → 16) | Two places must change: the table in section 3 of `scale-mapping.md` plus the guardrail in section 6 of `protocol.md`, then sync `MANUAL.md` |
 | Can it really guarantee the fixes are correct? | **No.** See "Capabilities" below |
+| Where do the audit's output artifacts go? | **Outside the repo.** The framework is the repo's content; one audit run's output is not. Write it under `.work/`, `logs/` in the workspace layer, or any directory outside the repo — `.run-*/`, `.audit-*/`, `.probe-*/` are already blocked in `.gitignore` |
 
 ## 🔒 Capabilities (read this first)
 
@@ -229,6 +230,7 @@ When reporting a bug, please include: the reproduction command, expected vs actu
 | [`framework/README.md`](framework/README.md) | Master document: why each design decision was made this way |
 | [`framework/PORTABILITY.md`](framework/PORTABILITY.md) | Porting across harnesses |
 | [`experiments/review-7/`](experiments/review-7/) | The full post-mortem of that "all gates green yet 5 defects" run |
+| [`docs/reports/`](docs/reports/) | Framework self-audit reports and the native dsh run record |
 
 ## Honest notes
 

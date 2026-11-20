@@ -1,6 +1,0 @@
-[
- { "agent_id": "a7ccb769-a8ac-4b37-91b4-b61eb6f70068", "slice_id": "slice-01", "task": "sweep", "started_at": "2026-11-20T21:00:00Z" },
- { "agent_id": "b119b9aa-9e4f-401d-885a-28a716350d1c", "slice_id": "slice-02", "task": "sweep", "started_at": "2026-11-20T21:00:00Z" },
- { "agent_id": "37421d55-6a83-4bb8-b3d3-c8adda50fd6d", "slice_id": "slice-03", "task": "sweep", "started_at": "2026-11-20T21:00:00Z" },
- { "agent_id": "0b00fb55-b64c-47ff-9c24-360da051b539", "slice_id": "slice-04", "task": "sweep", "started_at": "2026-11-20T21:00:00Z" }
-]

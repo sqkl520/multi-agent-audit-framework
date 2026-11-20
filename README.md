@@ -50,7 +50,7 @@
 git clone https://github.com/sqkl520/multi-agent-audit-framework.git
 cd multi-agent-audit-framework
 
-# 跑全部机械校验（约 40 个自测套件）
+# 跑全部机械校验（约 41 个自测套件）
 node tools/check-all.mjs
 ```
 
@@ -96,6 +96,7 @@ def spawn_agent(role, template, extra):
 | Arbiter 说证据不足，但我不想补采 | 那条发现只能悬着。框架里没有「证据不足也先修了再说」的路径 |
 | 想改阈值（并发 8 → 16） | 要改两处：`scale-mapping.md` 第 3 节的表 + `protocol.md` 第 6 节的护栏，然后同步 `MANUAL.md` |
 | 它真的能保证修得对吗？ | **不能。** 见下方「能力边界」 |
+| 审计跑出来的产物放哪？ | **放仓库外。** 框架是仓库内容，某一次审计的产物不是。写在工作区的 `.work/`、`logs/` 下，或任何仓库外目录——`.run-*/`、`.audit-*/`、`.probe-*/` 已在 `.gitignore` 里拦住 |
 
 ## 🔒 能力边界（先读这个）
 
@@ -135,7 +136,7 @@ def spawn_agent(role, template, extra):
 | 层 | 用了什么 |
 |---|---|
 | 框架本体 | Markdown 提示词 + JSON 契约（`framework/`）|
-| 校验器 | 零依赖 Node.js（`tools/*.mjs`，40 个自测套件）|
+| 校验器 | 零依赖 Node.js（`tools/*.mjs`，41 个自测套件）|
 | 状态机 | `state.json` 落盘，中断可续跑 |
 | 证据链 | 门 0：每条发现必须逐字回显本回合读到的 `file:line` |
 
@@ -182,7 +183,7 @@ else:
 |---|---|
 | 四波次只读路径 + 报告 | ✅ 完成 |
 | 修复 / 验收独立路径 | ✅ 完成 |
-| 机械校验套件（40 个） | ✅ 全绿 · CI 三平台通过 |
+| 机械校验套件（41 个） | ✅ 全绿 · CI 三平台通过 |
 | 契约三层闭环（模板/契约/校验器） | ⚠️ 部分 —— 出口率 21.7%（严格口径 11.4%）|
 | 规则 → 校验器对账工具 | ✅ 已上线（仪表，不是闸门）|
 | 中英双语门面 | ✅ README + 社区文件 |
@@ -224,6 +225,7 @@ CI 配置见 [`.github/workflows/checks.yml`](.github/workflows/checks.yml)，
 | [`framework/README.md`](framework/README.md) | 总纲：每条设计为什么这样定 |
 | [`framework/PORTABILITY.md`](framework/PORTABILITY.md) | 跨 harness 移植 |
 | [`experiments/review-7/`](experiments/review-7/) | 那次「闸门全绿却有 5 条缺陷」的完整复盘 |
+| [`docs/reports/`](docs/reports/) | 框架自审报告与 dsh 原生运行记录 |
 
 ## 诚实说明
 
