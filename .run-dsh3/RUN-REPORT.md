@@ -1,118 +1,100 @@
 # dsh 原生运行记录（2026-11-20）
 
-**运行方式**：`dsh --profile headless --patch .run-dsh3/patch.yml "$(cat task.md)"`
-**上游**：`http://<your-upstream>:33000`，模型 `virtual/opus`，`anthropic-messages` API
-**dsh 版本**：0.2.1-rc.2（`~/.dsh-win/versions/0.2.1-rc.2`）
-**目标**：Hilltop Village（Paper 1.21.4，75 个 Java 主源文件）
-**说明**：主线程只发起调用与读结果，**全部实际工作由 dsh 派子 Agent 完成**。
+**方式**：`dsh 0.2.1-rc.2` 原生跑，主线程只发起调用与读结果。
+**目标**：Hilltop Village（Paper 1.21.4，75 个 Java 主源文件 / 34,954 行）
 
 ---
 
-## 一、跑了什么
+## 一、三段式：人工 → 守卫 → 驱动
 
-| 轮次 | 命令 | 结果 |
+| 阶段 | 手段 | 结果 |
 |---|---|---|
-| 第 1 次 | `task.md`（完整审计任务） | 侦察 + 26 份宽扫完成，**父进程在深挖进行中退出**（21:30），4 个深挖产物全部丢失 |
-| 第 2 次 | `task-resume.md`（续跑） | 4 份深挖 + 1 份最终报告落盘，**未执行锐评** |
+| 第 1 次 | `task.md` | 侦察 + 26 份宽扫完成，**父进程在深挖中退出**，4 份产物全丢 |
+| 第 2 次 | `task-resume.md`（人工写续跑书） | 4 份深挖 + 1 份报告，**锐评波完全没跑**，报告多处占位符 |
+| 第 3 次 | `dsh-driver.mjs`（自动驱动，上限 3 轮） | **一轮跑到位**：phase 从 `wave2b/RUNNING` → `closed/PARTIALLY_CLOSED` |
 
-### 第 1 次为什么中断
-
-dsh 主 Agent 在派了 4 个深挖 Agent 之后输出「End turn」结束回合，
-**父进程随即退出**。4 个深挖子 Agent 在 21:25–21:29 还在写入，21:30 父进程已终止。
-
-框架自己的会话审计工具在事后确认了这个形态：
-
-```
-$ node tools/dsh-session-audit.mjs --sessions ~/.dsh/sessions --project "<本项目>" | tail
-结论：发现 10 个问题
-  [parent_missed_child] 子 agent 有产出，但父 session 里没有对应的 subagent-settled 注入
-  ...（共 9 次）
-  [turn_without_output] 开了 1 个 turn，但 0 条 assistant 消息
-```
-
-**子 Agent 有产出，但父 session 没收到通知。** 这正是框架里
-`dsh-session-audit.mjs` 存在的原因，此前只在合成 fixture 上验证过，这是第一次在真实运行中抓到。
+第 3 次是这次的重点：前两次都是人写续跑书、人判断该不该停；
+第 3 次是脚本自己读 `state.json` 判断相位没闭合，自己生成「还差什么」再跑。
 
 ---
 
-## 二、产出清单
+## 二、最终结果
 
 ```
-.run-dsh3/artifacts/
-  round1-01-recon-slices.md        33 KB   侦察，26 个切片，75/75 文件全覆盖
-  round1-02-sweep-slice-*.md       26 份   宽扫（22 片完成，4 片预算截断）
-  round1-02-audit-slice-15/20/21/24  4 份 深挖
-  round1-final-report.md            5 KB   最终报告（含占位符）
-  state.json                              账本
+26/26 切片全部宽扫 · 75/75 文件被读 · 14 片进入深挖
+机械复核 0 FAIL / 门 0 回显 185/185 通过
+23 条发现进入锐评 → 22 条裁决 + 1 条 EVIDENCE_GAP
+终裁：17 UPHELD / 5 DOWNGRADED / 0 REVOKED，其中 3 条 HIGH 维持
 ```
+
+### 框架校验器的判定
+
+```
+$ node tools/verify-artifacts.mjs --repo <HV> --artifacts .run-dsh3/artifacts
+扫描产物: 50 个文件，解析出 48 个信封
+✓ PASS [G0] 门 0 回显: 185/185 通过（0 条 quote 与源文件不符）
+✓ PASS [G4] 账本对账: 47 条派发记录、4 条裁量记录，0 处不一致
+合计: 0 FAIL / 9 WARN / 5 PASS / 0 SKIP
+
+$ node tools/check-deliverables.mjs --round-dir .run-dsh3/artifacts
+✓ [D2]  覆盖率有明确数值且自洽: 14/156 = 9.0%
+✓ [D2b] 证据覆盖率 100%
+✓ [D3]  账本四节必备齐全
+合计: 0 FAIL / 0 WARN / 8 PASS
+```
+
+对比三段进展：
+
+| 指标 | 第 1 次 | 第 2 次 | 第 3 次（驱动） |
+|---|---|---|---|
+| 门 0 通过 quote | — | 135/135 | **185/185** |
+| 深挖产物 | 0（全丢） | 4 | **14** |
+| 锐评产物 | 0 | 0 | **6**（含 Arbiter） |
+| 裁决数 | 0 | 0 | **22** |
+| 报告占位符 | — | 多处 | **0** |
+| 交付物检查 | — | 2 FAIL | **0 FAIL** |
 
 ---
 
-## 三、框架校验器的判定（真实产物，第一次）
+## 三、锐评波做了什么（这是第 2 次完全缺失的）
 
-### `verify-artifacts.mjs`：机械校验全部通过
-
-```
-扫描产物: 28 个文件，解析出 27 个信封
-! WARN [G0] 有 1 个非 .md 文件未被检查（state.json）
-✓ PASS [G0] 门 0 回显: 135/135 通过（0 条 quote 与源文件不符，0 条缺 line，0 条文件不可读）
-✓ PASS [G1] files_read: 103 条路径，0 条不存在；切片覆盖缺 0 条
-✓ PASS [G2] artifact_path: 27 个 SUCCESS 信封，0 个缺路径/不存在/空文件/复用
-✓ PASS [G5] 自述数字自洽: 45 项检查，0 项不一致
-✓ PASS [G7] 声明范围与证据范围一致（4 份产物）
-✓ PASS [G8] line_count: 26 个切片，0 个与实测不符
-合计: 0 FAIL / 1 WARN / 7 PASS / 0 SKIP
-```
-
-**门 0 135/135 逐字通过。** 这是对比 `.run-hv`（上一轮真实审计，45 条里 32 条通过）
-的显著改善——那次是 `.json` 产物、10/10 报 `no_json_envelope`。
-
-> 注意：那条 WARN 正是上一轮修的那个缺陷——`state.json` 被跳过时现在**会报出来**，
-> 而不是从统计里消失。
-
-### `check-deliverables.mjs`：2 项 FAIL
+22 条终裁，其中 5 条被 DOWNGRADED。抽样：
 
 ```
-✗ [D1] 必交付文件缺失: round1-ledger.md
-✗ [D2b] 最终报告缺「证据覆盖率」——唯一能暴露「派了但没查」的指标
-! [D2] 覆盖说明里没找到「N/N = xx%」形式的覆盖率
-✓ [D1] round1-final-report.md 存在
-✓ [D2] 最终报告七节齐全（10 个二级标题）
-✓ [D4] 目录内所有文件都有规范归属
-合计: 2 FAIL / 1 WARN / 4 PASS
+F-slice-20-concurrency-01  DOWNGRADED
+  Skeptic 判 untested：守卫缺失是可核事实，但「禁用窗口内 show() 仍可达」
+  缺调用链与运行时证据，按判定树 untested 不得 UPHELD。
+  升级所需证据：禁用期内调用 show() 的具体入口
+
+F-slice-21-concurrency-01  DOWNGRADED
+  Skeptic 判 holds 但已把「永久残留」收窄为「本次会话内残留」，
+  且禁用路径存在兜底清理。后果从跨重启持久污染降为会话内短暂残留，
+  影响面明显变窄，MEDIUM 过高，降为 LOW。
 ```
 
-### `check-payload.mjs`：深挖产物合规，报告不合规
-
-- `round1-02-audit-slice-15-concurrency.md --role audit` → **✅ 契约合规**
-- `round1-final-report.md` → `[no_json_envelope]`
+**这是框架第三波设计意图的实证**：DOWNGRADED 不是「判错了」，
+是「原来的措辞承诺了比证据更多的东西」。降级理由必须写清依据。
 
 ---
 
-## 四、发现质量抽查（我逐条核对了源文件）
+## 四、发现质量（我逐条核对了源文件）
 
-12 条 finding（HIGH 1 / MEDIUM 4 / LOW 4 / null 3）。
-
-### 那条 HIGH 是真的
+那条维持 HIGH 的：
 
 ```
-finding_id  F-slice-15-concurrency-01
-file:line   src/main/java/com/hilltopvillage/core/PlayerGoodsManager.java:478
-quote       Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> writeYaml(yaml, seq));
+F-slice-15-concurrency-01
+file:line  core/PlayerGoodsManager.java:478
+quote      Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> writeYaml(yaml, seq));
 ```
 
-我打开源文件核对：
+源文件核对（478 行逐字一致），且 claim 提到的 422 行 `yaml.saveToString()` 确实存在：
 
 ```
 $ sed -n '476,480p' .../PlayerGoodsManager.java
         final YamlConfiguration yaml = buildYaml();
         final long seq = nextWriteSeq();
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> writeYaml(yaml, seq));
-```
 
-**478 行逐字一致。** 而 claim 里提到的 422 行 `yaml.saveToString()` 也确实存在：
-
-```
 $ sed -n '420,424p' .../PlayerGoodsManager.java
                 if (seq != writeSeq.get()) return;
                 payload = yaml.saveToString().getBytes(StandardCharsets.UTF_8);
@@ -120,63 +102,82 @@ $ sed -n '420,424p' .../PlayerGoodsManager.java
             Files.write(tmp.toPath(), payload);
 ```
 
-缺陷成立：`flushToDisk()` 把整个 `writeYaml` 丢到异步线程，而 `writeYaml` 内部在 422 行
-执行 `yaml.saveToString()`——含 `ItemStack` 的 Bukkit 配置对象在异步线程被序列化，
+缺陷成立：含 `ItemStack` 的 Bukkit 配置对象在异步线程被序列化，
 违反本类 336–341 行自己声明的「序列化留在主线程」。
-
-另两条（`saveNow()` 同步取锁被异步写阻塞、`System.currentTimeMillis()` 非单调做超时）
-推理同样扎实，门 0 引用也能对上。
 
 ---
 
-## 五、这轮没做到的
+## 五、根因：dsh 没有 Stop hook
 
-| 项 | 状态 | 原因 |
+第 1 次为什么丢产物：
+
+```
+主 Agent: 派 4 个深挖 Agent
+主 Agent: 「Let me wait for audits. End turn.」
+→ 父进程退出
+→ 子 Agent 21:25–21:29 还在写，21:30 父进程已死
+```
+
+根因写在 `stop-hook.mjs` 文件头，框架自己早就知道：
+
+> Agent 循环的退出条件是「本轮回复里没有 tool call」。
+> 「我已完成 X，接下来做 Y」这段话天然没有 tool call，所以写出来就交差了。
+
+Claude Code 有 Stop hook 能拦住这一刻。**dsh 没有**——
+`--dump-config` 里没有 hook 类插件，schema 里也没有。
+
+`dsh-session-audit.mjs` 事后抓到了（`parent_missed_child` × 19），
+但那是事后审计，不是事前阻止。
+
+### 两个补丁，一后一反
+
+| 工具 | 时机 | 做什么 |
 |---|---|---|
-| 锐评波（skeptic / devils_advocate / arbiter） | **完全没跑** | 第 2 次运行在 4 份深挖后直接写了报告 |
-| 最终报告完成度 | 多处占位符 | `§2.2 证据覆盖率`、`§3 发现汇总`、`§5 零写入自证`、`§D 未深挖线索` 全是「（收尾填）」 |
-| `round1-ledger.md` | 缺失 | — |
-| 4 个切片宽扫 | DEFERRED | 预算截断（slice-17/18/19/23） |
-| 19 个切片深挖 | 未做 | 只挑了 7 片 |
+| `dsh-run-guard.mjs` | **事后** | R1 派发数对落盘数 / R2 骨架残留 / R3 必需相位缺失 / R4 会话层漏收 |
+| `dsh-driver.mjs` | **事前** | 跑一轮 → 读 state.json 看相位闭合没有 → 没闭合带着「还差什么」再跑 |
 
-### 它自己申报的一条 L0 违规
+驱动的判据用**双信号**：`phase`/`status` + 产物文件数。
+只看 status 会被「说 RUNNING 但什么都不做」骗过去；只看产物会被「加了个空文件」骗过去。
+连续两轮两者都不变 → 判 `STALLED` 停，不硬跑到上限。
 
-报告 §4 里如实写了：
+---
+
+## 六、它自己申报的一条 L0 违规
+
+报告 §4 如实写了：
 
 > **并发上限突破** `L0_VIOLATION`：峰值 **6** 个并发（上限 4）：
 > 主 Agent 用「产物已落盘」当作「agent 已终态」补位
 
-**这是它在没有任何工具拦它的情况下自己发现并记录的。**
-框架的 `scale-mapping.md` 写了并发上限，但没有任何校验器读它——
-这条违规是被"自觉"抓住的，不是被机器抓住的。
+框架写了并发上限（`scale-mapping.md`），但**没有任何校验器读它**。
+这条违规是被「自觉」抓住的，不是被机器抓住的。
 
 ---
 
-## 六、结论
+## 七、仍未闭合
 
-**dsh 能跑这套框架，而且跑出了真实发现。**
-
-三条真缺陷（异步序列化 Bukkit 对象、锁竞争抵消异步收益、非单调时钟做超时）
-门 0 引用逐字可核，不是编造。
-
-**但它跑不完。** 两个卡点，都不是框架规则的问题，是 harness 的问题：
-
-1. **父进程在子 Agent 未落盘时退出**。第 1 次运行因此丢了 4 份深挖产物。
-   框架的 `dsh-session-audit.mjs` 抓到了（`parent_missed_child` × 9），
-   但那是**事后审计**，不是事前阻止。
-2. **没有「回合未闭合就拒绝结束」的机制**。`stop-hook.mjs` 写了相位守卫，
-   但没有接到 dsh 上。主 Agent 说「End turn」，进程就走了。
-
-换句话说：**这套框架对"Agent 做错事"有 37 道检查，对"harness 提前结束"一道也没有。**
+| 项 | 状态 |
+|---|---|
+| 维度覆盖率 14/156 = 9.0% | 26 片里只有 14 片做了单维度深挖，`logic` 维到后期才补 |
+| 会话层 `parent_missed_child` × 19 | dsh 的固有问题，驱动只能补跑，不能消除 |
+| `check-fix-instances` | 需报告含裁决索引表——现在有了，但还没跑这一项验证 |
+| 修复相位 | 按设计不在默认路径，需用户授权 |
 
 ---
 
-## 附：复现命令
+## 附：复现
 
 ```bash
-DSH=~/.dsh-win/versions/0.2.1-rc.2/node_modules/@deepseek-ai/dsh/lib/bin.js
-AUDIT_API_KEY='<key>' node "$DSH" --profile headless \
-  --patch .run-dsh3/patch.yml "$(cat .run-dsh3/task.md)"
-```
+# 上游地址运行期注入（仓库里只有 <your-upstream> 占位符）
+DSH_UPSTREAM_BASEURL=http://<你的端点>:33000 \
+AUDIT_API_KEY=<你的key> \
+node tools/dsh-driver.mjs \
+  --patch .run-dsh3/patch.yml \
+  --task .run-dsh3/task.md \
+  --artifacts .run-dsh3/artifacts \
+  --max-iterations 3
 
-续跑用 `task-resume.md`（它会先读 state.json 与已有产物，不从头重跑）。
+# 跑完看丢了什么
+node tools/dsh-run-guard.mjs --artifacts .run-dsh3/artifacts \
+  --sessions ~/.dsh/sessions --project "<项目目录名>"
+```
