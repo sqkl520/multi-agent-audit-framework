@@ -139,5 +139,35 @@ console.log('case 7: --strict 时 WARN 也算失败');
   rmSync(dir, { recursive: true, force: true });
 }
 
+console.log('case 8: 引用他人产物里的占位符不算骨架');
+{
+  // 2026-11-20 实测：round1-03-critique-skeptic-a.md:214 引用了旧报告里的
+  // 「（收尾时填）」，那是**正确的审计行为**（它在批评上游产物是半成品），
+  // 却被守卫判成「这份产物是骨架」。
+  // 判据要区分「自己是骨架」与「在说别人是骨架」。
+  const dir = mk({
+    'round1-01-recon-slices.md': '# recon\n' + ENV,
+    'round1-02-sweep-slice-01.md': '# sweep\n' + ENV,
+    'round1-03-critique-skeptic.md': '# critique\n\n'
+      + '> 该报告同时含未填占位符（`:15`「（收尾时填）」），属半成品。\n',
+  });
+  const r = run(dir);
+  const r2 = (r.data?.results ?? []).find((x) => x.id === 'R2');
+  expect('R2 为 PASS', r2?.level === 'PASS', JSON.stringify(r2));
+  rmSync(dir, { recursive: true, force: true });
+}
+
+console.log('case 9: 自己正文里的占位符仍算骨架');
+{
+  const dir = mk({
+    'round1-01-recon-slices.md': '# recon\n' + ENV,
+    'round1-03-critique-skeptic.md': '# critique\n\n## 结论\n\n（收尾时填）\n',
+  });
+  const r = run(dir);
+  const r2 = (r.data?.results ?? []).find((x) => x.id === 'R2');
+  expect('R2 为 FAIL', r2?.level === 'FAIL', JSON.stringify(r2));
+  rmSync(dir, { recursive: true, force: true });
+}
+
 console.log(`\n=== 结果: ${pass} 通过 / ${fail} 失败 ===\n`);
 process.exit(fail > 0 ? 1 : 0);

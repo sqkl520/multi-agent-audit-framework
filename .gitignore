@@ -20,3 +20,9 @@ experiments/*/proto/out/snapshot/
 experiments/*/proto/out/fulltree/
 experiments/*/*/post-fix/
 experiments/*/*/project/
+
+# dsh 驱动运行期生成的 patch（含真实上游地址，绝不入库）
+.patch-resolved-*.yml
+.run-dsh*/
+driver*.log
+driver-iter-*.log

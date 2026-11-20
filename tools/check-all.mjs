@@ -312,7 +312,20 @@ const CHECKS = [
     // 这个守卫补上事后能查的那一道：
     //   R1 派发数 vs 落盘数 / R2 骨架残留 / R3 必需相位缺失 / R4 会话层漏收。
     script: 'dsh-run-guard.test.mjs',
-    desc: '用例：完整相位放行 / 无锐评+占位符被抓 / 深挖全丢被抓 / 无 spawned_agents 须 SKIP / 空目录须 exit2 / --strict 语义',
+    desc: '用例：完整相位放行 / 无锐评+占位符被抓 / 深挖全丢被抓 / 无 spawned_agents 须 SKIP / 空目录须 exit2 / --strict 语义 / 引用占位符不算骨架',
+  },
+  {
+    name: 'dsh 外层驱动（dsh 没有 Stop hook，只能从外面驱动相位闭合）',
+    // 2026-11-20：实测 dsh 0.2.1-rc.2 没有 Stop hook，主 Agent 说 End turn
+    // 父进程就退出，未落盘的产物全丢。框架 §0.8.2 写了「相位之内不许停」，
+    // 但那只能靠执行者自觉——dsh 上没有任何东西保证它。
+    //
+    // 驱动从外面做 Stop hook 本该做的事：跑一轮 → 读 state.json 看相位闭合没有
+    // → 没闭合就带着「还差什么」再跑。判据用 phase/status + 产物数（双信号）：
+    // 只看 status 会被「说 RUNNING 但什么都不做」骗过去，
+    // 只看产物会被「加了个空文件」骗过去。
+    script: 'dsh-driver.test.mjs',
+    desc: '用例：一次闭合即停 / 无进展判 STALLED / 有产物不算空转 / 起始已闭合不跑 / PARTIALLY_CLOSED 也算闭合 / 占位符未注入须 exit2',
   },
 ];
 

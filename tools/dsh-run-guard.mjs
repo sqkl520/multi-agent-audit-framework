@@ -122,19 +122,39 @@ if (existsSync(statePath)) {
 //
 // 实测：slice-20/21/22 中途出现过「尚未开始」的骨架产物。
 // 骨架被当成交付物是最坏的一类——它**看起来有产物**，内容却是空的。
+//
+// 2026-11-20 修正：不能只看出不出现占位符。
+// 锐评 Agent 会**引用**别的产物里的占位符（「该报告同时含未填占位符
+// （`:15`「（收尾时填）」）」），那是正确的审计行为，不是骨架。
+// 判据要区分「自己是骨架」与「在说别人是骨架」：
+//   - 占位符出现在**引用块**（> 开头）或**行内引号/反引号包裹**里 → 是在引用，不算
+//   - 占位符出现在普通正文里 → 是骨架
 const PLACEHOLDER = /（收尾时填）|（收尾填）|（锐评后填）|（待填）|（待补）|尚未开始|未开始|TODO:|TBD\b/;
 const skeleton = [];
 for (const f of mdFiles) {
-  const text = readFileSync(join(ARG.artifacts, f), 'utf8');
-  const m = text.match(PLACEHOLDER);
-  if (m) skeleton.push({ file: f, hit: m[0] });
+  const lines = readFileSync(join(ARG.artifacts, f), 'utf8').split('\n');
+  let hit = null;
+  for (const raw of lines) {
+    const m = raw.match(PLACEHOLDER);
+    if (!m) continue;
+    // 引用块：整行以 > 开头
+    if (/^\s*>/.test(raw)) continue;
+    // 行内引用：占位符紧邻的字符里有引号/反引号包裹
+    const idx = raw.indexOf(m[0]);
+    const before = raw.slice(Math.max(0, idx - 6), idx);
+    const after = raw.slice(idx + m[0].length, idx + m[0].length + 6);
+    if (/[「"'`]$/.test(before) || /^[」"'`]/.test(after)) continue;
+    hit = m[0];
+    break;
+  }
+  if (hit) skeleton.push({ file: f, hit });
 }
 if (skeleton.length > 0) {
   const shown = skeleton.slice(0, 5).map((s) => `${s.file}（${s.hit}）`).join('、');
   add('FAIL', 'R2', `${skeleton.length} 份产物含未填占位符：${shown}`
-    + `${skeleton.length > 5 ? ' …' : ''}——**骨架不是交付物**`, { files: skeleton });
+    + `${skeleton.length > 5 ? ' …' : ''}——**骨架不是交付物**（引用他人产物的占位符不计）`, { files: skeleton });
 } else {
-  add('PASS', 'R2', `${mdFiles.length} 份产物均无未填占位符`);
+  add('PASS', 'R2', `${mdFiles.length} 份产物均无未填占位符（引用他人产物里的占位符已排除）`);
 }
 
 // ── R3 · 相位缺失 ──
