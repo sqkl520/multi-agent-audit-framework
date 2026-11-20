@@ -232,7 +232,16 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role <你�
 
 > **这条的普适教训**：「我做了但没找到」和「我什么也没做」在产物上必须可区分。任何允许「空结果」的契约，都必须同时要求**证明搜索过程**的证据——否则空结果就是免罪符。
 
-**`findings` 数组的最小长度**：如果审计Agent在切片中**没有发现任何有证据支撑的问题**，`findings` 仍然必须包含**至少一个条目**，其 `status` 为 `NO_EVIDENCE_FOUND`，并在 `evidence` 中写明 `searched_scope` 和 `searched_methods`。空数组一律视为 `CONTRACT_VIOLATION`，因为”没查”和”查了没发现”在契约上必须可区分。
+**`findings` 数组的最小长度**：如果审计Agent在切片中**没有发现任何有证据支撑的问题**，`findings` 仍然必须包含**至少一个条目**，其 `status` 为 `NO_EVIDENCE_FOUND`。空数组一律视为 `CONTRACT_VIOLATION`，因为”没查”和”查了没发现”在契约上必须可区分。
+
+> **2026-11-20 修正**：本句此前还写着「并在 `evidence` 中写明 `searched_scope` 和 `searched_methods`」。
+> 那是**错的落点**——`searched_scope` 是 **`payload` 层的对象**（见本节 §2.2 的 schema 与下方「`searched_scope` 的适用规则」），
+> 不是 `evidence` 的字段。`evidence` 只有 `{file, line, quote}` 三项。
+>
+> 两处并存了一个月没有被发现，是因为 `evidence` 形状校验（`evidence_wrong_shape`）见到多余的
+> `searched_scope` 键并不报错，而 `searched_scope` 缺失时校验器报的是「payload.searched_scope 缺失」——
+> **它指的方向是对的，文档却把 Agent 引向 `evidence`**。照这句话写的产物会被判
+> `no_evidence_without_scope`，而修法提示说的是「payload.searched_scope」，Agent 得自己发现文档写错了。
 
 > **2026-11-12 复测：这句话写在这里将近一个月，但校验器一直到今天才真正执行它。**
 >

@@ -79,8 +79,22 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role audit
 
 **两个字段必须写出来，否则产物直接作废**：
 
-- **`findings`**：即使一条都没找到，也要写 `"findings": []`，**不能省略这个键**。空数组是一个结论（「本切片无缺陷」），缺键不是。
+- **`findings`**：**不能省略这个键**。「本切片确认无缺陷」不是用空数组表达，而是**写一个 `status: "NO_EVIDENCE_FOUND"` 的条目**，并填 `searched_scope` + `searched_methods`。
 - **`self_checks`**：`templates/wave2-audit.md` §6 把「标识符对账」「自带自检抽验」「运行时验证」列为三项必做。**这三项的结果必须落在这个字段里**——做了但没写，等于没做：主 Agent 看不到，下游也无法复核。
+
+> **2026-11-20 修正**：`findings` 这一条此前写的是「即使一条都没找到，也要写 `"findings": []`，**不能省略这个键**。空数组是一个结论（「本切片无缺陷」），缺键不是」。
+>
+> 那句是 2026-11 月初的写法，与现行契约**直接相反**。`components/output-contract.md:384` 原文：
+>
+> > `findings` 仍然必须包含**至少一个条目**，其 `status` 为 `NO_EVIDENCE_FOUND`……
+> > **空数组一律视为 `CONTRACT_VIOLATION`**，因为"没查"和"查了没发现"在契约上必须可区分。
+>
+> 实测：照旧表述写 `"findings": []`，`check-payload.mjs --role audit` 报 `[empty_findings]`，退出码 1。
+> 而本节上一段又要求「写完自检、非 0 不得返回」——**照它写的 Agent 会卡死**。
+>
+> 两处表述之所以过期：`NO_EVIDENCE_FOUND` 是后来为了「让『我做了但没找到』和『我什么也没做』可区分」才引入的，
+> 引入时契约改了，这两份 wrapper 没跟。正确的做法从来不是「空数组也是结论」——
+> **空数组恰恰是那条免罪符**，契约专门写过这句教训。
 
 > 契约 §2.2 的原文说明了为什么把 `self_checks` 设成必填：「要求写在模板里，格式里没有位置」曾导致同样的问题——子 Agent 做了主 Agent 也看不到，不做也没人知道。
 

@@ -168,6 +168,48 @@ console.log('case 7: 校验器里的 ROLE_REQUIRED 改了，检查器必须跟�
   }
 }
 
+console.log('case 8: wrapper 声称「只包含 N 个字段」且漏掉必填字段 → 必须报');
+{
+  // 2026-11-20：旧 fix-worker.md:76 写「payload 只包含四个字段」，漏掉 disposition。
+  // 照它写产物 → check-payload 报 missing_disposition，而 wrapper 又要求
+  // 「写完自检、非 0 不返回」——Agent 无法自救。
+  // 关键：ROLE_REQUIRED.fix 里只有 files_touched，只查「字段出现过」的老判据会报
+  // 「强覆盖 1/1，全部通过」。必须把条件必填的 disposition 并进来。
+  const r = runAgainst((wr) => {
+    const p = join(wr, 'fix-worker.md');
+    const t = readFileSync(p, 'utf8');
+    writeFileSync(p, '顶层信封 `role` 必须为 `"fix"`。`payload` 只包含四个字段：'
+      + '`files_touched`、`verification_commands`、`affected_issues`、`residual_risks`。\n');
+  });
+  const hit = (r.data?.problems ?? []).some((p) => p.kind === 'exclusive_field_claim' && p.role === 'fix');
+  expect('报 exclusive_field_claim', hit, JSON.stringify((r.data?.problems ?? []).map((p) => p.kind)));
+}
+
+console.log('case 9: wrapper 说「findings: [] 是一个结论」→ 必须报（与契约相反）');
+{
+  const r = runAgainst((wr) => {
+    const p = join(wr, 'audit-specialist.md');
+    writeFileSync(p, '顶层信封 `role` 必须为 `"audit"`。\n\n'
+      + '- **`findings`**：即使一条都没找到，也要写 `"findings": []`。空数组是一个结论（「本切片无缺陷」）。\n');
+  });
+  const hit = (r.data?.problems ?? []).some((p) => p.kind === 'contradicts_contract' && p.role === 'audit');
+  expect('报 contradicts_contract', hit, JSON.stringify((r.data?.problems ?? []).map((p) => p.kind)));
+}
+
+console.log('case 10: 修正说明块里的引文不得被当成现行规则（防「修完还是红的」）');
+{
+  // 本工具第一版踩的坑：勘误注释逐字引用被推翻的旧原文，检查器读全文
+  // 就把引文当规则，于是修好之后仍然报错。
+  const r = runAgainst((wr) => {
+    const p = join(wr, 'fix-worker.md');
+    const t = readFileSync(p, 'utf8');
+    writeFileSync(p, t + '\n> **2026-11-20 修正**：本节此前写的是「`payload` 只包含四个字段：'
+      + '`files_touched`、`verification_commands`、`affected_issues`、`residual_risks`」。\n');
+  });
+  const hit = (r.data?.problems ?? []).some((p) => p.kind === 'exclusive_field_claim');
+  expect('勘误引文不产生 exclusive_field_claim', !hit, JSON.stringify((r.data?.problems ?? []).map((p) => p.kind)));
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

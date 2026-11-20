@@ -61,6 +61,29 @@ function loadRoleRequired() {
 }
 
 /**
+ * 2026-11-20 补：条件必填字段。
+ *
+ * `ROLE_REQUIRED` 只装**无条件**必填的键，所以它看不到另一种必填：
+ * 由另一个字段的取值决定「这个字段此刻必不必填」。
+ *
+ * 最典型的是 `fix.disposition`——`check-payload.mjs:219` 报 `missing_disposition`，
+ * 意思是**任何 fix 产物缺它都违规**（因为 `disposition` 本身没有默认值）。
+ * 但它不在 `ROLE_REQUIRED.fix` 里（那里只有 `files_touched`），于是 wrapper 覆盖检查
+ * 只核对 `files_touched`，报「强覆盖 1/1、全部通过」——**而 `fix-worker.md` 当时
+ * 明确说「payload 只包含四个字段」，把 `disposition` 排除在外。**
+ *
+ * 两张表对不上，检查就是绿的。这个映射必须手写并注明出处，不能从 ROLE_REQUIRED 推。
+ */
+const ROLE_CONDITIONAL = {
+  // 出处：check-payload.mjs:219 `missing_disposition`
+  // 语义：「每条发现必须表态」，四值闭集，没有默认值 → 对 fix 恒必填
+  fix: ['disposition'],
+  // 出处：check-payload.mjs:1020 `missing_self_check`（audit 恒需三项）
+  // 已在 ROLE_REQUIRED 里，此处仅作示例保留位置
+  audit: [],
+};
+
+/**
  * 把 wrapper 拆成「产物规格区」和「其余部分」。
  *
  * 实测发现：所有 wrapper 的统一结构是
@@ -121,7 +144,40 @@ function coverageOf(field, { productText, allText }) {
   return 'missing';
 }
 
+/**
+ * 剥掉「修正说明」块——引用块里以 **YYYY-MM-DD 修正** 开头的段落。
+ *
+ * 为什么必须剥：勘误注释会逐字引用被推翻的旧原文。检查器若读全文，
+ * 就会把引文当成现行规则，于是**修好之后仍然报错**。
+ * 这不是理论问题——本文件第一版就是这样，改完 wrapper 再跑还是红的。
+ *
+ * 只剥「日期 + 修正/更正/勘误」开头的引用块，不碰正文里的普通引用，
+ * 避免把真正的规则说明也一起删掉。
+ */
+function stripCorrectionNotes(text) {
+  const lines = text.split('\n');
+  const out = [];
+  let inNote = false;
+  for (const l of lines) {
+    const isNoteStart = /^\s*>\s*\*\*\d{4}-\d{2}-\d{2}\s*(修正|更正|勘误|补正)/.test(l);
+    if (isNoteStart) { inNote = true; continue; }
+    if (inNote) {
+      // 引用块结束：遇到非 `>` 开头的行
+      if (/^\s*>/.test(l)) continue;
+      inNote = false;
+    }
+    out.push(l);
+  }
+  return out.join('\n');
+}
+
 const roleRequired = loadRoleRequired();
+// 条件必填字段并进同一张表：排他性断言检查的是「wrapper 说的字段集」，
+// 而那个集合应当包含**所有会被校验器判违规的字段**，不论无条件还是条件必填。
+for (const [role, extra] of Object.entries(ROLE_CONDITIONAL)) {
+  if (!roleRequired[role]) continue;
+  for (const f of extra) if (!roleRequired[role].includes(f)) roleRequired[role].push(f);
+}
 const results = [];
 const problems = [];
 
@@ -161,6 +217,63 @@ for (const [role, fields] of Object.entries(roleRequired)) {
           ? `必填字段 ${field} 只被顺带一提，没有被写成要填的项`
           : `必填字段 ${field} 提到了，但没写进「产物格式」小节`,
     });
+  }
+
+  // ── 2026-11-20 补：排他性表述 ──
+  //
+  // 上面那些判据只查「字段有没有出现」。它抓不到另一种更狠的形态：
+  // wrapper 明确说「payload **只包含** N 个字段」，而这 N 个少于契约要求的。
+  //
+  // 实测两例（都是照它写就必被校验器打回，而 wrapper 又要求「写完自检、非 0 不返回」）：
+  //   wrappers/fix-worker.md:76    「payload 只包含四个字段：files_touched / verification_commands /
+  //                                  affected_issues / residual_risks」
+  //                                 → 契约要 10 个，缺 disposition 即 CONTRACT_VIOLATION
+  //   wrappers/audit-specialist.md 「即使一条都没找到，也要写 "findings": []」
+  //                                 → 契约说空数组一律 CONTRACT_VIOLATION
+  //
+  // 判据刻意保守（只报「只包含 / 只有 / 仅包含」这类闭集断言）：
+  // 宁可漏报，也不要对正常的「必填字段如下」句式误报。
+  //
+  // ★ 必须先剥掉「修正说明」块：本节自己的勘误注释里会**引用**旧原文
+  //   （「此前写的是『只包含四个字段…』」），不剥的话检查器会把引文当规则，
+  //   于是修好之后仍然报错——这正是本工具第一版踩的坑（修完还是红的）。
+  const live = stripCorrectionNotes(text);
+  const EXCLUSIVE = /(?:只包含|只有|仅包含|仅限于|只允许包含)\s*([^\n]{0,200})/g;
+  for (const m of live.matchAll(EXCLUSIVE)) {
+    const tail = m[1];
+    // 该句里点名了哪些契约字段
+    const named = fields.filter((f) => tail.includes(f));
+    if (named.length === 0) continue;              // 不是在讲 payload 字段
+    const omitted = fields.filter((f) => !tail.includes(f));
+    if (omitted.length === 0) continue;            // 点全了，没问题
+    problems.push({
+      role, file, kind: 'exclusive_field_claim',
+      field: omitted.join(','),
+      detail: `wrapper 声称「${m[0].trim().slice(0, 60)}…」，只点名了 ${named.length}/${fields.length} 个必填字段，`
+        + `漏掉 ${omitted.join('、')}。**照这句话写产物必被判违规**，而 wrapper 又要求写完自检——Agent 无法自救`,
+    });
+  }
+
+  // ── 2026-11-20 补：与契约直接相反的表述 ──
+  //
+  // 「即使一条都没找到，也要写 "findings": []」——契约 §2.2 明文说空数组一律
+  // CONTRACT_VIOLATION，正确写法是写一条 status=NO_EVIDENCE_FOUND 的条目。
+  // 这类「wrapper 说的和契约正好相反」的形态，字段覆盖检查永远看不出来。
+  if (role === 'audit') {
+    // 「空数组是合法的结论」这句话本身，在现行契约下就是错的。
+    // 不用复杂的同行正则：只要 wrapper 里出现「findings: []」且同时把空数组
+    // 说成合法结论，就足以判反向。两个条件分别匹配，避免被反引号/加粗打断。
+    // 同样必须先剥勘误注释——那里的引文不是现行规则。
+    const claimsEmptyOk = /空数组是一个结论|空数组也是(?:一个)?结论|空数组(?:是)?合法的?结论/.test(live);
+    const showsEmptyFindings = /findings["'\s:：]*\[\]/.test(live);
+    if (claimsEmptyOk && showsEmptyFindings) {
+      problems.push({
+        role, file, kind: 'contradicts_contract',
+        field: 'findings',
+        detail: 'wrapper 说「findings: [] 是一个结论」，而契约 §2.2 明文规定空数组一律 CONTRACT_VIOLATION，'
+          + '正确写法是写一条 status=NO_EVIDENCE_FOUND 的条目（并填 payload.searched_scope）。**照 wrapper 写会被打回**',
+      });
+    }
   }
 }
 

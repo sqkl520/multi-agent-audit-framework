@@ -73,7 +73,30 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role fix
 
 ## 5. 返回要求
 
-顶层信封 `role` 必须为 `"fix"`。`payload` 只包含四个字段：`files_touched`、`verification_commands`、`affected_issues`、`residual_risks`。
+顶层信封 `role` 必须为 `"fix"`。`payload` 的**必填字段以 `components/output-contract/fix.md` §2.4 为准**，共 10 个：
+
+| 字段 | 何时必填 |
+|---|---|
+| `finding_id` | 总是 |
+| `disposition` | 总是（四值闭集 `FIXED` / `WONT_FIX` / `DEFERRED` / `NEW_FINDING`）|
+| `disposition_reason` | `WONT_FIX` / `DEFERRED` 时（≥20 字）|
+| `test_path` | `FIXED` 时 |
+| `red_log_path` | `FIXED` 时，且必须落在 `target/` 之外 |
+| `next_round` | `DEFERRED` 时（什么条件下重新处置）|
+| `files_touched` | 总是 |
+| `verification_commands` | 总是 |
+| `affected_issues` | 总是 |
+| `residual_risks` | 总是 |
+
+> **2026-11-20 修正**：本节此前写的是「`payload` 只包含四个字段：`files_touched`、`verification_commands`、`affected_issues`、`residual_risks`」。
+> 那句话是 2026-11 月初的写法，契约在补 `disposition` 体系（`fix.md` §2.4，2026-11-15）之后没跟着改。
+>
+> 后果很直接：**照这句话写产物，必定被 `check-payload.mjs --role fix` 判 `missing_disposition`**。
+> 而本节下一段还写着「写完后自检，退出码非 0 不得返回」——**照它写的 Agent 无法自救**，
+> 因为修法提示要求的字段正是这句话说「不该有」的。
+>
+> 现在改成列出全部必填字段并注明条件，不再声称「只包含 N 个」。
+> 同族的另一处（`audit-specialist.md` 关于 `findings: []` 的表述）也已一并修正。
 
 编辑前的五个前置登记字段、`affected_issues` 的覆盖要求、三次尝试预算——**全部在 `templates/wave4-fix.md` 中定义**，本文件不复述。
 
