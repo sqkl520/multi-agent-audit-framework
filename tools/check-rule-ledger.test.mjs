@@ -240,5 +240,37 @@ console.log('\ncase 15: `finding_id` 不应被当成命令示例，吃掉 `.md` 
   rmSync(d, { recursive: true, force: true });
 }
 
+console.log('\ncase 16: --fail-on-regress 没基准时必须 exit 2（不得当作「无退化」）');
+{
+  // 2026-11-20：原判据 `noExit > totalSentences - totalWithExit` 恒为 false
+  //（因为 noExit 的定义就是这个差值），--fail-on-regress 是死代码。
+  // 现在改成读持久化基准；没有基准时不能默默放行——那样这道检查等于不存在。
+  const d = makeFramework({ docs: { 'a.md': '# A\n\n这里必须做一件事。\n' } });
+  const r = run(d, ['--fail-on-regress']);
+  ok('exit 2（配置错误）', r.code === 2, `code=${r.code}\n${r.out}`);
+  ok('提示先建立基准', /write-baseline|基准/.test(r.out), r.out);
+  rmSync(d, { recursive: true, force: true });
+}
+
+console.log('\ncase 17: 有基准且未退化 → exit 0；基准更高（模拟退化）→ exit 1');
+{
+  const d = makeFramework({ docs: { 'a.md': '# A\n\n必须跑 tools/real.mjs 验证。\n' } });
+  const rb = run(d, ['--write-baseline']);
+  ok('--write-baseline 成功', rb.code === 0, rb.out);
+  const okRun = run(d, ['--fail-on-regress']);
+  ok('未退化 exit 0', okRun.code === 0, `code=${okRun.code}\n${okRun.out}`);
+  ok('明确报告无退化', /无退化/.test(okRun.out), okRun.out);
+
+  // 把基准的 with_exit 抬高，模拟「上一轮出口更多」
+  const bp = join(d, 'tools', 'fixtures', 'rule-ledger-baseline.json');
+  const base = JSON.parse(readFileSync(bp, 'utf8'));
+  base.with_exit = base.with_exit + 5;
+  writeFileSync(bp, JSON.stringify(base, null, 2) + '\n');
+  const badRun = run(d, ['--fail-on-regress']);
+  ok('退化 exit 1', badRun.code === 1, `code=${badRun.code}\n${badRun.out}`);
+  ok('报出退化详情', /退化/.test(badRun.out), badRun.out);
+  rmSync(d, { recursive: true, force: true });
+}
+
 console.log(`\n=== 结果: ${pass} 通过 / ${fail} 失败 ===\n`);
 process.exit(fail === 0 ? 0 : 1);

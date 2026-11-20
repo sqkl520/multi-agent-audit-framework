@@ -203,7 +203,22 @@ const CHECKS = [
     // 一道上线首日就红出 987 条的闸门会被立刻关掉，然后连带把真的能用的检查一起拖下水，
     // 所以这里只注册自测；真正拦新增要用 --gate --since <ref>，且只对新增规则句生效。
     script: 'check-rule-ledger.test.mjs',
-    desc: '用例：存量不判 / 点名脚本算出口 / 点名真实 rule 名算出口 / DISCRETIONARY 须带理由 / 代码块不算 / --gate 只拦新增 / 分母为 0 须 exit2 / 非 git 须 exit2',
+    desc: '用例：存量不判 / 点名脚本算出口 / 点名真实 rule 名算出口 / DISCRETIONARY 须带理由 / 代码块不算 / --gate 只拦新增 / 分母为 0 须 exit2 / 非 git 须 exit2 / 退化基准',
+  },
+  {
+    name: '规则出口数退化检测（有出口的规则句是否变少了）',
+    // 2026-11-20 补：这个套件跑的是**本体**不是自测，而且是 check-all 里
+    // 少数几个真的读取 framework/ 现状的检查之一。
+    //
+    // 为什么必须注册本体：`--fail-on-regress` 从写下那天起就是死代码
+    //（判据 `noExit > totalSentences - totalWithExit` 恒为 false），
+    // 因为没人跑它，坏了 3 个月也没人发现。现在它读持久化基准，接进总检
+    // 之后至少每次 CI 都会执行一次「有出口的规则句有没有变少」。
+    //
+    // 它不判存量无出口（那是仪表），只判**相对基线的退化**。
+    script: 'check-rule-ledger.mjs',
+    args: ['--fail-on-regress', '--quiet'],
+    desc: '有出口的规则句数低于 tools/fixtures/rule-ledger-baseline.json 即 FAIL',
   },
   {
     name: '规则 → 契约落点（校验器比契约严吗）',

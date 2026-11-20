@@ -31,10 +31,19 @@
  * 用法：
  *   node check-rule-ledger.mjs                    # 报告全量，exit 0
  *   node check-rule-ledger.mjs --json
+ *   node check-rule-ledger.mjs --dump-rows         # 附带逐条明细（分诊用）
  *   node check-rule-ledger.mjs --gate --since <ref>   # 只闸新增，需 git
- *   node check-rule-ledger.mjs --fail-on-regress       # 出口数比上次少就 FAIL
+ *   node check-rule-ledger.mjs --write-baseline      # 把当前读数存为退化基准
+ *   node check-rule-ledger.mjs --fail-on-regress     # 有出口数比基准少就 FAIL
  *
  * 退出码：0 = 正常（含「存量无出口」）  1 = --gate/--fail-on-regress 触发  2 = 配置错误
+ *
+ * ── 关于 --fail-on-regress（2026-11-20 修）──────────────────────────
+ *   原判据写的是 `noExit > totalSentences - totalWithExit`，而 noExit 的定义
+ *   就是这个差值 —— **恒为 false，是一段死代码**，但文件头一直宣称它可用。
+ *   现在改成读 `tools/fixtures/rule-ledger-baseline.json` 的持久化基准；
+ *   没有基准时 exit 2，而不是当作「无退化」（那样这道检查等于不存在）。
+ *   基准只在显式 `--write-baseline` 时更新——每跑一次就改写自己的基准等于没有基准。
  *
  * ── 它检查什么 ──────────────────────────────────────────────────────
  *   rule_sentence            含 (必须|不得|禁止|一律|must|shall|never) 的非代码块行
@@ -72,7 +81,7 @@
  *   同名不同义、规则存在但不覆盖这句话的场景，本工具看不出来。这是静态对账的固有上限。
  */
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, dirname, relative, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -81,13 +90,14 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
 const TOOLS = join(HERE);
 
-const ARG = { json: false, gate: false, since: null, failOnRegress: false, quiet: false, dumpRows: false };
+const ARG = { json: false, gate: false, since: null, failOnRegress: false, quiet: false, dumpRows: false, writeBaseline: false };
 for (let i = 2; i < process.argv.length; i++) {
   const a = process.argv[i];
   if (a === '--json') ARG.json = true;
   else if (a === '--gate') ARG.gate = true;
   else if (a === '--gate-new') { ARG.gate = true; }
   else if (a === '--fail-on-regress') ARG.failOnRegress = true;
+  else if (a === '--write-baseline') ARG.writeBaseline = true;
   else if (a === '--quiet') ARG.quiet = true;
   // 2026-11-20 补：--json 只给聚合数字，下游拿不到「具体是哪一句没出口」，
   // 于是任何按文件并行分诊的作业都得自己重新实现一遍抽取逻辑 —— 两份实现必然漂移。
@@ -95,7 +105,8 @@ for (let i = 2; i < process.argv.length; i++) {
   else if (a === '--dump-rows') ARG.dumpRows = true;
   else if (a === '--since') ARG.since = process.argv[++i] ?? null;
   else if (a === '--help' || a === '-h') {
-    console.log('用法: node check-rule-ledger.mjs [--json] [--dump-rows] [--gate] [--since <ref>] [--fail-on-regress]');
+    console.log('用法: node check-rule-ledger.mjs [--json] [--dump-rows] [--gate] [--since <ref>]'
+      + ' [--fail-on-regress] [--write-baseline]');
     process.exit(0);
   } else { console.error(`未知参数: ${a}`); process.exit(2); }
 }
@@ -341,7 +352,53 @@ if (ARG.gate) {
 }
 
 // ── 趋势（出口率下降就报警）──
-const regression = ARG.failOnRegress && noExit > totalSentences - totalWithExit;
+//
+// 2026-11-20 修：此前的判据是
+//   const regression = ARG.failOnRegress && noExit > totalSentences - totalWithExit;
+// 而 noExit 的定义就是 `totalSentences - totalWithExit`，所以右侧**恒为 false**。
+// `--fail-on-regress` 从写下那天起就是一段死代码，文件头却一直宣称它可用。
+// 一个「仪表自己坏了而仪表盘显示正常」的典型。
+//
+// 正确实现需要**上一次的值**，而这个工具不持久化任何东西。做法：把上次的读数
+// 存进 `tools/fixtures/rule-ledger-baseline.json`，只在**显式要求更新**时写。
+// 默认不写——一个每跑一次就改写自己基准的检查，等于没有基准。
+const BASELINE_PATH = join(HERE, 'fixtures', 'rule-ledger-baseline.json');
+
+function readBaseline() {
+  try { return JSON.parse(readFileSync(BASELINE_PATH, 'utf8')); } catch { return null; }
+}
+
+let regression = false;
+let regressionDetail = null;
+if (ARG.failOnRegress) {
+  const prev = readBaseline();
+  if (!prev) {
+    console.error('[预期失败] --fail-on-regress 需要一份已存的基准，但 ' + BASELINE_PATH + ' 不存在。');
+    console.error('  先跑一次 `node check-rule-ledger.mjs --write-baseline` 建立基准。');
+    console.error('  「没有基准」不能当成「没有退化」——那样这道检查等于不存在。');
+    process.exit(2);
+  }
+  // 比的是**出口数**（绝对量），不是出口率：分母会随文档增删变化，
+  // 用率去比会让「新写了一条有出口的规则」把整体率拉低而误报退化。
+  if (totalWithExit < prev.with_exit) {
+    regression = true;
+    regressionDetail = `有出口的规则句从 ${prev.with_exit} 降到 ${totalWithExit}`
+      + `（${prev.baseline_date ?? '未知日期'} 的基准）。`
+      + '这通常意味着某条规则句被改写后丢掉了它原本点名的出口。';
+  }
+}
+
+if (ARG.writeBaseline) {
+  mkdirSync(dirname(BASELINE_PATH), { recursive: true });
+  writeFileSync(BASELINE_PATH, JSON.stringify({
+    baseline_date: new Date().toISOString().slice(0, 10),
+    rule_sentences: totalSentences,
+    with_exit: totalWithExit,
+    without_exit: noExit,
+    exit_rate_pct: Number(pct.toFixed(1)),
+  }, null, 2) + '\n');
+  console.log(`\n已写入基准: ${BASELINE_PATH}`);
+}
 
 // ── 输出 ──
 const result = {
@@ -371,6 +428,19 @@ if (ARG.dumpRows) {
 
 if (ARG.json) {
   console.log(JSON.stringify(result, null, 2));
+} else if (ARG.quiet) {
+  // 2026-11-20：`--quiet` 此前只被解析、从未被使用——又一个「声明了但没接上」的参数。
+  // 用途：check-all 每次跑它只需要一个结论行，不需要整份仪表盘。
+  // 只打印「有没有问题」这一行；有违规/退化时仍然把关键信息吐出来（静默不能吃掉错误）。
+  if (violations.length > 0) {
+    console.log(`✗ ${violations.length} 项违规（discretionary 无理由）`);
+  } else if (ARG.failOnRegress && regression) {
+    console.log(`✗ 退化：${regressionDetail}`);
+  } else if (ARG.failOnRegress) {
+    console.log(`✓ 无退化（有出口 ${totalWithExit}）`);
+  } else {
+    console.log(`出口 ${totalWithExit}/${totalSentences}＝${pct.toFixed(1)}%`);
+  }
 } else {
   console.log('\n契约规则句 → 机器出口 对账\n');
   console.log(`  扫描文档        ${files.length} 个`);
@@ -387,6 +457,14 @@ if (ARG.json) {
   if (violations.length > 0) {
     console.log(`  ✗ ${violations.length} 项违规：`);
     for (const v of violations) console.log(`    [${v.rule}] ${v.file}:${v.line}\n      ${v.msg}`);
+    console.log('');
+  }
+  if (ARG.failOnRegress && regression) {
+    console.log(`  ✗ 退化：${regressionDetail}`);
+    console.log('');
+  } else if (ARG.failOnRegress) {
+    const prev = readBaseline();
+    console.log(`  ✓ 无退化（基准 ${prev?.baseline_date ?? '?'}：有出口 ${prev?.with_exit}，现在 ${totalWithExit}）`);
     console.log('');
   }
   if (ARG.gate) {
