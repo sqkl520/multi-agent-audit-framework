@@ -298,6 +298,22 @@ const CHECKS = [
     script: 'check-gate-doc-sync.test.mjs',
     desc: '用例：当前仓库一致 / 删必需参数被抓 / 旧文档回放被抓 3 项 / 未知参数被抓 / 未知门被抓 / 两份输入结构坏掉须 exit2',
   },
+  {
+    name: 'dsh 运行守卫（派出去的活有没有真的落盘）',
+    // 2026-11-20 补，来自一次真实运行：
+    // 用 dsh 0.2.1-rc.2 原生跑完整审计，第 1 次运行时主 Agent 派了 4 个深挖
+    // 之后输出「End turn」，**父进程随即退出**，4 份深挖产物全部丢失。
+    //
+    // 根因是机械的（stop-hook.mjs 文件头写过）：Agent 循环的退出条件是
+    // 「本轮回复里没有 tool call」。「我已完成 X，接下来做 Y」天然没有 tool call。
+    // Claude Code 有 Stop hook 能拦住这一刻；**dsh 没有**。
+    //
+    // 这套框架对「Agent 做错事」有 37 道检查，对「harness 提前结束」此前一道也没有。
+    // 这个守卫补上事后能查的那一道：
+    //   R1 派发数 vs 落盘数 / R2 骨架残留 / R3 必需相位缺失 / R4 会话层漏收。
+    script: 'dsh-run-guard.test.mjs',
+    desc: '用例：完整相位放行 / 无锐评+占位符被抓 / 深挖全丢被抓 / 无 spawned_agents 须 SKIP / 空目录须 exit2 / --strict 语义',
+  },
 ];
 
 let failed = 0;
