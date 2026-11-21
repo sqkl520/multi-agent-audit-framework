@@ -32,7 +32,7 @@ jobs:
           - os: windows-latest
             node: '24'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # 2026-11-21：必须放开浅克隆。
           #
@@ -44,7 +44,7 @@ jobs:
           # 提 PR 时还要能从 base 分支读提交，所以显式取全量。
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
 
