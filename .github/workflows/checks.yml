@@ -47,6 +47,14 @@ jobs:
         # 无 npm install：本仓库刻意保持零运行时依赖。
         run: node tools/check-all.mjs
 
+      - name: Bilingual cross-links (PROJECT-RULES rule 6)
+        # 规则 6 原文：「缺一边就会出现『点进去回不来』的单向链接。
+        # **有 CI 的项目应加一条检查。**」
+        #
+        # 单独列一步而不只挂在 check-all 里，是为了让失败原因在 Actions 页面
+        # 一眼可见——混在 41 个套件的输出里，读者要翻很久才知道是链接坏了。
+        run: node tools/check-bilingual-links.mjs
+
       - name: Rule → validator ledger (report only)
         # 仪表，不是闸门：存量规则里绝大多数没有机器出口，这里只打印比例，不判失败。
         # 想知道为什么它不 FAIL，读 tools/check-rule-ledger.mjs 的文件头。
