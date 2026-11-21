@@ -520,6 +520,54 @@ console.log('case 46: FIX + wave4 + fix_contracts 为空 → 不报 target_repo_
     JSON.stringify(r.r?.errors));
 }
 
+// ── 退出码契约 ──
+//
+// 2026-11-21 变异测试发现：把 check-state.mjs 里的 `process.exit(1)` 改成
+// `process.exit(0)` 后，**全部自测仍然通过**——因为这里从来没有断言过 code。
+//
+// 这不是某一个分支的盲区，是整个"失败要以非零退出"的契约没被验证。
+// 而 CI、gate.mjs、以及所有下游都是靠退出码判断成败的：
+// 它会变成"报了错但所有人都以为过了"。
+console.log('退出码：有错误时必须 exit 1');
+{
+  const r = run({
+    schema_version: 'run-state-v1', trace_id: 't', round_id: 1,
+    // 故意缺 path_mode / phase / status / slices
+  });
+  expect('exit 1（不是 0）', r.code === 1, `code=${r.code}`);
+  expect('确实报了错', (r.r?.errors ?? []).length > 0, JSON.stringify(r.r?.errors));
+}
+
+console.log('退出码：完全合法时必须 exit 0');
+{
+  const r = run({
+    schema_version: 'run-state-v1', trace_id: 't', round_id: 1,
+    path_mode: 'AUDIT_ONLY', phase: 'wave1', status: 'RUNNING', slices: {},
+  });
+  expect('exit 0（不是 1）', r.code === 0, `code=${r.code}, errors=${JSON.stringify(r.r?.errors)}`);
+}
+
+console.log('退出码：JSON 解析失败时必须 exit 1');
+{
+  // 2026-11-21 变异测试第二轮：把 check-state.mjs:42 的 `process.exit(1)`
+  // 改成 `process.exit(0)` 后自测仍然全过。
+  //
+  // 原因：那条 exit(1) 只在 **JSON 解析失败** 时触发，
+  // 而之前的测试全都传合法 JSON。这是「畸形输入」这条路径从未被走过。
+  //
+  // 后果很直接：产物是坏 JSON 时，校验器打出 "JSON 解析失败"
+  // 却以 0 退出——CI 与 gate.mjs 全靠退出码判断，于是坏事变成绿灯。
+  const dir = mkdtempSync(join(tmpdir(), 'cs-badjson-'));
+  const f = join(dir, 'state.json');
+  writeFileSync(f, '{ this is not json');
+  let code = 0;
+  try {
+    execFileSync('node', [SCRIPT, f, '--json'], { encoding: 'utf8', stdio: 'pipe' });
+  } catch (e) { code = e.status ?? 1; }
+  expect('exit 1（不是 0）', code === 1, `code=${code}`);
+  rmSync(dir, { recursive: true, force: true });
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

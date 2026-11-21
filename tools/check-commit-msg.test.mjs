@@ -149,5 +149,29 @@ console.log('case 11: 浅克隆（CI 默认）→ 不得 exit 2，降级为只�
   rmSync(src, { recursive: true, force: true });
 }
 
+console.log('case 12: 非 --json 的「人类可读」分支也要有正确退出码');
+{
+  // 2026-11-21 变异测试发现：把 `process.exit(1)` 改成 `process.exit(0)` 后，
+  // 自测仍然全过。原因是一直只用 `--msg ... --json` 调用，
+  // 而那条 exit(1) 在**非 json 的人类可读分支**里，从没被执行过。
+  //
+  // 这个盲区很典型：CI 与脚本都走 --json，人类可读分支平时没人跑，
+  // 它坏了也不会有任何信号。但它正是 `pre-commit` 里手敲时用的那条路径。
+  const runRaw = (args) => {
+    try {
+      const out = execFileSync(process.execPath, [TOOL, ...args], { encoding: 'utf8' });
+      return { code: 0, out };
+    } catch (e) { return { code: e.status, out: (e.stdout ?? '') + (e.stderr ?? '') }; }
+  };
+
+  const badHuman = runRaw(['--msg', 'cleanup: 自创 type']);
+  expect('人类可读分支：不合规 → exit 1', badHuman.code === 1, `code=${badHuman.code}`);
+  expect('人类可读分支：指出 M1', /M1/.test(badHuman.out), badHuman.out.slice(0, 150));
+
+  const okHuman = runRaw(['--msg', 'fix: 修了一件事']);
+  expect('人类可读分支：合规 → exit 0', okHuman.code === 0, `code=${okHuman.code}`);
+  expect('人类可读分支：报合规', /格式合规/.test(okHuman.out), okHuman.out.slice(0, 150));
+}
+
 console.log(`\n=== 结果: ${pass} 通过 / ${fail} 失败 ===\n`);
 process.exit(fail > 0 ? 1 : 0);

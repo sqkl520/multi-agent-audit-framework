@@ -142,5 +142,29 @@ console.log('case 7: protocol.md 结构被改坏（无示例）→ exit 2');
   });
 }
 
+console.log('case 8: 工具有某道门、但文档完全没写 → 必须报 gate_undocumented');
+{
+  // 2026-11-21 变异测试发现：把 gate_undocumented 那条 push 注释掉后，
+  // 自测仍然全过——case 5 测的是「文档写了工具没有的门」（反向），
+  // 而「工具有而文档没写」这一类从来没被覆盖。
+  //
+  // 这条漏检的后果：新增一道门但忘了写文档，示例里没有它，
+  // 读者照文档跑永远不会触发那道门 —— 而检查器不会响。
+  withCopy((dir) => {
+    const p = join(dir, 'framework', 'orchestrator', 'protocol.md');
+    const t = readFileSync(p, 'utf8');
+    // 删掉 release 门的示例命令整行
+    writeFileSync(p, t.split('\n')
+      .filter((l) => !/--gate release/.test(l))
+      .join('\n'));
+  }, (dir) => {
+    const r = run(dir);
+    expect('exit 1', r.code === 1, `code=${r.code}`);
+    const hit = (r.data?.problems ?? []).some((p) => p.kind === 'gate_undocumented' && p.gate === 'release');
+    expect('报 gate_undocumented(release)', hit,
+      JSON.stringify((r.data?.problems ?? []).map((p) => `${p.kind}:${p.gate}`)));
+  });
+}
+
 console.log(`\n=== 结果: ${pass} 通过 / ${fail} 失败 ===\n`);
 process.exit(fail > 0 ? 1 : 0);
