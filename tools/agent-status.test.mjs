@@ -150,6 +150,38 @@ console.log('case 8: --artifact 传的是目录 → 必须拒绝，不能给 STA
   f.cleanup();
 }
 
+// ── 空产物是"存在但没内容"，绝不能判 DONE ──
+//
+// 2026-11-21 变异测试发现：把 `out.artifact_size === 0` 这个判据取反后，
+// 自测仍然全过——**空文件这条路径从没被覆盖**。
+//
+// 后果很严重：一个 0 字节的产物会被判成 DONE（"产物已存在，去读它"），
+// 而读它什么也读不到。框架里的 `SKELETON_ONLY` / 空文件事故就是这么漏掉的。
+console.log('case: 产物是 0 字节空文件 → 不得判 DONE');
+{
+  const f = fixture();
+  const art = join(f.work, 'round1-02-audit-slice-01-logic.md');
+  writeFileSync(art, '');          // 0 字节
+  const { r } = run(art, f.work);
+  expect('不判 DONE', r?.verdict !== 'DONE', JSON.stringify(r?.verdict));
+  expect('报 STALLED（产物没内容，工作目录也久未动）或 RUNNING',
+    ['STALLED', 'RUNNING', 'UNKNOWN'].includes(r?.verdict ?? ''), JSON.stringify(r?.verdict));
+  f.cleanup();
+}
+
+console.log('case: 空文件 + 工作目录刚有活动 → RUNNING（不是 DONE）');
+{
+  const f = fixture();
+  const art = join(f.work, 'round1-02-audit-slice-02-logic.md');
+  writeFileSync(art, '');
+  // 工作目录里放一个刚改过的文件，模拟"确实还在跑"
+  const busy = join(f.work, 'scratch.md');
+  writeFileSync(busy, 'x');
+  const { r } = run(art, f.work);
+  expect('判 RUNNING', r?.verdict === 'RUNNING', JSON.stringify(r?.verdict));
+  f.cleanup();
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

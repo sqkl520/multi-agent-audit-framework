@@ -140,6 +140,40 @@ console.log('case 7: 切片自称是母文件路径 → 必须报出（读者会
   expect('报 slice_mislabels_itself', !!hit, JSON.stringify(r.data?.problems));
 }
 
+// ── 人类可读分支的退出码 + 其余问题类型 ──
+//
+// 2026-11-21 变异测试：这个检查器同样有两套退出路径，
+// 测试只走 `--json`，人类可读分支的 exit(1) 从没被执行。
+// 另外 M4（丢掉第一处 problems.push，即 slice_missing）也存活——
+// 说明「切片文件不存在」这条路径从没被测过。
+console.log('切片文件不存在 → 必须报 slice_missing');
+{
+  const r = withCopy((comp) => {
+    rmSync(join(comp, 'output-contract', 'sweep.md'), { force: true });
+  }, runIn);
+  const hit = (r.data?.problems ?? []).find((p) => p.kind === 'slice_missing');
+  expect('报 slice_missing', !!hit, JSON.stringify(r.data?.problems));
+  expect('退出码 1', r.code === 1, `实际 ${r.code}`);
+}
+
+console.log('人类可读分支：有问题时也必须 exit 1');
+{
+  const r = withCopy((comp) => {
+    const p = join(comp, 'output-contract', 'critique.md');
+    writeFileSync(p, readFileSync(p, 'utf8').replaceAll('direct_contradiction', '__GONE__'));
+  }, (dir) => {
+    let code = 0, out = '';
+    try {
+      out = execFileSync(process.execPath,
+        [join(dir, 'tools', 'check-contract-slice-fidelity.mjs')],   // 不加 --json
+        { encoding: 'utf8', stdio: 'pipe' });
+    } catch (e) { code = e.status ?? 1; out = e.stdout?.toString() ?? ''; }
+    return { code, out };
+  });
+  expect('exit 1（不是 0）', r.code === 1, `code=${r.code}`);
+  expect('确实报出了问题', /发现 \d+ 个问题/.test(r.out), r.out.slice(-200));
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

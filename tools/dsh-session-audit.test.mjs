@@ -202,5 +202,37 @@ console.log('dsh-session-audit 自测');
   }
 }
 
+// ── 人类可读分支的退出码 ──
+//
+// 2026-11-21 变异测试：这个工具同样有两套退出路径
+//
+//     if (jsonOut) { ...; process.exit(...); }
+//     ...人类可读输出...
+//     process.exit(1);      ← 变异打中的是这一处
+//
+// 所有测试都用 `--json`，人类可读分支从没被执行。
+// 而它正是排查会话问题时人在终端手敲的那条路。
+{
+  const root = makeSessionsRoot([
+    { dir: 'session-p9', events: [
+      ev.session('session-p9', { delegationDepth: 0 }),
+      ev.requestHeader(), ev.turnStart(1), ev.assistantTool('subagent'), ev.turnEnd(1),
+      ev.turnStart(2), ev.assistantText('父级答复', 2), ev.turnEnd(2),
+    ] },
+    { dir: 'c9', events: [
+      ev.session('c9', { parentSession: 'session-p9', origin: 'subagent', delegationDepth: 1 }),
+      ev.turnStart(1), ev.assistantText('子 agent 的结论'), ev.turnEnd(1),
+    ] },
+  ]);
+  let code = 0, out = '';
+  try {
+    out = execFileSync(process.execPath, [TOOL, '--sessions', root],   // 不加 --json
+      { encoding: 'utf8', stdio: 'pipe' });
+  } catch (e) { code = e.status ?? 1; out = e.stdout?.toString() ?? ''; }
+  expect('人类可读分支：有问题时 exit 1', code === 1, `code=${code}`);
+  expect('确实报了结论', /结论：发现 \d+ 个问题/.test(out), out.slice(-200));
+  rmSync(root, { recursive: true, force: true });
+}
+
 console.log(`\n${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);

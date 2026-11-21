@@ -107,6 +107,22 @@ function testFilesMissingExit() {
 // ── 变异算子 ──
 //
 // 每个算子都返回改后的源码；改不动（模式不存在）就返回 null，跳过该算子。
+// ── 等价变异白名单 ──
+//
+// 「变异存活」通常意味着断言没覆盖到那段逻辑。但有一类例外：
+// 改动确实发生了，**行为却没变**，因为别处有等价兜底。
+//
+// 报出来只会是噪声，而噪声多了这条检查就会被关掉——所以显式列出并注明理由。
+//
+// 加白名单的门槛很高：必须**实际验证过**「改坏之后退出码/输出完全不变」，
+// 不能因为"看起来像是优化"就猜。
+const EQUIVALENT = new Set([
+  // verify-postfix-snapshot.mjs:90 `if (problems.length > 0) finish(2);`
+  // 是一条早期返回优化。把它改坏后，后面 `snapshot_missing` 的检查
+  // 仍会走到 finish(2)，退出码不变。2026-11-21 实测确认。
+  'verify-postfix-snapshot::M3-threshold-inflate',
+]);
+
 const MUTATORS = [
   {
     id: 'M1-equality-flip',
@@ -230,11 +246,24 @@ for (const name of names) {
   }
   const applied = perMutator.filter((r) => r.status !== 'NOOP');
   const survived = applied.filter((r) => r.status === 'SURVIVED');
+  // 等价变异（equivalent mutant）：改了代码但行为不变。
+  //
+  // 实测例子：verify-postfix-snapshot.mjs:90 的
+  //     if (problems.length > 0) finish(2);
+  // 是一条**早期返回优化**——把它改坏，后面 snapshot_missing 的检查
+  // 仍会 finish(2)，最终退出码不变。这种"存活"不是盲区。
+  //
+  // 自动识别需要额外跑一次基线并对比全部退出码，成本翻倍。
+  // 所以用**显式白名单**：确认为等价变异的写进 EQUIVALENT，注明理由。
+  const equivKey = (n, m) => `${n}::${m}`;
+  const survivedReal = survived.filter((r) => !EQUIVALENT.has(equivKey(name, r.mutator)));
+  const equivalentCount = survived.length - survivedReal.length;
   results.push({
     name,
     applied: applied.length,
     killed: applied.filter((r) => r.status === 'KILLED').length,
-    survived: survived.length,
+    survived: survivedReal.length,
+    equivalent: equivalentCount,
     timedOut: applied.filter((r) => r.status === 'TIMEOUT').length,
     detail: perMutator,
   });

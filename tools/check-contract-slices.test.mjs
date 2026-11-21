@@ -146,6 +146,38 @@ console.log('case 6: 生成器重跑后产物应与已提交的一致（防手�
   rmSync(dir, { recursive: true, force: true });
 }
 
+// ── 人类可读分支的退出码 ──
+//
+// 2026-11-21 变异测试发现：把**人类可读分支**的 `process.exit(1)`
+// 改成 `exit(0)` 后自测仍全过。
+//
+// 原因：这个检查器有**两套独立的退出路径**
+//
+//     if (jsonOut) { console.log(JSON.stringify(...)); process.exit(...); }
+//     ...人类可读表格...
+//     process.exit(1);      ← 变异打中的是这一处
+//
+// 而所有测试都用 `--json` 调用，于是人类可读分支从没被执行过。
+//
+// 它恰恰是人在终端里手敲 `node tools/check-contract-slices.mjs` 时走的路：
+// 发现 5 个问题、打印出来、然后 exit 0 —— shell 会认为检查通过了。
+console.log('人类可读分支：发现问题时也必须 exit 1');
+{
+  withCopy((comp) => {
+    const p = join(comp, 'output-contract', 'planner.md');
+    writeFileSync(p, readFileSync(p, 'utf8').replaceAll('member_count', '__GONE__'));
+  }, (dir) => {
+    let code = 0, out = '';
+    try {
+      out = execFileSync(process.execPath,
+        [join(dir, 'tools', 'check-contract-slices.mjs')],     // 不加 --json
+        { encoding: 'utf8', stdio: 'pipe' });
+    } catch (e) { code = e.status ?? 1; out = e.stdout?.toString() ?? ''; }
+    expect('exit 1（不是 0）', code === 1, `code=${code}`);
+    expect('确实报出了问题', /发现 \d+ 个问题/.test(out), out.slice(-200));
+  });
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

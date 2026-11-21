@@ -158,6 +158,27 @@ console.log('case 8: 生成器幂等 —— 重跑到临时目录，与仓库内
   }
 }
 
+// ── 人类可读分支的退出码 ──
+//
+// 2026-11-21 变异测试：与 check-contract-slices / check-enum-consistency 同型——
+// 两套独立退出路径，测试只走 `--json`，人类可读分支从没被执行。
+console.log('人类可读分支：有问题时也必须 exit 1');
+{
+  const r = withCopy((od) => {
+    rmSync(join(od, 'examples', 'verify.md'), { force: true });
+  }, (dir) => {
+    let code = 0, out = '';
+    try {
+      out = execFileSync(process.execPath,
+        [join(dir, 'tools', 'check-contract-examples.mjs')],   // 不加 --json
+        { encoding: 'utf8', stdio: 'pipe' });
+    } catch (e) { code = e.status ?? 1; out = e.stdout?.toString() ?? ''; }
+    return { code, out };
+  });
+  expect('exit 1（不是 0）', r.code === 1, `code=${r.code}`);
+  expect('确实报出了问题', /发现 \d+ 个问题/.test(r.out), r.out.slice(-200));
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

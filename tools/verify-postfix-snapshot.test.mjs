@@ -247,6 +247,28 @@ console.log('case 14: --exclude 排除非源码（产物目录）→ 允许');
   } finally { rmSync(root, { recursive: true, force: true }); }
 }
 
+// ── 用法错误的提前返回 ──
+//
+// 2026-11-21 变异测试：把 `if (problems.length > 0) finish(2);` 里的
+// `> 0` 改成 `> 999999` 后自测仍全过——这条**用法错误的提前返回**从没被覆盖。
+//
+// 它保证「缺 --repo / --snapshot 时立即停」，而不是继续往下走、
+// 在某个空路径上抛出看不懂的异常。少了它，用户看到的是堆栈而不是"缺参数"。
+console.log('缺 --repo → exit 2，且给出可读提示（不是堆栈）');
+{
+  const r = run(['--snapshot', join(tmpdir(), 'whatever')]);
+  expect('exit 2', r.code === 2, `code=${r.code}`);
+  expect('提到 --repo', /--repo/.test(r.out), r.out.slice(0, 200));
+  expect('不是堆栈', !/at Object\.|TypeError|ReferenceError/.test(r.out), r.out.slice(0, 200));
+}
+
+console.log('缺 --snapshot → exit 2，且给出可读提示');
+{
+  const r = run(['--repo', join(tmpdir(), 'whatever')]);
+  expect('exit 2', r.code === 2, `code=${r.code}`);
+  expect('提到 --snapshot', /--snapshot/.test(r.out), r.out.slice(0, 200));
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

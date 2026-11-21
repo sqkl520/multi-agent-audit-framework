@@ -210,6 +210,71 @@ console.log('case 10: 修正说明块里的引文不得被当成现行规则（�
   expect('勘误引文不产生 exclusive_field_claim', !hit, JSON.stringify((r.data?.problems ?? []).map((p) => p.kind)));
 }
 
+console.log('case 11: wrapper 文件整个缺失 → 必须报 wrapper_missing');
+{
+  // 2026-11-21 变异测试：M4（丢掉第一处 problems.push）存活，
+  // 说明 `wrapper_missing` 与 `no_wrapper_mapping` 这两条从没被测过。
+  // 它们正是「角色有要求但文件不在」的路径——wrapper 被误删时唯一的信号。
+  const r = runAgainst((wr) => {
+    rmSync(join(wr, 'verifier.md'), { force: true });
+  });
+  const hit = (r.data?.problems ?? []).some((p) => p.kind === 'wrapper_missing');
+  expect('报 wrapper_missing', hit, JSON.stringify((r.data?.problems ?? []).map((p) => p.kind)));
+}
+
+console.log('case 12: 人类可读分支：有问题时也必须 exit 1');
+{
+  // 与 check-contract-* 同型：两套独立退出路径，测试只走 --json。
+  // 人手动敲 `node tools/check-wrapper-contract.mjs` 时走的是另一条。
+  const dir = mkdtempSync(join(tmpdir(), 'wc-human-'));
+  cpSync(join(ROOT, 'framework'), join(dir, 'framework'), { recursive: true });
+  mkdirSync(join(dir, 'tools'), { recursive: true });
+  cpSync(join(HERE, 'check-payload.mjs'), join(dir, 'tools', 'check-payload.mjs'));
+  cpSync(TOOL, join(dir, 'tools', 'check-wrapper-contract.mjs'));
+  rmSync(join(dir, 'framework', 'wrappers', 'verifier.md'), { force: true });
+
+  let code = 0, out = '';
+  try {
+    out = execFileSync(process.execPath,
+      [join(dir, 'tools', 'check-wrapper-contract.mjs')],   // 不加 --json
+      { encoding: 'utf8', stdio: 'pipe' });
+  } catch (e) { code = e.status ?? 1; out = e.stdout?.toString() ?? ''; }
+  expect('exit 1（不是 0）', code === 1, `code=${code}`);
+  expect('确实报出了问题', /问题/.test(out), out.slice(-200));
+  rmSync(dir, { recursive: true, force: true });
+}
+
+console.log('case 13: 校验器新增了角色但映射表没跟上 → 必须报 no_wrapper_mapping');
+{
+  // 2026-11-21 变异测试：M4（丢掉第一处 problems.push，即 no_wrapper_mapping）存活。
+  // 这条路径要造出来：/  check-payload 的 ROLE_REQUIRED 里多一个角色，
+  // 而 check-wrapper-contract 的 ROLE_WRAPPER 映射表里没有它。
+  //
+  // 这是真实会发生的：给校验器加一个新角色，忘了在 wrapper 侧建文件。
+  const dir = mkdtempSync(join(tmpdir(), 'wc-nomap-'));
+  cpSync(join(ROOT, 'framework'), join(dir, 'framework'), { recursive: true });
+  mkdirSync(join(dir, 'tools'), { recursive: true });
+  cpSync(TOOL, join(dir, 'tools', 'check-wrapper-contract.mjs'));
+
+  // 造一个含新角色 `newrole` 的 check-payload（映射表里没有它）
+  const payload = readFileSync(join(HERE, 'check-payload.mjs'), 'utf8').replace(
+    /const ROLE_REQUIRED = \{/,
+    'const ROLE_REQUIRED = {\n  newrole: [\'x\'],');
+  writeFileSync(join(dir, 'tools', 'check-payload.mjs'), payload);
+
+  let code = 0, out = '';
+  try {
+    out = execFileSync(process.execPath,
+      [join(dir, 'tools', 'check-wrapper-contract.mjs'), '--json'],
+      { encoding: 'utf8', stdio: 'pipe' });
+  } catch (e) { code = e.status ?? 1; out = e.stdout?.toString() ?? ''; }
+  let data = null;
+  try { data = JSON.parse(out); } catch { /* ignore */ }
+  const hit = (data?.problems ?? []).some((p) => p.kind === 'no_wrapper_mapping');
+  expect('报 no_wrapper_mapping', hit, JSON.stringify((data?.problems ?? []).map((p) => p.kind)));
+  rmSync(dir, { recursive: true, force: true });
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

@@ -226,6 +226,35 @@ function withCopyWithMissingTable() {
   }, runIn);
 }
 
+// ── 人类可读分支的退出码 ──
+//
+// 2026-11-21 变异测试：这个检查器有两套独立退出路径
+//
+//     if (problems.length === 0) { ...; process.exit(0); }
+//     ...人类可读输出...
+//     process.exit(1);       ← 变异打中的是这一处
+//
+// 所有测试都用 `--json` 调用，人类可读分支从没被执行过。
+// 它正是人在终端手敲时走的路：报了 5 处漂移、然后 exit 0。
+console.log('人类可读分支：有漂移时也必须 exit 1');
+{
+  let code = 0, out = '';
+  const r = withCopy((fw) => {
+    const p = join(fw, 'components', 'output-contract', 'audit.md');
+    writeFileSync(p, readFileSync(p, 'utf8').replace(
+      '"CRITICAL | HIGH | MEDIUM | LOW"', '"CRITICAL | HIGH | MEDIUM | LOW | NONE"'));
+  }, (dir) => {
+    try {
+      out = execFileSync(process.execPath,
+        [join(dir, 'tools', 'check-enum-consistency.mjs')],   // 不加 --json
+        { encoding: 'utf8', stdio: 'pipe' });
+    } catch (e) { code = e.status ?? 1; out = e.stdout?.toString() ?? ''; }
+    return { code, out };
+  });
+  expect('exit 1（不是 0）', r.code === 1, `code=${r.code}`);
+  expect('确实报了漂移', /发现 \d+ 处漂移/.test(r.out), r.out.slice(-200));
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);
