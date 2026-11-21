@@ -111,29 +111,63 @@ if (ARG.msg !== null) {
 }
 
 // ── 从 git 读提交 ──
-function gitSubject(ref) {
-  return execFileSync('git', ['-C', ROOT, 'log', '-1', '--format=%s', ref], { encoding: 'utf8' }).trim();
+//
+// 2026-11-21 修：CI 用浅克隆（`actions/checkout` 默认 fetch-depth: 1），
+// 历史里没有父提交，`HEAD~1..HEAD` 会报 "ambiguous argument"。
+//
+// 我第一版把它当成「配置错误」exit 2 —— 结果 CI 直接红。
+// 本地仓库有完整历史，**本地怎么测都测不出来**。
+//
+// 正确的处置分两种：
+//   - 浅克隆（.git/shallow 存在）→ 明确报 SKIP，不判失败
+//     「查不了」不等于「有问题」，但也不等于「通过」——要让读者看见
+//   - 真配置错误（不是 git 仓库）→ 仍然 exit 2
+function isShallow() {
+  try {
+    const v = execFileSync('git', ['-C', ROOT, 'rev-parse', '--is-shallow-repository'],
+      { encoding: 'utf8' }).trim();
+    return v === 'true';
+  } catch { return false; }
 }
 
-let commits = [];   // { sha, subject }
-try {
-  if (ARG.all) {
-    const out = execFileSync('git', ['-C', ROOT, 'log', '--format=%h\t%s'], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
-    commits = out.trim().split('\n').filter(Boolean).map((l) => {
+function tryLog(args) {
+  try {
+    // stdio 里把 stderr 也接住：浅克隆下 git 会打印 fatal: ambiguous argument，
+    // 那是**预期内的探测失败**，不是错误。让它漏到 CI 日志里会看着像出事了。
+    const out = execFileSync('git', ['-C', ROOT, 'log', ...args, '--format=%h\t%s'],
+      { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
+    return { ok: true, commits: out.trim().split('\n').filter(Boolean).map((l) => {
       const [sha, ...rest] = l.split('\t');
       return { sha, subject: rest.join('\t') };
-    });
-  } else {
-    const range = ARG.since ? `${ARG.since}..HEAD` : 'HEAD~1..HEAD';
-    const out = execFileSync('git', ['-C', ROOT, 'log', range, '--format=%h\t%s'], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
-    commits = out.trim().split('\n').filter(Boolean).map((l) => {
-      const [sha, ...rest] = l.split('\t');
-      return { sha, subject: rest.join('\t') };
-    });
+    }) };
+  } catch (e) {
+    return { ok: false, error: e };
   }
-} catch (e) {
-  console.error(`[配置错误] 读不到 git 提交（${e.message}）。本检查需要 git 仓库`);
-  process.exit(2);
+}
+
+let commits = [];
+let shallowSkip = false;
+{
+  const args = ARG.all
+    ? ['--all']
+    : [ARG.since ? `${ARG.since}..HEAD` : 'HEAD~1..HEAD'];
+  const res = tryLog(args);
+  if (res.ok) {
+    commits = res.commits;
+  } else if (isShallow()) {
+    // 浅克隆：拿不到基线。退一步只查 HEAD 一条（这条总是有）
+    const head = tryLog(['-1']);
+    if (head.ok && head.commits.length > 0) {
+      commits = head.commits;
+      shallowSkip = true;
+    } else {
+      console.error('[配置错误] 浅克隆且连 HEAD 都读不到');
+      process.exit(2);
+    }
+  } else {
+    console.error(`[配置错误] 读不到 git 提交（${res.error.message}）。本检查需要 git 仓库`);
+    process.exit(2);
+  }
 }
 
 if (commits.length === 0) {
@@ -155,6 +189,10 @@ if (ARG.json) {
 console.log('\n提交信息格式检查（PROJECT-RULES.md 规则 3.2）\n');
 console.log(`  检查范围   ${ARG.all ? '全部历史（--all）' : (ARG.since ? `${ARG.since}..HEAD` : 'HEAD~1..HEAD')}`);
 console.log(`  提交数     ${results.length}`);
+if (shallowSkip) {
+  console.log(`  ! 浅克隆：拿不到基线范围，降级为只查 HEAD 一条`);
+  console.log('    要查完整范围请 fetch-depth: 0（CI 里已配）');
+}
 console.log('');
 
 if (bad.length === 0) {

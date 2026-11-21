@@ -33,6 +33,16 @@ jobs:
             node: '24'
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 2026-11-21：必须放开浅克隆。
+          #
+          # 默认 fetch-depth: 1 只取一个提交，历史里没有父提交，于是
+          # `git log HEAD~1..HEAD` 直接报 "ambiguous argument"。
+          # 我第一版就在这里把 CI 弄红了——本地仓库有完整历史，
+          # **本地怎么测都测不出来**。
+          #
+          # 提 PR 时还要能从 base 分支读提交，所以显式取全量。
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -61,17 +71,26 @@ jobs:
         # 只查**本次推送范围**，不查历史存量：历史改不了（要 force push，
         # 规则 3.3 禁止），而一道上线首日就红出 8 条的闸门会被立刻关掉。
         #
-        # PR 里查 base..head；push 到 main 时查 HEAD~1..HEAD。
+        # 2026-11-21 第一版在这里把 CI 弄红了：checkout 默认 fetch-depth: 1，
+        # `HEAD~1` 不存在，脚本报「配置错误」exit 2。
+        # **本地仓库有完整历史，本地怎么测都测不出来。**
+        # 现在两处都修了：checkout 取全量 + 脚本在浅克隆下降级而非崩溃。
         shell: bash
         run: |
           set -e
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            RANGE="origin/${{ github.base_ref }}..HEAD"
+            BASE="origin/${{ github.base_ref }}"
           else
-            RANGE="HEAD~1..HEAD"
+            BASE="HEAD~1"
           fi
-          echo "检查范围: $RANGE"
-          node tools/check-commit-msg.mjs --since "${RANGE%%..*}" || exit 1
+          echo "基线: $BASE"
+          # 基线存在才限定范围；否则退回「只查 HEAD」，脚本自己会说明降级
+          if git rev-parse --verify "$BASE" >/dev/null 2>&1; then
+            node tools/check-commit-msg.mjs --since "$BASE"
+          else
+            echo "基线 $BASE 不可用（浅克隆），降级为只查 HEAD"
+            node tools/check-commit-msg.mjs
+          fi
 
       - name: Rule → validator ledger (report only)
         # 仪表，不是闸门：存量规则里绝大多数没有机器出口，这里只打印比例，不判失败。

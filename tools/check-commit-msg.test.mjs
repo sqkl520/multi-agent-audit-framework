@@ -109,5 +109,45 @@ console.log('case 10: --all 能扫到历史里的自创 type（应当抓到 ≥5
   rmSync(dir, { recursive: true, force: true });
 }
 
+console.log('case 11: 浅克隆（CI 默认）→ 不得 exit 2，降级为只查 HEAD');
+{
+  // 2026-11-21 CI 实红：actions/checkout 默认 fetch-depth: 1，
+  // 历史里没有父提交，`git log HEAD~1..HEAD` 报 "ambiguous argument"。
+  // 第一版把它当「配置错误」exit 2，于是 CI 直接失败。
+  // **本地仓库有完整历史，本地怎么测都测不出来。**
+  const src = mkdtempSync(join(tmpdir(), 'cm-src-'));
+  const g0 = (...a) => execFileSync('git', a, { cwd: src, stdio: 'pipe' });
+  g0('init', '-q');
+  g0('config', 'user.email', 't@t');
+  g0('config', 'user.name', 't');
+  for (const [i, msg] of ['feat: 第一个提交', 'fix: 第二个提交'].entries()) {
+    writeFileSync(join(src, `f${i}.txt`), String(i));
+    g0('add', '-A');
+    g0('commit', '-q', '-m', msg);
+  }
+
+  // 克隆成一个只有 1 个提交的浅仓库
+  const shallow = mkdtempSync(join(tmpdir(), 'cm-shallow-'));
+  rmSync(shallow, { recursive: true, force: true });
+  execFileSync('git', ['clone', '-q', '--depth', '1', `file://${src.replace(/\\/g, '/')}`, shallow],
+    { stdio: 'pipe' });
+
+  mkdirSync(join(shallow, 'tools'), { recursive: true });
+  cpSync(TOOL, join(shallow, 'tools', 'check-commit-msg.mjs'));
+
+  let code = 0, out = '';
+  try {
+    out = execFileSync(process.execPath, [join(shallow, 'tools', 'check-commit-msg.mjs'), '--json'],
+      { encoding: 'utf8' });
+  } catch (e) { code = e.status; out = e.stdout?.toString() ?? ''; }
+  // 关键：不能是 exit 2（配置错误），要么 0（HEAD 合规），要么 1（HEAD 不合规）
+  expect('不得 exit 2', code !== 2, `code=${code}, out=${out.slice(0, 200)}`);
+  const data = out ? JSON.parse(out) : null;
+  expect('至少检查了 1 条（HEAD）', (data?.checked ?? 0) >= 1, `checked=${data?.checked}`);
+
+  rmSync(shallow, { recursive: true, force: true });
+  rmSync(src, { recursive: true, force: true });
+}
+
 console.log(`\n=== 结果: ${pass} 通过 / ${fail} 失败 ===\n`);
 process.exit(fail > 0 ? 1 : 0);
