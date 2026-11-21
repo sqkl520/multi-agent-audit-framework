@@ -169,6 +169,64 @@ console.log('case 17: 任务内容真变了（不同 slice）→ 必须是不同
   f.cleanup();
 }
 
+// ── JSON 解析失败必须以 1 退出 ──
+//
+// 2026-11-21 变异测试：把 attempt-ledger.mjs 里两处 `process.exit(1)`
+// 改成 `exit(0)` 后，自测仍然全过 —— 它们都在 **JSON 解析失败** 分支上，
+// 而之前的测试全都传合法 JSON。
+//
+// 后果：账本或 payload 是坏 JSON 时，工具打出「解析失败」却以 0 退出。
+// `gate.mjs --gate dispatch` 靠退出码决定"能不能派"，于是坏账本变成"可以派"。
+console.log('JSON 解析失败：账本坏 → exit 1');
+{
+  const dir = mkdtempSync(join(tmpdir(), 'al-bad-'));
+  const ledger = join(dir, 'attempt.json');
+  writeFileSync(ledger, '{ not json');
+  const payload = join(dir, 'task.json');
+  writeFileSync(payload, JSON.stringify({ digest: 'x' }));
+  let code = 0;
+  try {
+    execFileSync('node', [SCRIPT, '--ledger', ledger, '--payload', payload, '--json'],
+      { encoding: 'utf8', stdio: 'pipe' });
+  } catch (e) { code = e.status ?? 1; }
+  expect('exit 1（不是 0）', code === 1, `code=${code}`);
+  rmSync(dir, { recursive: true, force: true });
+}
+
+console.log('JSON 解析失败：payload 坏 → exit 1');
+{
+  const dir = mkdtempSync(join(tmpdir(), 'al-bad2-'));
+  const ledger = join(dir, 'attempt.json');
+  writeFileSync(ledger, JSON.stringify({ schema_version: 'attempt-ledger-v1', entries: {} }));
+  const payload = join(dir, 'task.json');
+  writeFileSync(payload, '<<<not json>>>');
+  let code = 0;
+  try {
+    execFileSync('node', [SCRIPT, '--ledger', ledger, '--payload', payload, '--json'],
+      { encoding: 'utf8', stdio: 'pipe' });
+  } catch (e) { code = e.status ?? 1; }
+  expect('exit 1（不是 0）', code === 1, `code=${code}`);
+  rmSync(dir, { recursive: true, force: true });
+}
+
+console.log('--list 对空账本应打出「（空）」而不是空白');
+{
+  // 变异测试把 `rows.length === 0` 改成 `!== 0` 后自测仍过，
+  // 因为此前从没断言过 --list 的人类可读输出。
+  //
+  // 这个不影响判定逻辑（--list 只是展示），但它属于「输出契约」的一部分：
+  // 空账本打一行空白，人会以为命令没跑。
+  const dir = mkdtempSync(join(tmpdir(), 'al-list-'));
+  const ledger = join(dir, 'attempt.json');
+  writeFileSync(ledger, JSON.stringify({ schema_version: 'attempt-ledger-v1', entries: {} }));
+  let out = '';
+  try {
+    out = execFileSync('node', [SCRIPT, '--ledger', ledger, '--list'], { encoding: 'utf8' });
+  } catch (e) { out = e.stdout?.toString() ?? ''; }
+  expect('打出「（空）」', /（空）/.test(out), JSON.stringify(out.slice(0, 120)));
+  rmSync(dir, { recursive: true, force: true });
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

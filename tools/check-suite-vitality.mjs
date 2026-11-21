@@ -54,12 +54,13 @@ import { execFileSync } from 'node:child_process';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
 
-const ARG = { json: false, only: null, maxMutants: 4 };
+const ARG = { json: false, only: null, maxMutants: 4, timeoutMs: 240000 };
 for (let i = 2; i < process.argv.length; i++) {
   const a = process.argv[i];
   if (a === '--json') ARG.json = true;
   else if (a === '--only') ARG.only = process.argv[++i];
   else if (a === '--max-mutants') ARG.maxMutants = Number(process.argv[++i]);
+  else if (a === '--timeout-ms') ARG.timeoutMs = Number(process.argv[++i]);
   else if (a === '--help' || a === '-h') {
     console.log('用法: node check-suite-vitality.mjs [--json] [--only <name>] [--max-mutants 4]');
     process.exit(0);
@@ -77,6 +78,30 @@ function candidates() {
     .filter((n) => !SKIP_PREFIX.test(n))
     .filter((n) => existsSync(join(HERE, `${n}.test.mjs`)))
     .filter((n) => !ARG.only || n === ARG.only);
+}
+
+/**
+ * 自测文件是否**真的会失败**？
+ *
+ * 2026-11-21 由变异测试自己发现的 bug：
+ * `stop-hook.test.mjs` 末尾只有 `console.log('=== 结果: N 通过 / M 失败 ===')`，
+ * **没有 process.exit()**。于是无论多少条断言失败，进程都以 0 退出。
+ *
+ * 后果：这个套件 135 条断言，即使 66 条失败，check-all 也判它通过、CI 永远绿——
+ * **它从写下的那天起就没红过**。
+ *
+ * 这类缺陷比任何单个断言写错都严重：断言写得再好，不以非零退出就等于没写。
+ * 所以每次跑变异测试前先查一遍，缺了就直接报出来。
+ */
+function testFilesMissingExit() {
+  const bad = [];
+  for (const f of readdirSync(HERE)) {
+    if (!f.endsWith('.test.mjs')) continue;
+    const src = readFileSync(join(HERE, f), 'utf8');
+    // 允许 process.exit 或 process.exitCode 两种写法
+    if (!/process\.exit\s*\(|process\.exitCode\s*=/.test(src)) bad.push(f);
+  }
+  return bad;
 }
 
 // ── 变异算子 ──
@@ -157,13 +182,21 @@ function runMutation(name, mutator) {
     writeFileSync(target, mutated);
 
     // 跑自测：期望它**失败**（非 0 退出）
+    //
+    // 2026-11-21 修：超时（TIMEOUT）此前被算进"存活"，导致误报。
+    // stop-hook 的自测正常跑要 68 秒，变异后失败路径更慢，逼近超时线，
+    // 于是被当成"自测仍然通过"——**实际上它可能早就失败了，只是没跑完**。
+    //
+    // 超时是"测不准"，既不能算抓到也不能算存活。单独归类，
+    // 并在汇总时明确列出，让人知道这个套件的结论不可靠。
     try {
       execFileSync(process.execPath, [join(tmp, 'tools', `${name}.test.mjs`)], {
-        encoding: 'utf8', stdio: 'pipe', timeout: 120000,
+        encoding: 'utf8', stdio: 'pipe', timeout: ARG.timeoutMs,
       });
       return { status: 'SURVIVED' };   // 自测仍然通过 = 这个变异没被抓到
     } catch (e) {
-      if (e.signal) return { status: 'TIMEOUT', signal: e.signal };
+      // SIGTERM 是 execFileSync 超时杀进程的信号
+      if (e.signal === 'SIGTERM' || e.killed) return { status: 'TIMEOUT', signal: e.signal };
       return { status: 'KILLED' };     // 自测失败 = 抓到了
     }
   } finally {
@@ -175,6 +208,16 @@ function runMutation(name, mutator) {
 const names = candidates();
 if (names.length === 0) {
   console.error('[配置错误] 没有找到可测的校验器（有 .test.mjs 且不是生成器）');
+  process.exit(2);
+}
+
+// 前置：自测文件必须真的会失败
+const noExit = testFilesMissingExit();
+if (noExit.length > 0) {
+  console.error('\n[致命] 以下自测文件没有 process.exit()——它们永远不会红：');
+  for (const f of noExit) console.error(`  ${f}`);
+  console.error('\n  断言写得再多，不以非零退出就等于没写。');
+  console.error('  变异测试对这类文件没有意义：无论怎么改坏，它都"通过"。\n');
   process.exit(2);
 }
 
@@ -192,6 +235,7 @@ for (const name of names) {
     applied: applied.length,
     killed: applied.filter((r) => r.status === 'KILLED').length,
     survived: survived.length,
+    timedOut: applied.filter((r) => r.status === 'TIMEOUT').length,
     detail: perMutator,
   });
 }
@@ -199,11 +243,12 @@ for (const name of names) {
 const totalApplied = results.reduce((a, r) => a + r.applied, 0);
 const totalKilled = results.reduce((a, r) => a + r.killed, 0);
 const totalSurvived = results.reduce((a, r) => a + r.survived, 0);
+const totalTimedOut = results.reduce((a, r) => a + r.timedOut, 0);
 
 if (ARG.json) {
   console.log(JSON.stringify({
     ok: totalSurvived === 0,
-    suites: results.length, applied: totalApplied, killed: totalKilled, survived: totalSurvived,
+    suites: results.length, applied: totalApplied, killed: totalKilled, survived: totalSurvived, timed_out: totalTimedOut,
     results,
   }, null, 2));
   process.exit(totalSurvived === 0 ? 0 : 1);
