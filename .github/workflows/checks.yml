@@ -52,8 +52,26 @@ jobs:
         # **有 CI 的项目应加一条检查。**」
         #
         # 单独列一步而不只挂在 check-all 里，是为了让失败原因在 Actions 页面
-        # 一眼可见——混在 41 个套件的输出里，读者要翻很久才知道是链接坏了。
+        # 一眼可见——混在 43 个套件的输出里，读者要翻很久才知道是链接坏了。
         run: node tools/check-bilingual-links.mjs
+
+      - name: Commit message format (PROJECT-RULES rule 3.2)
+        # 规则 3.2：「type 用这七个，不要自创」。
+        #
+        # 只查**本次推送范围**，不查历史存量：历史改不了（要 force push，
+        # 规则 3.3 禁止），而一道上线首日就红出 8 条的闸门会被立刻关掉。
+        #
+        # PR 里查 base..head；push 到 main 时查 HEAD~1..HEAD。
+        shell: bash
+        run: |
+          set -e
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RANGE="origin/${{ github.base_ref }}..HEAD"
+          else
+            RANGE="HEAD~1..HEAD"
+          fi
+          echo "检查范围: $RANGE"
+          node tools/check-commit-msg.mjs --since "${RANGE%%..*}" || exit 1
 
       - name: Rule → validator ledger (report only)
         # 仪表，不是闸门：存量规则里绝大多数没有机器出口，这里只打印比例，不判失败。

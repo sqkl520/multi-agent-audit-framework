@@ -361,6 +361,20 @@ const CHECKS = [
     script: 'check-bilingual-links.test.mjs',
     desc: '用例：双向互通放行 / 改名后 404 被抓 / 单向链接被抓 / 首行非互链被抓 / BOM 空行不误伤 / 缺文件须报 / 命名分歧只 WARN',
   },
+  {
+    name: '提交信息格式（PROJECT-RULES.md 规则 3.2）',
+    // 规则原文：「type 用这七个，不要自创」。
+    //
+    // 本仓库历史自创过 cleanup / correct / diagnosis / probe / verdict 五种。
+    // 自创的代价不是"不好看"：`git log --grep="^feat"` 这类用法会静默漏掉
+    // 本该被筛到的提交，而写提交的人并不知道自己漏了。
+    //
+    // **不查历史存量**：历史改不了（重写历史要 force push，规则 3.3 禁止），
+    // 而一道上线首日就红出 8 条的闸门会被立刻关掉。
+    // 默认只查最近 1 条，CI 里用 --since origin/main 查本次推送范围。
+    script: 'check-commit-msg.test.mjs',
+    desc: '用例：七种合法 type 放行 / 带 scope 放行 / 五种自创 type 被抓 / revert 放行 / 缺冒号 / 缺描述 / 只有标点',
+  },
 ];
 
 let failed = 0;
