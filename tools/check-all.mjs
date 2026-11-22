@@ -406,6 +406,68 @@ const CHECKS = [
     script: 'check-doc-counts.test.mjs',
     desc: '用例：一致放行 / 过期数字须报 / 套件数写错须报 / 两种口径都接受 / 英文写法也查 / 分母为0须exit2',
   },
+  {
+    name: '自测活力（每个套件是否真的会失败）',
+    // 2026-11-22 补，代价是血的教训：
+    //
+    // 原生 dsh 跑完审计后做变异测试，发现 `stop-hook.test.mjs` 末尾
+    // **只有 console.log，没有 process.exit()**。135 条断言，即使 66 条失败，
+    // 进程仍以 0 退出——**这个套件从写下的那天起就没红过**。
+    //
+    // 变异工具里有这条检查，但全量变异要跑十几分钟，没人会每次提交都跑。
+    // 而「忘记写 process.exit」是新写测试最常见的疏漏之一，必须每次提交都查。
+    //
+    // 判据：有 exit、exit 不是常量 0、有失败计数变量。
+    script: 'check-test-vitality.mjs',
+    desc: '检查 42 个 .test.mjs：是否有 process.exit / 是否恒为 0 / 是否有失败计数',
+  },
+  {
+    name: '未被总检收录的自测（覆盖缺口）',
+    // 2026-11-22 实测：有 5 个 .test.mjs 能跑通、共 204 条断言，
+    // 但**没有被 check-all 注册**——它们每天在本地绿，却从不在 CI 里跑。
+    //
+    //   check-files-touched-harness      99 条
+    //   check-fix-instances-harness      59 条
+    //   check-fix-artifacts-envelope     47 条
+    //   fix-phase-e2e                    48 条
+    //   check-suite-vitality             8 条
+    //
+    // 这不是「不想跑」，是遗漏。漏掉的检查比没有检查更糟：
+    // 它给人一种「有覆盖」的错觉。
+    script: 'check-test-registration.mjs',
+    desc: 'tools/*.test.mjs 里的每个文件都必须出现在 check-all 的 CHECKS 里',
+  },
+
+  // ── 2026-11-22 补：把上面查出的 5 个漏网测试接进来 ──
+  // 它们此前能跑通却不在 CI 里，共 204 条断言从没被执行过。
+  {
+    name: 'files_touched 与真实写操作对账（harness 侧）',
+    script: 'check-files-touched-harness.test.mjs',
+    desc: '用例：合成 dsh session 日志，验证「声称改了 N 个文件」与「真有 N 次写操作」是否一致',
+  },
+  {
+    name: '修复实例对账（harness 侧）',
+    script: 'check-fix-instances-harness.test.mjs',
+    desc: '用例：UPHELD 是否进入修复登记（用 harness 日志而非自述）',
+  },
+  {
+    name: 'fix 产物信封完整性',
+    script: 'check-fix-artifacts-envelope.test.mjs',
+    desc: '用例：fix 角色的产物信封字段是否齐全',
+  },
+  {
+    name: '修复相位端到端',
+    script: 'fix-phase-e2e.test.mjs',
+    desc: '用例：修复 → 验收整条链路的端到端行为',
+  },
+  {
+    name: '自测套件活力（变异测试：改坏校验器，自测是否报错）',
+    // 全量变异要十几分钟，所以这里跑的是它自己的**自测**（8 条），
+    // 验证「能抓到存活变异」这个能力本身没问题。
+    // 全量按需手动跑：node tools/check-suite-vitality.mjs
+    script: 'check-suite-vitality.test.mjs',
+    desc: '用例：断言了退出码则变异被抓 / 什么都不测则存活 / 只写临时副本',
+  },
 ];
 
 let failed = 0;

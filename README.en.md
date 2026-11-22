@@ -56,7 +56,7 @@ Zero dependencies; all you need is **Node.js ≥ 22** (some harness log validato
 git clone https://github.com/sqkl520/multi-agent-audit-framework.git
 cd multi-agent-audit-framework
 
-# Run all mechanical checks (about 45 self-test suites)
+# Run all mechanical checks (about 52 self-test suites)
 node tools/check-all.mjs
 ```
 
@@ -141,7 +141,7 @@ Main Agent (orchestrates only, does not read code)
 | Layer | What it uses |
 |---|---|
 | Framework itself | Markdown prompts + JSON contracts (`framework/`) |
-| Validators | Zero-dependency Node.js (`tools/*.mjs`, 45 self-test suites) |
+| Validators | Zero-dependency Node.js (`tools/*.mjs`, 52 self-test suites) |
 | State machine | `state.json` persisted to disk, resumes after interruption |
 | Evidence chain | Gate 0: every finding must verbatim echo the `file:line` read in this round |
 
