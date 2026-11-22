@@ -158,11 +158,35 @@ function collectToolSurface() {
   // 不说明有执行者在运行时读它并因它报错。
   const artifactReadByTool = new Set();
   const toolSources = [];
+
+  // 2026-11-22 修：原先用**裸子串** `src.includes(a)` 判定「这份 .md 被读过」，
+  // 于是短文件名会被长文件名蹭成已读：
+  //
+  //   `audit.md`    是 `wave2-audit.md` 的子串
+  //   `critique.md` 是 `wave3-critique.md` 的子串
+  //   `fix.md` / `recon.md` / `sweep.md` / `verify.md` 同理
+  //
+  // 实测：工具源码里出现 `wave4-fix.md` 就算作「读过 fix.md」——
+  // 而**没有任何工具真的读过 `fix.md`**。`fix.md` / `recon.md` / `sweep.md`
+  // 三个切片的「真读」工具数是 **0**，却全部被算成活规范。
+  //
+  // 后果不是统计噪声，是**8 条规则句虚增出口**（`fix-worker.md` 两条、
+  // `recon-scout.md` 两条、`sweep-scout.md` 四条），出口率被抬高。
+  // 这个工具存在的理由就是「不许把假出口算成真出口」，它自己不能犯这个错。
+  //
+  // 判据改成**文件名边界匹配**：前一个字符不能是 `[A-Za-z0-9_.-]`，
+  // 后一个字符不能是 `[A-Za-z0-9_]`。这样 `wave4-fix.md` 里的 `fix.md`
+  // 前面是 `-`，不算命中；而单独出现的 `fix.md` 仍然命中。
+  const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const ARTIFACT_READERS = new Map(
+    [...artifacts].map((a) => [a, new RegExp(`(^|[^A-Za-z0-9_.-])${escapeRe(a)}(?![A-Za-z0-9_])`, 'm')]),
+  );
+
   for (const f of readdirSync(TOOLS)) {
     if (!f.endsWith('.mjs') || f.includes('.test.') || f === 'check-rule-ledger.mjs') continue;
     const src = readFileSync(join(TOOLS, f), 'utf8');
     toolSources.push(src);
-    for (const a of artifacts) if (src.includes(a)) artifactReadByTool.add(a);
+    for (const a of artifacts) if (ARTIFACT_READERS.get(a).test(src)) artifactReadByTool.add(a);
   }
 
   // ── 试过但**放弃**的一类判据：靠内容推断「实现关系」──

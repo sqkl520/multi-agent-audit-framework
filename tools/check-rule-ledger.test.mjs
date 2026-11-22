@@ -263,6 +263,42 @@ console.log('\ncase 15b: 所指 .md 从未被任何校验器读取 → 不算出
   rmSync(d, { recursive: true, force: true });
 }
 
+console.log('\ncase 15c: 短文件名不得被长文件名蹭成「已读」（子串误判）');
+{
+  // 2026-11-22 实测的缺陷：`artifactReadByTool` 用裸子串 `src.includes(a)`，
+  // 于是 `fix.md` 会被工具源码里的 `wave4-fix.md` 命中，被判成「这份规范被读过」。
+  //
+  // 全仓库受影响的是 6 对、其中 3 个文件真读数为 0：
+  //   fix.md / recon.md / sweep.md —— 没有任何工具读过它们，
+  //   却因为存在 wave4-fix.md / wave1-recon.md / wave2a-sweep.md 而全都被算活。
+  //
+  // 后果是 8 条规则句虚增出口（fix-worker 2、recon-scout 2、sweep-scout 4）。
+  //
+  // 这条用例钉住：只有当工具里**单独**出现 `solo.md` 时才算读过。
+  const d = makeFramework({
+    docs: {
+      'solo.md': '# SOLO\n\n这份规范没有被任何工具读过。\n',
+      // 只有这个长名被工具引用，`solo.md` 只是它的子串
+      'wave1-solo.md': '# WAVE1 SOLO\n\n这是另一份文件。\n',
+      'a.md': '# A\n\n必须按 solo.md 的规定做。\n',
+      'b.md': '# B\n\n必须按 wave1-solo.md 的规定做。\n',
+    },
+    // 工具只提 wave1-solo.md，从不单独提 solo.md
+    tools: [{ name: 'reader.mjs', body: "const f = 'wave1-solo.md';\nerrors.push({ rule: 'x' });\n" }],
+  });
+  const r = run(d, ['--json', '--dump-rows']);
+  const j = JSON.parse(r.out);
+  const rowA = j.rows.find((x) => x.file === 'framework/a.md');
+  const rowB = j.rows.find((x) => x.file === 'framework/b.md');
+  ok('solo.md 只有子串被命中 → 判孤儿，不算出口',
+    rowA && rowA.has_exit === false && rowA.exits.includes('artifact_orphan:solo.md'),
+    JSON.stringify(rowA));
+  ok('wave1-solo.md 被真读过 → 算出口（不能矫枉过正）',
+    rowB && rowB.has_exit === true && rowB.exits.includes('artifact:wave1-solo.md'),
+    JSON.stringify(rowB));
+  rmSync(d, { recursive: true, force: true });
+}
+
 console.log('\ncase 16: --fail-on-regress 没基准时必须 exit 2（不得当作「无退化」）');
 {
   // 2026-11-20：原判据 `noExit > totalSentences - totalWithExit` 恒为 false

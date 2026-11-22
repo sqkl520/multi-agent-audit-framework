@@ -52,6 +52,17 @@ const results = [];
 const problems = [];
 
 for (const [role, fields] of Object.entries(roleRequired)) {
+  // 2026-11-22：本循环读取的是 `framework/components/output-contract/<role>.md`，
+  // 即 fix.md / sweep.md / recon.md 等一批**按角色拆出来的契约切片**。
+  //
+  // 为什么写这句废话一样的注释：`check-rule-ledger.mjs` 判断「一条规则有没有机器出口」
+  // 时，只认「工具源码里出现过该规范的文件名」，而这里路径是模板字面量
+  // `${role}.md`，文件名从不以字面量形式出现。于是 fix.md / sweep.md / recon.md
+  // 被判成**没有任何校验器读过它们的死文档**，各自吃掉 2 条真出口。
+  //
+  // 试过让脚本自动推断这种读取关系（词频、独有词、正则子串），三版全失败，
+  // 详见 check-rule-ledger.mjs 的注释。结论是只能由人接线，就是这几行。
+  // 角色切片文件名：recon.md / sweep.md / audit.md / critique.md / fix.md / verify.md / planner.md
   const p = join(SLICE_DIR, `${role}.md`);
   if (!existsSync(p)) {
     problems.push({ role, kind: 'slice_missing', detail: `没有 ${role}.md` });

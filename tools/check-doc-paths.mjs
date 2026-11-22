@@ -33,6 +33,7 @@
  */
 
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join, dirname, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -211,6 +212,77 @@ for (const doc of docs) {
 
       if (!ok) {
         problems.push({ id, doc, target: probe, msg: `${doc} 引用了 \`${probe}\`，但该路径不存在` });
+      }
+    }
+  }
+}
+
+// ── P3 · 文档声称「已被 .gitignore 拦住」的目录，必须真的被拦住 ──
+//
+// 2026-11-22 实测：README:99 写「`.run-*/`、`.audit-*/`、`.probe-*/` 已在
+// `.gitignore` 里拦住」，并让读者把运行产物写在 `.work/` 或 `logs/` 下——
+// 而 `.work/` 和 `logs/` **根本没被忽略**（`git check-ignore` 退出码非 0）。
+//
+// 这不是笔误，是「文档承诺了、配置没兑现」：一次 `git add -A` 就会把运行产物
+// 扫进公开仓库。这个坑 2026-11-17 已经踩过一次，182 个文件进了公开仓库。
+//
+// 判据：找形如「`X` 已在 .gitignore 里拦住」的句子，抽出其中所有反引号路径，
+// 逐个跑 `git check-ignore`。声明了却没生效 → FAIL。
+//
+// 为什么不要求「文档提到的每个目录都被忽略」：那会误伤大量正当引用
+// （`tools/`、`framework/` 当然没被忽略）。只有**明确声称被忽略**的才查。
+{
+  const GITIGNORE_CLAIM = /(`[^`]+`(?:\s*[、,，]\s*`[^`]+`)*)\s*(?:已|都)?在\s*`?\.gitignore`?\s*(?:里|中)?\s*(?:拦住|忽略|屏蔽)/g;
+
+  /**
+   * 声称的路径 → 一个**真的会出现在仓库里的**实例路径。
+   *
+   * 坑（2026-11-22 实测）：最初我把「点 run 横杠 星」去掉通配符后得到「点 run 横杠」，
+   * 拿它去 git check-ignore —— 结果返回「已忽略」，因为那条 ignore 规则里的
+   * 星可以吞掉一切，导致残缺名字也命中。于是**这条检查永远通过**，
+   * 无论文档说的目录有没有真被拦住。
+   *
+   * 这是「测试用例本身造假」：它测的不是文档承诺的那件事。
+   * 正确做法是构造规则本意要覆盖的**实际目录名**：
+   *   点 run 横杠 星 斜杠 → 点 run 横杠 接一段非空后缀
+   * 然后验证它确实被忽略。
+   */
+  const toInstance = (claim) => {
+    const c = claim.replace(/\/$/, '');
+    if (!c.includes('*')) return c;
+    // 把第一个通配符换成一段有内容的示例，其余原样
+    return c.replace('*', '20261122');
+  };
+
+  // 不是 git 仓库时（自测的临时目录）这条判据无从判断，
+  // 必须**明确跳过**而不是静默通过——静默通过等于冒充了它没做的检查。
+  let isGitRepo = true;
+  try {
+    execFileSync('git', ['-C', ROOT, 'rev-parse', '--git-dir'], { stdio: 'pipe' });
+  } catch { isGitRepo = false; }
+
+  if (isGitRepo) {
+    for (const doc of docs) {
+      const text = readFileSync(join(ROOT, doc), 'utf8');
+      for (const m of text.matchAll(GITIGNORE_CLAIM)) {
+        for (const pm of m[1].matchAll(/`([^`]+)`/g)) {
+          const claim = pm[1].trim();
+          if (!claim || /^\.gitignore$/.test(claim)) continue;
+          const probe = toInstance(claim);
+          if (!probe) continue;
+          let ignored = false;
+          try {
+            execFileSync('git', ['-C', ROOT, 'check-ignore', '-q', probe + '/'], { stdio: 'pipe' });
+            ignored = true;
+          } catch { ignored = false; }
+          if (!ignored) {
+            problems.push({
+              id: 'P3', doc, target: claim,
+              msg: `${doc} 声称 \`${claim}\` 已被 .gitignore 拦住，但 \`git check-ignore ${probe}/\` 失败`
+                + '——一次 `git add -A` 就会把它扫进仓库',
+            });
+          }
+        }
       }
     }
   }

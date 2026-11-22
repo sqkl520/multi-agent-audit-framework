@@ -905,6 +905,17 @@ if (envelope && envelope.payload && envelope.role) {
         }
 
         if (f.evidence !== undefined) {
+          // 2026-11-22：本规则实现自 `framework/components/evidence-policy.md` §1「门 0」。
+          //
+          // 这行注释不是装饰。`check-rule-ledger.mjs` 判断「一条规则有没有机器出口」时，
+          // 只认「工具源码里出现过该规范的文件名」。不写这里，evidence-policy.md 就会
+          // 被判成 **没有任何执行者的死文档**——而它恰恰是整个框架的准入门槛，
+          // 18 条规则句都指向它。这正是该工具最想抓的那类假阴性，只不过这次
+          // 被抓的是它自己。（靠词频/字面量自动推断「实现关系」试过三版全失败，
+          // 详见 check-rule-ledger.mjs 的注释：只能让人来接线。）
+          //
+          // §1 要求 evidence 是 `{file, line, quote}`，下面是它的形状检查；
+          // 逐字回显由 tools/verify-artifacts.mjs 的门 0 探针核对。
           if (Array.isArray(f.evidence)) {
             errors.push({
               field: `payload.findings[${j}].evidence`, rule: 'evidence_wrong_shape',

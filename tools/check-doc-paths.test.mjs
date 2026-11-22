@@ -155,5 +155,42 @@ console.log('case 9: 分母为 0（一个引用都抽不到）→ exit 2');
   rmSync(dir, { recursive: true, force: true });
 }
 
+console.log('case 10: 文档声称「已在 .gitignore 里拦住」→ 配置必须真的兑现');
+{
+  // 2026-11-22 实测：README:99 让读者把运行产物写在 `.work/`、`logs/` 下，
+  // 并说这些「已在 .gitignore 里拦住」——而 `.work/` 和 `logs/` 根本没被忽略。
+  // 一次 `git add -A` 就把运行产物扫进公开仓库，这个坑 2026-11-17 已踩过一次。
+  //
+  // 两个方向都要测：
+  //   ① 声称了且真的被忽略 → 通过
+  //   ② 声称了但没被忽略   → 必须报
+  const mkGit = (gitignore) => {
+    const dir = mk({
+      'README.md': '# T\n\n产物写在 `.work/` 下——`.work/`、`.run-*/` 已在 `.gitignore` 里拦住。\n'
+        + '\n见 `framework/real.md`。\n',
+      '.gitignore': gitignore,
+    });
+    const g = (...a) => execFileSync('git', a, { cwd: dir, stdio: 'pipe' });
+    g('init', '-q');
+    g('config', 'user.email', 't@t');
+    g('config', 'user.name', 't');
+    return dir;
+  };
+
+  const good = mkGit('.work/\n.run-*/\n');
+  const rGood = run(good);
+  expect('声称且真被忽略 → 不报 P3',
+    !(rGood.data?.problems ?? []).some((p) => p.id === 'P3'),
+    JSON.stringify(rGood.data?.problems));
+  rmSync(good, { recursive: true, force: true });
+
+  const bad = mkGit('.run-*/\n');   // 漏了 .work/
+  const rBad = run(bad);
+  const p3 = (rBad.data?.problems ?? []).filter((p) => p.id === 'P3');
+  expect('声称但没被忽略 → 必须报 P3', p3.length > 0, JSON.stringify(rBad.data?.problems));
+  expect('报告里点出是哪个目录', p3.some((p) => String(p.target).includes('.work')), JSON.stringify(p3));
+  rmSync(bad, { recursive: true, force: true });
+}
+
 console.log(`\n=== 结果: ${pass} 通过 / ${fail} 失败 ===\n`);
 process.exit(fail > 0 ? 1 : 0);
