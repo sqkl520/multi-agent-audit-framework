@@ -496,7 +496,17 @@ for (const c of CHECKS) {
     const sig = e.signal ? ` signal=${e.signal}` : '';
     const code = e.status != null ? ` exit=${e.status}` : '';
     console.log(`失败${code}${sig}`);
-    if (lines.length) for (const l of lines.slice(-8)) console.log(`    ${l}`);
+    // 2026-11-22 修：只打最后 8 行会漏掉真正的失败断言。
+    // 实测：CI 报「97 通过 / 2 失败」但日志里一条 ✗ 都抓不到——
+    // 因为失败断言在输出中部，被 slice(-8) 切掉了。
+    //
+    // 现在优先打印含 ✗ 的行，再补末尾几行（合计、结论在那）。
+    const failedLines = lines.filter((l) => /✗|FAIL|预期失败/.test(l));
+    if (failedLines.length) {
+      for (const l of failedLines.slice(0, 12)) console.log(`    ${l}`);
+      if (failedLines.length > 12) console.log(`    …（另有 ${failedLines.length - 12} 条失败行）`);
+    }
+    if (lines.length) for (const l of lines.slice(-4)) console.log(`    ${l}`);
     else console.log(`    （没有任何输出——进程可能被杀或超时）`);
     failed++;
   }
