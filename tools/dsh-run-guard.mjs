@@ -130,21 +130,25 @@ if (existsSync(statePath)) {
 //   - 占位符出现在**引用块**（> 开头）或**行内引号/反引号包裹**里 → 是在引用，不算
 //   - 占位符出现在普通正文里 → 是骨架
 const PLACEHOLDER = /（收尾时填）|（收尾填）|（锐评后填）|（待填）|（待补）|尚未开始|未开始|TODO:|TBD\b/;
+
+// 2026-11-22 修：占位符出现在**整行**才可能是骨架。
+//
+// 实测误报：round1-02-sweep-slice-03.md 有 12KB 正文、status=COMPLETE、
+// 8 条 leads，只因为「## Leads」小节下写了一行「（尚未开始）」就被判成骨架
+// ——而真实数据在文末的 JSON 信封里。那份产物是完整的。
+//
+// 收紧后：只有**整行去掉空白后就是一个占位符**才算。
+// 句子里带占位符（"（尚未开始）的检查项"）不算。
+const LINE_ONLY = /^\s*[（(]?(收尾时填|收尾填|锐评后填|待填|待补|尚未开始|未开始|TODO|TBD)[）)]?\s*$/i;
 const skeleton = [];
 for (const f of mdFiles) {
   const lines = readFileSync(join(ARG.artifacts, f), 'utf8').split('\n');
   let hit = null;
   for (const raw of lines) {
-    const m = raw.match(PLACEHOLDER);
-    if (!m) continue;
-    // 引用块：整行以 > 开头
+    if (!LINE_ONLY.test(raw)) continue;
+    // 引用块：整行以 > 开头 → 是在引用别人的产物，不算
     if (/^\s*>/.test(raw)) continue;
-    // 行内引用：占位符紧邻的字符里有引号/反引号包裹
-    const idx = raw.indexOf(m[0]);
-    const before = raw.slice(Math.max(0, idx - 6), idx);
-    const after = raw.slice(idx + m[0].length, idx + m[0].length + 6);
-    if (/[「"'`]$/.test(before) || /^[」"'`]/.test(after)) continue;
-    hit = m[0];
+    hit = raw.trim();
     break;
   }
   if (hit) skeleton.push({ file: f, hit });
