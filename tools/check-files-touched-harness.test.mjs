@@ -380,15 +380,26 @@ console.log('\n=== 2：核心对账（声称侧 = files_touched，实际侧 = wr
 
 {
   // 2.18 绝对 / 相对路径混用 → 归一化后正确匹配（这是最容易出 bug 的路径）
+  //
+  // 2026-11-22 修：这个用例原来写死了「大写盘符 D:\ vs 小写 d:/ 应匹配」。
+  // 那在 Windows 上成立（文件系统大小写不敏感，normalizePath 的 caseInsensitive 默认为 IS_WIN），
+  // **在 Linux 上必然失败**——Linux 是大小写敏感的，`D:\Server` 和 `d:/server` 是两个不同路径。
+  //
+  // 结果：这个套件加进 check-all 之后，CI 两个 Linux 平台立刻红，而本地 Windows 全绿。
+  //
+  // 正确的测法是只测**归一化**（绝对 vs 相对、反斜杠 vs 正斜杠），
+  // 大小写敏感度由平台决定，不该在这里断言。
   const SID = 'session-aaaa0005-0000-0000-0000-000000000005';
   const root = makeRoot('--D-Tmp-r21--', [{
     dir: SID,
     events: sessionEvents({
       id: SID,
       writes: [
-        { path: 'D:\\Server\\Some Repo\\src\\main\\java\\com\\x\\A.java' },  // 反斜杠 + 大写盘符
-        { path: 'd:/server/some repo/src/main/java/com/x/B.java' },           // 小写
-        { tool: 'edit', path: `${REPO}/src/main/resources/a.yml` },           // edit 工具
+        // 绝对路径 + 反斜杠（Windows 风格），盘符/大小写与 REPO 一致
+        { path: `${REPO.replace(/\//g, '\\')}\\src\\main\\java\\com\\x\\A.java` },
+        // 相对路径（正斜杠）
+        { path: 'src/main/java/com/x/B.java' },
+        { tool: 'edit', path: `${REPO}/src/main/resources/a.yml` },
       ],
     }),
   }]);
@@ -398,7 +409,7 @@ console.log('\n=== 2：核心对账（声称侧 = files_touched，实际侧 = wr
   const st = writeState(stateOf({ repo: REPO, artifactDir: art, contracts: [{ fix_agent_id: 'fix-1' }] }));
   try {
     const r = run(['--state', st.path, '--sessions', root, '--json']);
-    expect('2.18 绝对/相对/大小写混用 → exit 0（归一化正确）', r.code === 0, `code=${r.code} ${JSON.stringify(rulesOf(r, 'FAIL'))}`);
+    expect('2.18 绝对/相对/反斜杠混用 → exit 0（归一化正确）', r.code === 0, `code=${r.code} ${JSON.stringify(rulesOf(r, 'FAIL'))}`);
     expect('2.19 不报 overclaimed', !hasRule(r, 'files_touched_overclaimed_by_harness'), msgOf(r, 'files_touched_overclaimed_by_harness').slice(0, 300));
     expect('2.20 edit 工具也被计入（write/edit 都要看）', r.data?.writeEditCalls === 3, String(r.data?.writeEditCalls));
   } finally { rmSync(root, { recursive: true, force: true }); rmSync(st.dir, { recursive: true, force: true }); rmSync(art, { recursive: true, force: true }); }
