@@ -157,11 +157,41 @@ function collectToolSurface() {
   // 只扫**非测试**脚本——测试里出现某文件名只说明有 fixture 覆盖它，
   // 不说明有执行者在运行时读它并因它报错。
   const artifactReadByTool = new Set();
+  const toolSources = [];
   for (const f of readdirSync(TOOLS)) {
     if (!f.endsWith('.mjs') || f.includes('.test.') || f === 'check-rule-ledger.mjs') continue;
     const src = readFileSync(join(TOOLS, f), 'utf8');
+    toolSources.push(src);
     for (const a of artifacts) if (src.includes(a)) artifactReadByTool.add(a);
   }
+
+  // ── 试过但**放弃**的一类判据：靠内容推断「实现关系」──
+  //
+  // 动机是真实存在的假阴性：`report-naming.md:29` 规定命名正则
+  //   ^round(\d+)-(01-recon|02-sweep|...)-[a-z0-9]+(-[a-z0-9]+)*\.md$
+  // 而 `check-deliverables.mjs:241` 的 STAGE_RE 实现了同一件事。
+  // 但工具源码里没有 `report-naming.md` 这个字符串，于是 15 条规则
+  // 被算成「仅靠 artifact 出口」——**规则确实有执行者，只是识别不到**。
+  //
+  // 试了三版，全部失败：
+  //
+  //   版 1「大写词命中 ≥60%」：`evidence-policy.md` 被误判为已实现，
+  //     命中的是 CONFIRMED / HIGH / CRITICAL ——全框架共享的枚举值。
+  //   版 2「独有连字符词 ≥60%」：`report-naming.md` 救不回来（53%），
+  //     未命中的是 recon-slices / audit-slice 这类**产物文件名示例**，
+  //     它们本来就不该出现在工具源码里，算进分母是错的。
+  //   版 3「正则逐字子串」：实测两边**不是逐字相同**——
+  //     文档写 `round(\d+)`，工具写 `${roundId}`（模板插值）。
+  //     同一条规则在两处用了不同的实现形式。
+  //
+  // 结论：**靠词频或字面量推断「实现关系」不可靠**。
+  // 一份规范被实现，可以有无数种写法；静态匹配猜不准，猜错比不猜更糟
+  // （把假出口算成真出口，正是这个工具存在的理由）。
+  //
+  // 所以这里**只认最保守的信号：工具源码里出现该文件名**。
+  // 剩下的假阴性如实留在这里——想让它变成真出口，正确做法是
+  // 让工具在注释里写明「本节实现自 report-naming.md §1」，
+  // 即**让人去接线**，而不是让脚本去猜。
 
   return { scripts, ruleNames, artifacts, artifactReadByTool };
 }

@@ -237,7 +237,21 @@ if (ledgerText) {
 // ────────────────────────────────────────────────────────────────────
 // D4 · 目录里不得有自由命名的文件（不能归入任何 stage 的）
 // ────────────────────────────────────────────────────────────────────
+// 2026-11-22：本节的命名规则实现自 `framework/artifacts/report-naming.md` §1。
+//
+// 这行注释不是装饰。`check-rule-ledger.mjs` 判断「一条规则有没有机器出口」时，
+// 只认「工具源码里出现了该规范的文件名」。此前这里没有出处，
+// 于是 report-naming.md 的 15 条规则被算成「仅靠 artifact 出口」——假阴性。
+//
+// 试过让 ledger 靠内容推断实现关系（词频、正则字面量），三版全部失败：
+// 同一条规则在文档里写 `round(\d+)`、在代码里写 `${roundId}`，
+// 形式不同，静态匹配猜不准。**猜错比不猜更糟**——把假出口算成真出口
+// 正是那个工具要防的事。
+//
+// 正确做法是人来接线：写下出处，机器就能认。
 {
+  // 规则正则以 `framework/artifacts/report-naming.md` §1 为准，
+  // 改这里必须同步改文档（反之亦然）。
   const STAGE_RE = new RegExp(`^${roundId}-(01-recon|02-sweep|02-audit|03-critique|04-fix|05-verify)-[a-z0-9]+(-[a-z0-9]+)*\\.md$`);
   const DELIVERABLE_RE = new RegExp(`^${roundId}-(final-report|ledger)\\.md$`);
   const LOG_OK = new RegExp(`^${roundId}-log\\.(txt|md)$`);
