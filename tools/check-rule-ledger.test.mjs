@@ -299,6 +299,35 @@ console.log('\ncase 15c: 短文件名不得被长文件名蹭成「已读」（�
   rmSync(d, { recursive: true, force: true });
 }
 
+console.log('\ncase 15d: 自动生成的文档不得重复计入分母（母文件+切片会重复计数）');
+{
+  // 2026-11-22 实测：母文件 output-contract.md 与 7 份生成切片共享整段正文，
+  // 同一句规则在 8 个文件里各出现一次。全仓 1121 条规则句里 245 条（21.9%）
+  // 是重复内容，78 条出口被重复计入——同时虚增分子和分母，出口率因此失真。
+  //
+  // 判据不靠文件名（目录会变），靠生成器写在文件头的「自动生成，请勿手改」。
+  const GEN_MARK = '<!--\n  自动生成，请勿手改。母文件：x.md\n  重跑：node tools/gen.mjs\n-->\n\n';
+  const body = '必须按 spec.md 的规定做。\n';
+  const d = makeFramework({
+    docs: {
+      'spec.md': '# SPEC\n',
+      'master.md': `# MASTER\n\n${body}`,
+      // 切片是母文件的副本：同一句话，且带着生成标记
+      'slice-a.md': `${GEN_MARK}# SLICE A\n\n${body}`,
+      'slice-b.md': `${GEN_MARK}# SLICE B\n\n${body}`,
+    },
+    tools: [{ name: 'reader.mjs', body: "const f = 'spec.md';\n" }],
+  });
+  const r = run(d, ['--json']);
+  const j = JSON.parse(r.out);
+  ok('母文件的规则句计入分母', j.rule_sentences >= 1, JSON.stringify(j));
+  ok('两份生成切片被排除（分母只剩母文件那 1 条）',
+    j.rule_sentences === 1, `rule_sentences=${j.rule_sentences}`);
+  ok('排除数被如实报出，不静默', j.generated_files_skipped === 2,
+    `generated_files_skipped=${j.generated_files_skipped}`);
+  rmSync(d, { recursive: true, force: true });
+}
+
 console.log('\ncase 16: --fail-on-regress 没基准时必须 exit 2（不得当作「无退化」）');
 {
   // 2026-11-20：原判据 `noExit > totalSentences - totalWithExit` 恒为 false
@@ -313,22 +342,82 @@ console.log('\ncase 16: --fail-on-regress 没基准时必须 exit 2（不得当�
 
 console.log('\ncase 17: 有基准且未退化 → exit 0；基准更高（模拟退化）→ exit 1');
 {
-  const d = makeFramework({ docs: { 'a.md': '# A\n\n必须跑 tools/real.mjs 验证。\n' } });
+  const d = makeFramework({
+    docs: { 'a.md': '# A\n\n必须跑 tools/real.mjs 验证。\n' },
+    // 必须有这个脚本，a.md 那 1 条出口才成立——否则基准里就是 0，
+    // 后面怎么改都测不出退化（2026-11-23 踩到）。
+    tools: [{ name: 'real.mjs', body: '// ok\n' }],
+  });
   const rb = run(d, ['--write-baseline']);
   ok('--write-baseline 成功', rb.code === 0, rb.out);
   const okRun = run(d, ['--fail-on-regress']);
   ok('未退化 exit 0', okRun.code === 0, `code=${okRun.code}\n${okRun.out}`);
   ok('明确报告无退化', /无退化/.test(okRun.out), okRun.out);
 
-  // 把基准的 with_exit 抬高，模拟「上一轮出口更多」
-  const bp = join(d, 'tools', 'fixtures', 'rule-ledger-baseline.json');
-  const base = JSON.parse(readFileSync(bp, 'utf8'));
-  base.with_exit = base.with_exit + 5;
-  writeFileSync(bp, JSON.stringify(base, null, 2) + '\n');
+  // 2026-11-23：基准现在含 by_file 逐文件明细，所以退化要按文件模拟。
+  // 只抬高总数里的 with_exit 已经不再触发退化——那是**正确的**：
+  // 总数变动可能来自统计范围变化，不能凭它判退化（见 case 18）。
+  // 这里改成一个文件真的丢掉出口。
+  writeFileSync(join(d, 'framework', 'a.md'), '# A\n\n必须这样做。\n');
   const badRun = run(d, ['--fail-on-regress']);
   ok('退化 exit 1', badRun.code === 1, `code=${badRun.code}\n${badRun.out}`);
   ok('报出退化详情', /退化/.test(badRun.out), badRun.out);
+  ok('归因到具体文件', /a\.md/.test(badRun.out), badRun.out);
   rmSync(d, { recursive: true, force: true });
+}
+
+console.log('\ncase 18: 逐文件归因 —— 真退化要报，统计范围变化不许报');
+{
+  // 2026-11-23：当天我把自动生成的 7 份切片排除出分母，出口绝对数从 243
+  // 掉到 201，**没有一条规则丢掉出口**，但闸门报了「退化」。
+  // 一个会因为统计范围修正而变红的闸门，下次就会被人用 --no-verify 绕过。
+  //
+  // 现在基准里存逐文件出口数，比对时按文件归因。三个方向都要钉住：
+  //   ① 某文件出口数下降 → 真退化，必须报
+  //   ② 某文件变成自动生成物被排除 → 不算退化（范围变了，不是规则坏了）
+  //   ③ 新增文件 → 不算退化
+
+  // ① 真退化：同一文件，规则被改写后丢掉出口
+  const d1 = makeFramework({
+    docs: {
+      'a.md': '# A\n\n必须跑 tools/real.mjs 验证。\n',
+      'b.md': '# B\n\n必须跑 tools/real.mjs 验证。\n',
+    },
+    tools: [{ name: 'real.mjs', body: '// ok\n' }],
+  });
+  run(d1, ['--write-baseline']);
+  // 把 b.md 的出口拿掉（规则句还在，但不再点名任何脚本）
+  writeFileSync(join(d1, 'framework', 'b.md'), '# B\n\n必须这样做。\n');
+  const r1 = run(d1, ['--fail-on-regress']);
+  ok('同一文件出口数下降 → 报退化', r1.code === 1, `code=${r1.code}\n${r1.out}`);
+  ok('归因点名到具体文件', /b\.md/.test(r1.out), r1.out);
+  rmSync(d1, { recursive: true, force: true });
+
+  // ② 范围变化：文件加上生成标记后被排除，不算退化
+  const d2 = makeFramework({
+    docs: {
+      'a.md': '# A\n\n必须跑 tools/real.mjs 验证。\n',
+      'b.md': '# B\n\n必须跑 tools/real.mjs 验证。\n',
+    },
+    tools: [{ name: 'real.mjs', body: '// ok\n' }],
+  });
+  run(d2, ['--write-baseline']);
+  writeFileSync(join(d2, 'framework', 'b.md'),
+    '<!--\n  自动生成，请勿手改。\n-->\n\n# B\n\n必须跑 tools/real.mjs 验证。\n');
+  const r2 = run(d2, ['--fail-on-regress']);
+  ok('文件变为生成物 → 不报退化', r2.code === 0, `code=${r2.code}\n${r2.out}`);
+  rmSync(d2, { recursive: true, force: true });
+
+  // ③ 新增文件带出口 → 不算退化
+  const d3 = makeFramework({
+    docs: { 'a.md': '# A\n\n必须跑 tools/real.mjs 验证。\n' },
+    tools: [{ name: 'real.mjs', body: '// ok\n' }],
+  });
+  run(d3, ['--write-baseline']);
+  writeFileSync(join(d3, 'framework', 'c.md'), '# C\n\n必须跑 tools/real.mjs 验证。\n');
+  const r3 = run(d3, ['--fail-on-regress']);
+  ok('新增有出口的文件 → 不报退化', r3.code === 0, `code=${r3.code}\n${r3.out}`);
+  rmSync(d3, { recursive: true, force: true });
 }
 
 console.log(`\n=== 结果: ${pass} 通过 / ${fail} 失败 ===\n`);

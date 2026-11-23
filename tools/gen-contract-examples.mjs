@@ -72,6 +72,19 @@ const EXAMPLES = {
       },
     ],
     unverified: [],
+    // 2026-11-22：exclusion_report 已成为 recon 的契约必填项
+    // （模板 §2.3.2 早就要求，此前契约与校验器都没接上）。
+    // 示例必须包含它，否则生成器会因「示例不通过校验器」而拒绝写出——
+    // 这个保护是对的：一份通不过自家校验器的示例，比没有示例更糟。
+    exclusion_report: {
+      included_files: 2,
+      excluded_by_type: {
+        '.md': { count: 5, reason: '文档，非源码（合理）' },
+        '.json': { count: 3, reason: '配置，非源码（合理）' },
+      },
+      excluded_source_like: [],
+      exclusion_dominant: false,
+    },
   },
   sweep: {
     slice_id: 'S1',

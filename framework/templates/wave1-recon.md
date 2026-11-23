@@ -16,6 +16,29 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 10 轮)
 > 本模板与 evidence-policy / output-contract 冲突时，以两者为准；
 > 本模板只负责“侦察要产出什么、按什么规则构造切片”，不重新定义证据结构或返回格式。
 > 侦察Agent的返回必须符合 output-contract.md 的 role: "recon" payload schema。
+>
+> **你的返回会被 `tools/check-payload.mjs --role recon` 机械校验**，
+> 下列规则会在你返回的那一刻报错——不是事后提醒，是当场拒收：
+>
+> | 规则名 | 触发条件 | 本模板对应 |
+> |---|---|---|
+> | `missing_exclusion_report` | 没有 `exclusion_report` | §2.3.2 |
+> | `exclusion_report_wrong_shape` | `exclusion_report` 不是对象（写成数组或字符串） | §2.3.2 |
+> | `source_like_not_registered` | `excluded_source_like` 非空但没登记进 `unverified` | §2.3.2 |
+> | `dominant_exclusion_not_retryable` | `exclusion_dominant=true` 且 `included_files=0`，但 status 不是 `RETRYABLE_FAILURE` | §2.3.2 |
+> | `slice_over_line_cap` | 某切片 `line_count > 1800` 却没标 `oversized_file` | §2.2 |
+> | `oversized_without_blindspot` | 标了 `oversized_file` 但 `rationale` 没提跨文件调用链盲区 | §2.2.1 |
+> | `slice_overlap` | 两个切片的 `files` 有交集 | §5.2 |
+> | `shared_in_files` | 同一文件同时出现在 `files` 和 `shared_dependencies` | §2.4 |
+> | `invalid_unverified_reason` | `unverified[].reason` 不在五值闭集内 | §4 |
+> | `unverified_missing_target` / `unverified_missing_reason` | `unverified` 条目缺 `target` 或 `reason` | §4 |
+> | `silent_truncation` | `entry_points_truncated=true` 但 `unverified` 里没说明 | §3.3 |
+> | `count_mismatch` | `slice_count` 不等于 `audit_slices.length` | §6 |
+> | `entry_point_not_object` / `missing_entry_point_field` | 入口点不是对象或缺 `location`/`evidence_quote` | §3.2 |
+>
+> 这张表存在的原因：本模板此前**一次都没提到自己的校验器**，35 条规则句
+> 全靠模型自律。上述规则早已在 `check-payload.mjs` 里执行，agent 却看不见，
+> 只能靠试错撞上。现在写在这里，是让「会被拦住什么」在动手前就可见。
 
 ---
 

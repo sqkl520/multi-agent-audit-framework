@@ -11,6 +11,26 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 11 轮)
 > **加载时机**：加载前必须已加载 evidence-policy.md 和 output-contract.md。
 > **职责边界**：只负责“审计Agent在切片内如何只针对一个维度产出有证据的发现”，不重新定义证据结构或返回格式。
 >
+> **你的返回会被 `tools/check-payload.mjs --role audit` 机械校验**，
+> 下列规则会在你返回的那一刻报错，不是事后提醒：
+>
+> | 规则名 | 触发条件 |
+> |---|---|
+> | `invalid_finding_status` | `findings[].status` 不在 `CONFIRMED / NO_EVIDENCE_FOUND / GATE_0_FAILED / UNREADABLE / EVIDENCE_GAP` 内 |
+> | `missing_finding_id` | 某条 finding 没有 `finding_id`——下游锐评/修复/验收都靠它挂接 |
+> | `confirmed_without_evidence` | `status=CONFIRMED` 但 `evidence.quote` 为空或纯空白 |
+> | `confirmed_without_severity` | `status=CONFIRMED` 但 `severity` 为空 |
+> | `evidence_wrong_shape` / `inference_wrong_shape` | `evidence` 不是 `{file,line,quote}` 对象 / `inference` 不是 `{claim,basis,alternatives}` 对象 |
+> | `critical_without_call_chain` | `severity=CRITICAL` 却没有运行时证据（调用链/测试输出/日志/控制流） |
+> | `no_evidence_without_scope` | 有 `NO_EVIDENCE_FOUND` 但 `searched_scope` 缺 `files_read` 或 `dimension_checklist` |
+> | `vacuous_basis` | `NO_EVIDENCE_FOUND` 的 `basis` 少于 15 字 |
+> | `empty_findings` | `findings` 是空数组（「没查」与「查了没发现」在契约上必须可区分） |
+> | `missing_self_check` / `invalid_self_check_status` / `self_check_no_reason` | 三项必做自检缺字段 / 状态取闭集外的值 / 判失败却没写理由 |
+>
+> 这张表此前不存在：上述规则早已在 `check-payload.mjs` 里执行，但本模板一次都没点名，
+> agent 只能靠试错撞上。**尤其是 `critical_without_call_chain` 和 `vacuous_basis`
+> 这两条——它们是最容易被敷衍的闸门，也是唯一能让人「写个关键词就过」的闸门。**
+>
 > 本文由 DeepSeek 分享对话第 11 轮抽取。**第 1–2 节与第 5–6 节仍为原文**；第 3 节已重写为「不复述 `evidence-policy.md`，只列三条特有加强」，第 4.5–4.7 节为后续实测新增。改写理由见各节的行内说明。
 
 ## 第 1 节：审计Agent的职责边界——三做三不做

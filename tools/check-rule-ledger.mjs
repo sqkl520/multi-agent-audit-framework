@@ -122,6 +122,23 @@ const SNAKE_RE = /\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b/g;
 const DISCRETIONARY_RE = /DISCRETIONARY/;
 const WINDOW = 3;
 
+// 2026-11-22 补：裸工具名（不带 `.mjs`）也算出口。
+//
+// 实测：`protocol.md:967-968` 的闸门表写的是
+//
+//   | `--gate accept` | ... | 契约合规（`check-payload`）、门 0 回显（`verify-artifacts`） | ... |
+//
+// 两个工具都被点名了，但都没带 `.mjs`，于是 SCRIPT_RE 匹配不上，
+// 整句被判「没有任何机器出口」。这不是孤例：`run-state.md:354` 的 `stop-hook` 同理。
+//
+// 方向是「有执行者却算成没执行者」——正是这个工具要避免的错。
+// 判据要求**两侧都是边界**，避免 `check-payload-x` 之类的误命中。也要求
+// 该名字确实是 tools/ 下真实存在的脚本（由调用方用 scripts 集合核对）。
+//
+// 注意：加这条时表面上多出 14 条出口，但其中大部分是**重复计数**——
+// 同一句话在母文件和生成切片里各命中一次。重复计数已在
+// collectDocs 里修掉（见 isGenerated）；本条只负责「认得出裸名」。
+
 // ── 收集 tools 里的规则名与脚本名 ──
 function collectToolSurface() {
   const scripts = new Set();
@@ -221,8 +238,26 @@ function collectToolSurface() {
 }
 
 // ── 枚举框架文档 ──
+//
+// 2026-11-22 修：**排除自动生成的产物**，否则同一条规则句会被重复计数。
+//
+// 实测：`framework/components/output-contract.md`（母文件）与它的 7 份角色切片
+// 共享整段正文。同一句「**机械判定规则**：主Agent在接收…」在 8 个文件里各出现一次，
+// 于是它被当成 8 条规则句。全仓库 1121 条规则句里 **245 条（21.9%）是重复内容**，
+// 其中 **78 条被重复计入了出口数**。
+//
+// 这不是小误差：它同时虚增了分母和分子，出口率因此失真——
+// 而「出口率」这个数字正是 `CAPABILITIES.md` 用来劝退误用的核心指标。
+//
+// 判据不能靠文件名硬编码（`output-contract/*.md` 是生成物，但目录名将来会变），
+// 要靠生成器自己写在文件头的标记：`自动生成，请勿手改`。
+function isGenerated(text) {
+  return /自动生成[，,]?\s*请勿手改/.test(text.slice(0, 400));
+}
+
 function collectDocs() {
   const out = [];
+  const skip = [];
   const walk = (dir) => {
     let ents;
     try { ents = readdirSync(dir); } catch { return; }
@@ -233,15 +268,20 @@ function collectDocs() {
         // 跳过 examples/ —— 那是校验器自己验证的生成物，不是规范
         if (e === 'examples' || e === 'node_modules') continue;
         walk(p);
-      } else if (e.endsWith('.md')) out.push(p);
+      } else if (e.endsWith('.md')) {
+        let txt = '';
+        try { txt = readFileSync(p, 'utf8'); } catch { /* 读不到就当非生成物 */ }
+        if (txt && isGenerated(txt)) { skip.push(p); continue; }
+        out.push(p);
+      }
     }
   };
   walk(join(ROOT, 'framework'));
-  return out;
+  return { docs: out, skipped: skip };
 }
 
 const { scripts, ruleNames, artifacts, artifactReadByTool } = collectToolSurface();
-const docs = collectDocs();
+const { docs, skipped: generatedDocs } = collectDocs();
 
 if (docs.length === 0) {
   console.error('[预期失败] framework/ 下一个 .md 都没有——路径可能变了，分母为 0 不等于通过');
@@ -311,6 +351,15 @@ for (const abs of docs) {
       // 两类可分开的出口，报告里分别计数。
       const isReadByTool = artifactReadByTool.has(m[1]);
       exits.push(isReadByTool ? `artifact:${m[1]}` : `artifact_orphan:${m[1]}`);
+    }
+    // 裸工具名（不带 `.mjs`）：`check-payload` / `verify-artifacts` / `stop-hook` 等。
+    // 只认 tools/ 下真实存在的脚本，且两侧必须是边界，避免 `check-payload-x` 误命中。
+    // 已经带 `.mjs` 的会在上面被 SCRIPT_RE 抓到，这里用 Set 去重不影响计数。
+    for (const s of scripts) {
+      const bare = s.replace(/\.mjs$/, '');
+      if (bare === s) continue;
+      const re = new RegExp(`(^|[^A-Za-z0-9_.-])${bare.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_.-])`);
+      if (re.test(window)) exits.push(`script:${s}`);
     }
     for (const m of window.matchAll(SNAKE_RE)) {
       if (ruleNames.has(m[1])) exits.push(`rule:${m[1]}`);
@@ -463,11 +512,56 @@ if (ARG.failOnRegress) {
   }
   // 比的是**出口数**（绝对量），不是出口率：分母会随文档增删变化，
   // 用率去比会让「新写了一条有出口的规则」把整体率拉低而误报退化。
-  if (totalWithExit < prev.with_exit) {
+  //
+  // 2026-11-23 修：只用绝对量不够。当天我把自动生成的 7 份切片排除出分母
+  // （母文件与切片内容重复，同一句规则被算 8 次），分母从 1118 降到 909，
+  // 出口绝对数随之从 243 掉到 201——**没有一条规则丢掉出口**，
+  // 但闸门报了「退化」。这正是它最该避免的误报：一个会因为统计范围
+  // 修正而变红的闸门，下次就会被人用 --no-verify 绕过。
+  //
+  // 改法：基准里存**逐文件的出口数**，比对时按文件归因。
+  //   · 同一文件当前出口数下降 → 真退化，报出文件名与降幅
+  //   · 文件整个消失 → 单独报，并区分「生成物被排除」与「文件被删」
+  //   · 新增文件 → 不算退化（新写的规则有出口是好事）
+  // 老基准没有 by_file 字段，退回绝对量比对并明确说明这是粗判据。
+  const prevByFile = prev.by_file ?? null;
+  if (prevByFile) {
+    const curByFile = Object.fromEntries(files.map((f) => [f.path, f.withExit]));
+    const lost = [];
+    const dropped = [];      // 变成生成物被排除：统计范围变了，不是退化
+    for (const [p, n] of Object.entries(prevByFile)) {
+      if (n <= 0) continue;
+      if (!(p in curByFile)) {
+        const abs = join(ROOT, p);
+        let isGen = false;
+        try { isGen = isGenerated(readFileSync(abs, 'utf8')); } catch { /* 读不到就是真没了 */ }
+        if (isGen) {
+          // 母文件成了生成物 / 文件被标为生成物 → 从分母里移除是**修正**，不是退化。
+          dropped.push(`${p}（基准 ${n} 条出口）`);
+        } else {
+          lost.push(`${p}（基准 ${n} 条出口，文件已不存在）`);
+        }
+      } else if (curByFile[p] < n) {
+        lost.push(`${p}：${n} → ${curByFile[p]}`);
+      }
+    }
+    if (lost.length > 0) {
+      regression = true;
+      regressionDetail = `${lost.length} 处出口数下降（基准 ${prev.baseline_date ?? '未知日期'}）：\n`
+        + lost.map((x) => `      · ${x}`).join('\n')
+        + '\n    同一文件出口数下降通常意味着某条规则句被改写后丢掉了它原本点名的出口。';
+      if (dropped.length > 0) {
+        regressionDetail += `\n    （另有 ${dropped.length} 份文件已标为自动生成物、移出分母，`
+          + '那是统计口径修正，不算退化）';
+      }
+    }
+  } else if (totalWithExit < prev.with_exit) {
     regression = true;
     regressionDetail = `有出口的规则句从 ${prev.with_exit} 降到 ${totalWithExit}`
       + `（${prev.baseline_date ?? '未知日期'} 的基准）。`
-      + '这通常意味着某条规则句被改写后丢掉了它原本点名的出口。';
+      + '这通常意味着某条规则句被改写后丢掉了它原本点名的出口。'
+      + '\n    ⚠️ 这份基准没有逐文件明细（by_file），只能做粗判'
+      + '——统计范围一变（例如排除生成物）就会误报。建议重新 --write-baseline。';
   }
 }
 
@@ -479,8 +573,12 @@ if (ARG.writeBaseline) {
     with_exit: totalWithExit,
     without_exit: noExit,
     exit_rate_pct: Number(pct.toFixed(1)),
+    // 逐文件明细：只有它能把「真退化」和「统计范围变了」分开。
+    // 没有这个字段时，闸门只能比总数，任何分母变动都会误报。
+    by_file: Object.fromEntries(files.map((f) => [f.path, f.withExit])),
   }, null, 2) + '\n');
   console.log(`\n已写入基准: ${BASELINE_PATH}`);
+  console.log('  含逐文件明细（by_file），下次比对可精确归因到文件。');
 }
 
 // ── 输出 ──
@@ -490,6 +588,9 @@ const result = {
   without_exit: noExit,
   exit_rate_pct: Number(pct.toFixed(1)),
   files_scanned: files.length,
+  // 被排除的自动生成文档数。必须报出来——静默跳过等于隐瞒分母，
+  // 而分母正是这个工具唯一有意义的部分。
+  generated_files_skipped: generatedDocs.length,
   zero_exit_files: files.filter((f) => f.withExit === 0).map((f) => `${f.path} (0/${f.sentences})`),
   violations,
   gated,
@@ -527,6 +628,9 @@ if (ARG.json) {
 } else {
   console.log('\n契约规则句 → 机器出口 对账\n');
   console.log(`  扫描文档        ${files.length} 个`);
+  if (generatedDocs.length > 0) {
+    console.log(`  另有生成物      ${generatedDocs.length} 个（自动生成，与母文件内容重复，不计入分母）`);
+  }
   console.log(`  规则句总数      ${totalSentences}`);
   console.log(`  有机器出口      ${totalWithExit}`);
   console.log(`  无机器出口      ${noExit}`);

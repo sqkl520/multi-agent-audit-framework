@@ -32,6 +32,20 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 12 轮)
 > 本模板只负责“修复Agent在单缺陷、窄边界内如何执行修改并声明影响半径”，
 > 不重新定义返回格式（由 output-contract 定义）或波次传递结构（由 handoff-schema 定义）。
 > 修复Agent的返回必须符合 output-contract.md 的 role: "fix" payload schema。
+>
+> **你的返回会被 `tools/check-payload.mjs --role fix` 机械校验**（第 6 节还给了完整自检流程）：
+>
+> | 规则名 | 触发条件 |
+> |---|---|
+> | `fixed_without_test` | 声称修了却没给测试——「改完就算完」是本框架记录过的失败模式 |
+> | `fixed_without_red_log` | 声称修了却没有先红后绿的日志：**没红过的测试不能证明它测过这个缺陷** |
+> | `files_touched_wrong_shape` / `files_touched_empty` / `files_touched_not_found` | `files_touched` 结构不对 / 为空 / 指向的文件不存在 |
+> | `files_touched_path_missing` / `files_touched_path_placeholder` | 路径不存在 / 还留着占位符 |
+> | `test_path_placeholder` / `test_path_not_found` | 测试路径是占位符或不存在 |
+> | `red_log_no_directory` | 红测日志路径没有目录部分 |
+> | `missing_artifact_path` / `artifact_not_found` | 产物缺路径 / 路径指向的文件不存在 |
+>
+> 本模板此前只写了「怎么调用校验器」，没写**它会因为什么拒收**。
 
 **写权限的硬边界**：修复Agent是唯一允许修改源代码文件的角色。它的写入范围**仅限**派发时指定的 `target_files` 列表中的文件，以及与之对应的**测试文件**（如果该缺陷的验收标准要求新增或修改测试）。修复Agent**不得**创建新文件、删除文件、修改依赖清单（`package.json` / `requirements.txt` / `go.mod` 等）、修改构建配置或修改 `target_files` 之外的生产代码。callsphere 的原则在这里直接适用：爆炸半径由授予的权限决定，而不是由修复Agent的意图决定[^ref5]。如果修复需要触及范围外的文件，修复Agent**必须**停止修改，返回 `RETRYABLE_FAILURE` 或 `CONTRACT_VIOLATION`，并在 `residual_risks` 中明确写出“修复需要触及 `<path>`，超出授权范围”，而不是自行扩大权限。
 

@@ -24,6 +24,21 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 13 轮（第 6 �
 > 不重新定义波次传递结构（由 handoff-schema 定义）或返回格式（由 output-contract 定义）。
 > 锐评Agent的返回必须符合 output-contract.md 的 role: "critique" payload schema。
 > 本波次不产生新的代码修改，不读取修复Agent的任何说明。
+>
+> **你的返回会被 `tools/check-payload.mjs --role critique` 机械校验**：
+>
+> | 规则名 | 触发条件 |
+> |---|---|
+> | `invalid_coverage_kind` | `coverage_gap[].kind` 不在闭集内 |
+> | `incomplete_coverage_gap` | coverage_gap 条目缺必填子字段 |
+> | `missing_discipline_audit` | skeptic 缺 `discipline_audit`（契约 §2.3 早有规定） |
+> | `discipline_audit_no_performed` / `discipline_audit_out_of_role` | skeptic 声明了却没实际执行 / 越权审计了其它子角色 |
+> | `pattern_sweep_out_of_role` | 越权做了 pattern sweep |
+> | `missing_five_step` / `incomplete_five_step` | 五步测试缺步骤或某步没写完整 |
+> | `vacuous_reason` | 判 `REVOKED` / `UPHELD` 却没给出实质理由 |
+> | `missing_runtime_applicable` / `runtime_required_but_missing` / `runtime_no_output` | 未声明是否适用运行时验证 / 声明必然适用却没验证 / 跑了却没输出 |
+>
+> 本模板此前一次都没点名这些规则，agent 只能靠试错撞上。
 
 **波次定位**：锐评波只消费 `handoff-schema` 中 `open_items` 的 `kind: "UNRESOLVED_FINDING"` 和 `kind: "EVIDENCE_GAP"` 条目，以及 `closed_waves[wave-2]` 中标记为 `CONFIRMED` 的发现。它**不重新执行审计**，不扩大读取范围到切片之外，除非为了验证某条发现的可触发性而必须打开调用方或包装层——这种打开是**有边界的验证读取**，不是新的发现探索。
 

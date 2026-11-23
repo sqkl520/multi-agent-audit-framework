@@ -78,6 +78,22 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role planne
 
 退出码非 0 → **不得返回**，按它给的修法补齐。
 
+**它会因为什么拒收**（这些规则早已在 `check-payload.mjs` 里执行，此处此前一句都没写）：
+
+| 规则名 | 触发条件 |
+|---|---|
+| `score_mismatch` | `score` 不等于 `score_breakdown` 七项之和——评分是分档的唯一依据，对不上则分档不可信 |
+| `member_unidentifiable` | 面板成员不可识别（缺 id 或缺角色限定） |
+| `missing_failure_category` / `invalid_failure_category` / `missing_failure_trigger` | 判失败却没给分类 / 分类不在闭集内 / 没写触发条件 |
+| `environment_should_be_retryable` | 环境问题被判成永久失败——那会把可重试的事记成 Agent 的错 |
+| `missing_mutation_check` / `invalid_mutation_check` / `invalid_mutation_skip_reason` | 缺变异检查 / 取值非法 / 跳过却没给理由 |
+| `missing_mutation_scope` / `invalid_mutation_scope` | 变异范围缺失或非法 |
+| `missing_input_space_basis` / `invalid_input_space_basis` | 缺输入空间依据 / 取值非法 |
+| `weak_basis_without_escalation` | 依据是 `single_sample` 或 `unknown` 却没置 `escalation_required`——**弱覆盖不许当完整通过** |
+
+其中 `score_mismatch` 和 `weak_basis_without_escalation` 最容易踩：前者是算术，
+后者是「采样不足时要主动声明」——两者都不会自己报错，只会让你的计划书看起来正常。
+
 **不知道从哪下手就照抄示例**：`components/output-contract/examples/planner.md` 是一份
 **已经通过校验器**的最小完整产物。照抄再改内容，比从零拼更可靠。
 

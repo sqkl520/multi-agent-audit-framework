@@ -308,6 +308,14 @@ const reconEnv = (over = {}) => JSON.stringify({
     audit_slices: [{ slice_id: 'slice-01', files: ['a.js'], file_count: 1 }],
     entry_points: [{ entry_id: 'e1', kind: 'CLI', location: 'a.js:1', evidence_quote: '#!/usr/bin/env node' }],
     unverified: [],
+    // 2026-11-22：exclusion_report 成为契约必填（模板 §2.3.2 早就要求，
+    // 但契约 schema 里没有它、校验器也不认——三层断在最关键的一层）。
+    exclusion_report: {
+      included_files: 1,
+      excluded_by_type: { '.md': { count: 3, reason: '文档，非源码' } },
+      excluded_source_like: [],
+      exclusion_dominant: false,
+    },
     ...over,
   },
   error: null,
@@ -362,7 +370,12 @@ console.log('case 28: entry_points_truncated=true 且 unverified 说明了 → �
 {
   const r = run(wrap(reconEnv({
     entry_points_truncated: true,
-    unverified: [{ target: 'entry_points', reason: 'CLI 入口共 37 个，已截断为每类前 5 个' }],
+    // 2026-11-22：reason 是五值闭集，自由文本移到 detail（模板 §4 与契约已对齐）
+    unverified: [{
+      target: 'entry_points',
+      reason: 'TRUNCATED',
+      detail: 'CLI 入口共 37 个，已截断为每类前 5 个',
+    }],
   })));
   expect('无错误', r.r?.errors?.length === 0, JSON.stringify(r.r?.errors));
 }
@@ -2236,6 +2249,161 @@ console.log('case 153: exhaustive 不需要 escalation_required（不得过度�
   }, 'x'), null, 2)));
   expect('没有错误', (r.r?.errors ?? []).length === 0,
     JSON.stringify(r.r?.errors?.map((x) => x.rule)));
+}
+
+// ── recon 模板的硬约束接线（2026-11-22 新增）──
+//
+// `wave1-recon.md` 有 35 条规则句，出口率 **0/35**：全文一次都没提到任何
+// tools/ 脚本。这不是「规则没人执行」，是执行者存在但两边没接线。
+// 以下每条用例对应模板里的一句「必须」，正反两向都钉住。
+
+console.log('case 154: recon 缺 exclusion_report → missing_exclusion_report');
+{
+  const e = JSON.parse(reconEnv()); delete e.payload.exclusion_report;
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('报 missing_exclusion_report',
+    r.r?.errors?.some(x => x.rule === 'missing_exclusion_report'),
+    JSON.stringify(r.r?.errors));
+}
+
+console.log('case 155: exclusion_report 写成数组 → exclusion_report_wrong_shape');
+{
+  const r = run(wrap(reconEnv({ exclusion_report: [] })));
+  expect('报 exclusion_report_wrong_shape',
+    r.r?.errors?.some(x => x.rule === 'exclusion_report_wrong_shape'),
+    JSON.stringify(r.r?.errors));
+}
+
+console.log('case 156: excluded_source_like 非空但没登记进 unverified → 报');
+{
+  // 模板 §2.3.2：「排除本身不违规，静默排除才违规」
+  const r = run(wrap(reconEnv({
+    exclusion_report: {
+      included_files: 1,
+      excluded_by_type: {},
+      excluded_source_like: [{ ext: '.hbs', count: 12, reason: '模板文件，未确认是否含逻辑' }],
+      exclusion_dominant: false,
+    },
+    unverified: [],
+  })));
+  expect('报 source_like_not_registered',
+    r.r?.errors?.some(x => x.rule === 'source_like_not_registered'),
+    JSON.stringify(r.r?.errors));
+}
+
+console.log('case 157: excluded_source_like 已登记进 unverified → 通过');
+{
+  const r = run(wrap(reconEnv({
+    exclusion_report: {
+      included_files: 1,
+      excluded_by_type: {},
+      excluded_source_like: [{ ext: '.hbs', count: 12, reason: '模板文件' }],
+      exclusion_dominant: false,
+    },
+    unverified: [{ target: '.hbs', reason: 'AMBIGUOUS_TYPE', detail: '12 个模板文件' }],
+  })));
+  expect('无 source_like_not_registered',
+    !r.r?.errors?.some(x => x.rule === 'source_like_not_registered'),
+    JSON.stringify(r.r?.errors));
+}
+
+console.log('case 158: exclusion_dominant 且 included_files=0 但 status 正常 → 必须报');
+{
+  // 模板 §2.3.2：这种情况说明「扩展名规则与项目技术栈不匹配」，
+  // 必须 RETRYABLE_FAILURE，不得返回一个看似正常的空切片清单。
+  const r = run(wrap(reconEnv({
+    exclusion_report: {
+      included_files: 0,
+      excluded_by_type: { '.css': { count: 179, reason: '误判为资源' } },
+      excluded_source_like: [],
+      exclusion_dominant: true,
+    },
+    slice_count: 0,
+    audit_slices: [],
+    entry_points: [],
+  })));
+  expect('报 dominant_exclusion_not_retryable',
+    r.r?.errors?.some(x => x.rule === 'dominant_exclusion_not_retryable'),
+    JSON.stringify(r.r?.errors));
+}
+
+console.log('case 159: 同样情形但 status=RETRYABLE_FAILURE → 不得报（不能过度执法）');
+{
+  const e = JSON.parse(reconEnv({
+    exclusion_report: {
+      included_files: 0,
+      excluded_by_type: {},
+      excluded_source_like: [],
+      exclusion_dominant: true,
+    },
+  }));
+  e.status = 'RETRYABLE_FAILURE';
+  e.payload.slice_count = 0;
+  e.payload.audit_slices = [];
+  e.payload.entry_points = [];
+  const r = run(wrap(JSON.stringify(e, null, 2)));
+  expect('不报 dominant_exclusion_not_retryable',
+    !r.r?.errors?.some(x => x.rule === 'dominant_exclusion_not_retryable'),
+    JSON.stringify(r.r?.errors));
+}
+
+console.log('case 160: line_count > 1800 且没标 oversized_file → slice_over_line_cap');
+{
+  // 模板 §2.2：「≤1800 行」是切片唯一的硬约束（文件数已降为建议指标）
+  const r = run(wrap(reconEnv({
+    audit_slices: [{ slice_id: 'slice-01', files: ['a.js'], file_count: 1, line_count: 2400 }],
+  })));
+  expect('报 slice_over_line_cap',
+    r.r?.errors?.some(x => x.rule === 'slice_over_line_cap'),
+    JSON.stringify(r.r?.errors));
+}
+
+console.log('case 161: line_count > 1800 但标了 oversized_file → 不报超限');
+{
+  const r = run(wrap(reconEnv({
+    audit_slices: [{
+      slice_id: 'slice-01', files: ['a.js'], file_count: 1, line_count: 2400,
+      oversized_file: true,
+      rationale: '该文件自身超出切片上限，无法与其他文件合并，存在跨文件调用链盲区',
+    }],
+  })));
+  expect('不报 slice_over_line_cap',
+    !r.r?.errors?.some(x => x.rule === 'slice_over_line_cap'),
+    JSON.stringify(r.r?.errors));
+}
+
+console.log('case 162: oversized_file 但 rationale 没提盲区 → oversized_without_blindspot');
+{
+  const r = run(wrap(reconEnv({
+    audit_slices: [{
+      slice_id: 'slice-01', files: ['a.js'], file_count: 1, line_count: 2400,
+      oversized_file: true, rationale: '单文件切片',
+    }],
+  })));
+  expect('报 oversized_without_blindspot',
+    r.r?.errors?.some(x => x.rule === 'oversized_without_blindspot'),
+    JSON.stringify(r.r?.errors));
+}
+
+console.log('case 163: unverified.reason 不在五值闭集内 → invalid_unverified_reason');
+{
+  // 与 findings[].status 那次同形：任意字符串等于没有约束。
+  const r = run(wrap(reconEnv({
+    unverified: [{ target: 'x', reason: '一些文件可能有问题' }],
+  })));
+  expect('报 invalid_unverified_reason',
+    r.r?.errors?.some(x => x.rule === 'invalid_unverified_reason'),
+    JSON.stringify(r.r?.errors));
+}
+
+console.log('case 164: unverified 缺 target → unverified_missing_target');
+{
+  const r = run(wrap(reconEnv({
+    unverified: [{ reason: 'ORPHAN_FILE' }],
+  })));
+  expect('报 unverified_missing_target',
+    r.r?.errors?.some(x => x.rule === 'unverified_missing_target'),
+    JSON.stringify(r.r?.errors));
 }
 
 console.log(`

@@ -47,7 +47,22 @@
         "evidence_quote": "export function set(value) {"
       }
     ],
-    "unverified": []
+    "unverified": [],
+    "exclusion_report": {
+      "included_files": 2,
+      "excluded_by_type": {
+        ".md": {
+          "count": 5,
+          "reason": "文档，非源码（合理）"
+        },
+        ".json": {
+          "count": 3,
+          "reason": "配置，非源码（合理）"
+        }
+      },
+      "excluded_source_like": [],
+      "exclusion_dominant": false
+    }
   },
   "error": null
 }

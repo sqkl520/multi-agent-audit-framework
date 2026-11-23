@@ -136,6 +136,26 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role <你�
 
 **机械判定规则**：主Agent在接收子 Agent返回时，只接受四个终态；若子 Agent返回 `PENDING` 或 `RUNNING`，视为 `CONTRACT_VIOLATION`（这是一次性执行单元，不存在"我先挂起一会儿"的语义）。反过来，账本中的 `PENDING` / `RUNNING` 只能由主Agent自己写入，**不得**从子 Agent返回中读取。
 
+**信封层的拒收规则**（`tools/check-payload.mjs` 在所有角色分支之前先跑这一组；
+任何一条命中，后面的 payload 校验根本不会开始）：
+
+| 规则名 | 触发条件 |
+|---|---|
+| `multiple_json_blocks` | 产物末尾有多个 json 代码块——无法判断哪个是信封 |
+| `json_trailing_comma_fixed` | 信封带尾逗号，被容错修好了（**修好了也记一笔**：原样 parse 失败说明产物本身不合法） |
+| `envelope_not_object` | 信封不是 JSON 对象 |
+| `missing_top_field` / `null_top_field` | 缺必填顶层字段 / 该字段是 `null` 但此处不允许 |
+| `wrong_schema_version` | `schema_version` 不等于 `"output-contract-v1"` |
+| `invalid_role` / `role_mismatch` | `role` 不在六值闭集内 / 与 `--role` 参数不符 |
+| `invalid_status` | `status` 不是四个终态之一 |
+| `missing_artifact_path` / `artifact_path_wrong_type` / `artifact_not_found` | 缺 `artifact_path` / 类型不对 / 指向的文件不存在 |
+| `artifact_outdir_placeholder` | `artifact_path` 还留着 `<OUTDIR>` 之类的占位符 |
+| `invalid_enum_value` | 某个枚举字段取值越界 |
+| `evidence_root_not_found` | `evidence.root`（若有）指向的目录不存在 |
+
+这一组此前一条都没在本契约里出现过。它们最容易被忽略，**因为它们报的是信封的病，
+而人写产物时注意力全在 payload 上**。
+
 ---
 
 ## 第 2 节：Payload 的角色分支
@@ -203,7 +223,11 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role <你�
       }
     ],
     "unverified": [
-      { "target": "path", "reason": "string" }
+      {
+        "target": "path 或入口类别",
+        "reason": "READ_FAILED | AMBIGUOUS_TYPE | ORPHAN_FILE | NO_ENTRY_FOUND | TRUNCATED",
+        "detail": "自由文本：具体说明（可选，但 READ_FAILED 建议写工具返回的错误）"
+      }
     ],
     "exclusion_report": {
       "included_files": 0,

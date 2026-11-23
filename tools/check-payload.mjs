@@ -842,6 +842,121 @@ if (envelope && envelope.payload && envelope.role) {
         });
       }
     }
+
+    // ── 2026-11-22 新增：把 template 里已经写死的硬约束接上校验器 ──
+    //
+    // 起因：`framework/templates/wave1-recon.md` 有 35 条规则句，出口率 **0/35**——
+    // 全文一次都没提到任何 tools/ 脚本。而它写的恰恰是最能机械化的东西：
+    // 排除报告、切片行数上限、oversized 标记、unverified 的 reason 闭集。
+    //
+    // 这不是「规则没人执行」，是**执行者存在但两边没接线**。模板里的规则句
+    // 不点名校验器，校验器也不认模板要求的字段，于是 35 条规则全靠模型自律。
+    // 以下是接线，每条都对应模板里的一句「必须」。
+
+    // §2.3.2「排除本身不违规，静默排除才违规」：exclusion_report 是强制输出。
+    // 没有它，「把 179 个 CSS/HTML 全部排除、覆盖率 9.6%」这种产物看起来完全正常。
+    const ex = p.exclusion_report;
+    if (ex === undefined || ex === null) {
+      errors.push({
+        field: 'payload.exclusion_report', rule: 'missing_exclusion_report',
+        msg: 'recon 必须输出 exclusion_report（wave1-recon.md §2.3.2）。'
+          + '它是「排除了什么、为什么」的唯一账本——缺了它，'
+          + '「按规则排除」和「静默漏审」在产物上完全无法区分',
+      });
+    } else if (typeof ex !== 'object' || Array.isArray(ex)) {
+      errors.push({
+        field: 'payload.exclusion_report', rule: 'exclusion_report_wrong_shape',
+        msg: `exclusion_report 必须是对象，实际是 ${Array.isArray(ex) ? '数组' : typeof ex}`,
+      });
+    } else {
+      // §2.3.2 硬规则：excluded_source_like 非空 → 必须在 unverified 里逐项登记
+      const srcLike = Array.isArray(ex.excluded_source_like) ? ex.excluded_source_like : [];
+      if (srcLike.length > 0 && Array.isArray(p.unverified)) {
+        const registered = new Set(
+          p.unverified.map((u) => String(u?.target ?? '').toLowerCase()),
+        );
+        const missingReg = srcLike.filter((e) => {
+          const ext = String(e?.ext ?? '').toLowerCase();
+          if (!ext) return true;
+          return ![...registered].some((t) => t.includes(ext.replace(/^\./, '')) || t.includes(ext));
+        });
+        if (missingReg.length > 0) {
+          errors.push({
+            field: 'payload.exclusion_report.excluded_source_like',
+            rule: 'source_like_not_registered',
+            msg: `${missingReg.length} 个「疑似源码」扩展名被排除但没有登记进 unverified：`
+              + `${missingReg.map((e) => e?.ext ?? '?').join(', ')}。wave1-recon.md §2.3.2 要求`
+              + '逐项登记为 AMBIGUOUS_TYPE——排除可以，悄悄排除不行',
+          });
+        }
+      }
+      // §2.3.2 硬规则：exclusion_dominant 但一个文件都没纳入 → 必须 RETRYABLE_FAILURE
+      if (ex.exclusion_dominant === true
+        && Number(ex.included_files) === 0
+        && envelope.status !== 'RETRYABLE_FAILURE') {
+        errors.push({
+          field: 'payload.exclusion_report.exclusion_dominant',
+          rule: 'dominant_exclusion_not_retryable',
+          msg: 'exclusion_dominant=true 且 included_files=0，但 status 不是 RETRYABLE_FAILURE。'
+            + 'wave1-recon.md §2.3.2：这种情况说明「扩展名规则与项目技术栈不匹配」，'
+            + '必须明确报错重试，不得返回一个看似正常的空切片清单',
+        });
+      }
+    }
+
+    // §2.2 硬约束「line_count ≤ 1800」是模板里**唯一**的硬约束
+    //（文件数已被降级成建议指标，2026-11-04 实测修订）。
+    // 校验器此前完全不看 line_count —— 声明了字段却不校验，等于没有字段。
+    if (Array.isArray(p.audit_slices)) {
+      p.audit_slices.forEach((s, i) => {
+        const sid = s?.slice_id ?? `#${i}`;
+        const lc = s?.line_count;
+        if (lc !== undefined && lc !== null && Number(lc) > 1800 && s?.oversized_file !== true) {
+          errors.push({
+            field: `payload.audit_slices[${i}].line_count`, rule: 'slice_over_line_cap',
+            msg: `${sid} 的 line_count=${lc} 超过硬上限 1800，但没有标 oversized_file: true。`
+              + 'wave1-recon.md §2.2：「≤1800 行」是切片唯一的硬约束',
+          });
+        }
+        // §2.2.1：单文件即超限时，模板要求**必须**在报告中声明跨文件调用链盲区
+        if (s?.oversized_file === true) {
+          const r = String(s?.rationale ?? '');
+          if (!/盲区|blind|跨文件/.test(r)) {
+            errors.push({
+              field: `payload.audit_slices[${i}].rationale`, rule: 'oversized_without_blindspot',
+              msg: `${sid} 标了 oversized_file 但 rationale 没提「跨文件调用链盲区」。`
+                + 'wave1-recon.md §2.2.1 要求必须声明该盲区，供下游 Devil\'s Advocate 检查调用方是否未被覆盖',
+            });
+          }
+        }
+      });
+    }
+
+    // §4：unverified 的 reason 是五值闭集。任意字符串等于没有约束——
+    // 与 findings[].status 那次（写 "TOTALLY_FINE_TRUST_ME" 也判合规）同形。
+    const UNVERIFIED_REASON = ['READ_FAILED', 'AMBIGUOUS_TYPE', 'ORPHAN_FILE', 'NO_ENTRY_FOUND', 'TRUNCATED'];
+    if (Array.isArray(p.unverified)) {
+      p.unverified.forEach((u, i) => {
+        const reason = String(u?.reason ?? '');
+        if (!reason) {
+          errors.push({
+            field: `payload.unverified[${i}].reason`, rule: 'unverified_missing_reason',
+            msg: `unverified[${i}] 缺 reason——§4 要求每条都必须带 target 和 reason`,
+          });
+        } else if (!UNVERIFIED_REASON.includes(reason)) {
+          errors.push({
+            field: `payload.unverified[${i}].reason`, rule: 'invalid_unverified_reason',
+            msg: `unverified[${i}].reason="${reason}" 不在闭集内（${UNVERIFIED_REASON.join(' / ')}）`,
+          });
+        }
+        if (!u?.target) {
+          errors.push({
+            field: `payload.unverified[${i}].target`, rule: 'unverified_missing_target',
+            msg: `unverified[${i}] 缺 target——「一些文件可能有问题」这种没有 target 的条目不被接受（§4 硬规则）`,
+          });
+        }
+      });
+    }
   }
   if (envelope.role === 'audit') {
     // findings[].status 枚举校验（2026-11-10 蓝队实测新增）

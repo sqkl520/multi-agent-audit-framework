@@ -11,6 +11,22 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 12 轮给出的�
 > **加载时机**：加载前必须已加载 evidence-policy.md 和 output-contract.md。
 > **职责边界**：只负责"某一条修复是否真的消除了某一条缺陷"，不重新审计、不评价修复代码风格、不读取修复 Agent 的验证记录。
 > 验收Agent的返回必须符合 output-contract.md 的 role: "verify" payload schema。
+>
+> **你的返回会被 `tools/check-payload.mjs --role verify` 机械校验**：
+>
+> | 规则名 | 触发条件 |
+> |---|---|
+> | `missing_failure_category` | `verdict=FAIL` 但没给 `failure_category`（决定回波次四还是判 REVOKED） |
+> | `invalid_failure_category` | `failure_category` 不在 `FIX_INCOMPLETE / FIX_INCORRECT / BASELINE_INVALID / ENVIRONMENT` 内 |
+> | `missing_failure_trigger` | 判了失败却没写触发条件 |
+> | `environment_should_be_retryable` | `failure_category=ENVIRONMENT` 却不判为可重试——环境问题不该记成修复的错 |
+> | `missing_mutation_check` / `invalid_mutation_check` / `invalid_mutation_skip_reason` | 缺变异检查 / 取值非法 / 跳过却没给理由 |
+> | `missing_mutation_scope` / `invalid_mutation_scope` | 变异范围缺失或非法 |
+> | `mutation_check_vs_readonly` | 只读修复却要求了变异检查（过度执法） |
+> | `missing_input_space_basis` / `invalid_input_space_basis` | 缺输入空间依据 / 取值非法 |
+> | `weak_basis_without_escalation` | 依据是 `single_sample` 或 `unknown` 却没置 `escalation_required`——弱覆盖不许当完整通过 |
+>
+> 本模板此前一次都没点名这些规则，agent 只能靠试错撞上。
 
 **波次定位**：验收波是整条链路的最后一道门，也是唯一**没有上游善意假设**的波次。它不信任审计Agent的结论（可能误报）、不信任 Arbiter 的裁决（可能误判）、尤其不信任修复Agent的自我声明。它的输入只有三样：`finding_ref` 指向的**原始缺陷描述与原始证据**、修复 Agent 声明的 `target_files` 与 `affected_issues`、以及 `handoff-schema` 中波次四写入的 `residual_risks` 标记。修复Agent的 `verification_commands` **不在**输入中，见第 2 节。
 
