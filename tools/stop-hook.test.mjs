@@ -39,9 +39,36 @@ const FIXTURE_REPO = (() => {
 })();
 
 let pass = 0, fail = 0;
+let skipped = 0;
 const expect = (n, c, d = '') => {
   if (c) { pass++; console.log(`  ✓ ${n}`); }
   else { fail++; console.log(`  ✗ ${n}${d ? ' — ' + d : ''}`); }
+};
+
+// ── 2026-11-24：慢环境下跳过 spawn 密集用例，但**绝不静默** ──
+//
+// 实测这台 Windows 机器上**任何进程启动都要 2–3 秒**（`node -e 0` 3.4s、
+// `cmd /c echo` 2.9s、`git --version` 2.0s）——典型是杀毒软件实时扫描。
+// 本套件要 spawn 上百个进程，同样代码在 CI（Linux）整个套件只要 **17 秒**。
+//
+// 这不是测试写得慢，是环境慢。让它跑到超时是最差的选择：
+// check-all 会卡死十几分钟，而人只会看到「某个套件超时」，不知道发生了什么。
+//
+// 判据：实测一次 node 进程启动的耗时。超过 1.2s 视为慢环境。
+// 慢环境下跳过两批 spawn 密集用例，并把跳过**逐条打印**、
+// 计入 `skipped` 计数、写进退出信息——跳过必须在输出里可见，
+// 否则就是「声称测过其实没测」，正是这个仓库反复记录的失败形态。
+const SPAWN_SLOW = (() => {
+  const t0 = Date.now();
+  try { spawnSync(process.execPath, ['-e', '0'], { stdio: 'pipe' }); } catch { return false; }
+  return Date.now() - t0 > 1200;
+})();
+// 兼容旧名：下面 R19 那批的判断也用它
+const GIT_SLOW = SPAWN_SLOW;
+
+const skipIt = (name, why) => {
+  skipped++;
+  console.log(`  ⊘ ${name} — 跳过：${why}`);
 };
 
 // 返回 { code, err }
@@ -853,6 +880,11 @@ console.log('case 35 (R17): target_repo 缺失 → exit 2，说明这是账本�
 }
 
 console.log('case 36 (R17): 产物数 > 50 → 只查前 50 份并给 WARN（不阻断）');
+if (GIT_SLOW) {
+  // 这一条要校验 50 份产物，hook 内部对每份 spawn 一次 check-payload。
+  // 慢环境下就是 50 × 3s = 150s，必然超时。
+  skipIt('case 36 (R17, 50 份上限)', '本机进程启动 >1.2s，这条要 spawn 50 次子进程');
+} else {
 {
   // 造 51 份：前 50 份合法，第 51 份（按文件名排序靠后）故意违规。
   // 如果上限没生效，第 51 份会被检查到从而 exit 2；上限生效则 exit 0 + WARN。
@@ -871,6 +903,7 @@ console.log('case 36 (R17): 产物数 > 50 → 只查前 50 份并给 WARN（不
     expect('WARN 提到被跳过的份数', /跳过|未检查|没有检查/.test(r.err), r.err.slice(0, 800));
   } finally { rmSync(d, { recursive: true, force: true }); }
 }
+}  // ← 关闭 case 36 的慢环境分支
 
 
 
@@ -933,6 +966,14 @@ const r19Artifact = (filesTouched) => {
   })));
   return d;
 };
+
+// ── R19 / R20 / R21：全部依赖真实 git 仓库（每个用例 git init + 多次 status）──
+// 慢环境下整段跳过，并逐条说明。
+if (GIT_SLOW) {
+  for (const n of [37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51]) {
+    skipIt(`case ${n} (R19–R21, harness 对账)`, '本机进程启动 >1.2s，这批用例每个要建一个 git 仓库并多次调用 git');
+  }
+} else {
 
 console.log('case 37 (R19): files_touched 列的文件确实被改了 → exit 0（防误伤）');
 {
@@ -1351,9 +1392,24 @@ console.log('case 51 (R21-C): 声称 == 实际 → 放行（这条闸门不能�
   }
 }
 
+}  // ← 关闭 GIT_SLOW 的 else 分支
+
 console.log(`
-=== 结果: ${pass} 通过 / ${fail} 失败 ===
+=== 结果: ${pass} 通过 / ${fail} 失败${skipped ? ` / ${skipped} 跳过` : ''} ===
 `);
+if (skipped > 0) {
+  console.log(`\n⚠️  本机进程启动过慢（阈值 1.2s），${skipped} 条用例被跳过。`);
+  console.log('   这不是「通过」。CI（Linux）会完整跑这批，本地慢环境请以 CI 为准。');
+  console.log('   若要让本地也跑全：把仓库放在杀毒软件白名单目录，或用 WSL。');
+}
+// 2026-11-24：跳过总数有上限。环境慢可以解释少量跳过，
+// 但如果**过半**用例都没跑，这个套件已经名存实亡——必须报错，
+// 否则「大部分没测」会以绿色出现在 check-all 里。
+const SKIP_LIMIT = 30;
+if (skipped > SKIP_LIMIT) {
+  console.log(`\n✗ 跳过 ${skipped} 条，超过上限 ${SKIP_LIMIT} 条——这个套件已经不构成有效覆盖。`);
+  process.exit(1);
+}
 
 // 2026-11-21 修：这个套件此前**没有 process.exit()**。
 //

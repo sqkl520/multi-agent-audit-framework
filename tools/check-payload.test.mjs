@@ -545,6 +545,41 @@ console.log('case 42: 同时有 holds 和 refuted 子主张但 reason 不区分 
   expect('报 mixed_sub_claims_unexplained', r.r?.errors?.some(x => x.rule === 'mixed_sub_claims_unexplained'));
 }
 
+console.log('case 42a: 混合子主张 + reason 用否定句写「不涉及机制与后果」→ 仍须报');
+{
+  // 2026-11-23：原判据 `/机制|后果|危害/` 只要关键词出现就通过，
+  // 于是「不涉及机制与后果」这种**明确说自己没区分**的句子反而过关。
+  // 与 critical_without_call_chain 修掉的是同一类毛病。
+  const r = run(wrap(critEnv({
+    finding_id: 'F1', verdict: 'holds', five_step: FULL_FIVE,
+    runtime_applicable: false,
+    reason: '总体判定成立，但这里不涉及机制与后果的区分，直接看结论即可',
+    sub_claims: [
+      { claim: 'a', verdict: 'holds' },
+      { claim: 'b', verdict: 'refuted', direct_contradiction: 'x' },
+    ],
+  })));
+  expect('报 mixed_sub_claims_unexplained',
+    r.r?.errors?.some(x => x.rule === 'mixed_sub_claims_unexplained'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 42b: 混合子主张 + reason 真的区分了机制与后果 → 通过');
+{
+  const r = run(wrap(critEnv({
+    finding_id: 'F1', verdict: 'holds', five_step: FULL_FIVE,
+    runtime_applicable: false,
+    reason: '机制部分成立：调用链确实存在（src/a.js:12）。但后果被夸大：该分支在只读路径上不可达，因此实际危害不成立',
+    sub_claims: [
+      { claim: '机制成立', verdict: 'holds' },
+      { claim: '后果成立', verdict: 'refuted', direct_contradiction: 'src/ro.js:30 该分支不可达' },
+    ],
+  })));
+  expect('不报 mixed_sub_claims_unexplained',
+    !r.r?.errors?.some(x => x.rule === 'mixed_sub_claims_unexplained'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
 console.log('case 43: 子主张 refuted 但既无矛盾也无理由 → 报错');
 {
   const r = run(wrap(critEnv({
@@ -886,6 +921,75 @@ console.log('case 75: CRITICAL 且有调用链证据 → 通过');
   expect('不报 critical_without_call_chain',
     !r.r?.errors?.some(x => x.rule === 'critical_without_call_chain'),
     JSON.stringify(r.r?.errors?.map(x=>x.rule)));
+}
+
+// ── 2026-11-23：critical_without_call_chain 的判据原本可以被否定句绕过 ──
+//
+// 原判据只做关键词匹配：文本里出现「调用链 / caller」就算有证据。
+// 实测（.work/probe-vacuous.mjs）四种写法全部通过：
+//     "调用链：无。只是看起来危险，我没验证。"
+//     "未找到调用链。基于代码形状推测。"
+//     "caller 未知，但从命名推测会被调用。"
+//     "调用路径不明确，需要进一步确认。"
+// 而诚实地写「只是看起来危险，没验证」**反而被拦**。
+//
+// 这与 evidence-policy.md:130 记录的 G7 是同一形态：**规则在奖励撒谎**。
+const critCase = (basis, extra = {}) => {
+  const e = JSON.parse(auditEnv());
+  e.payload.findings = [{
+    finding_id: 'f1', dimension: 'security', severity: 'CRITICAL',
+    evidence: { file: 'a.js', line: 1, quote: 'const escaped = escapeHtml(raw)' },
+    inference: { claim: '存在注入', basis, alternatives: [] },
+    status: 'CONFIRMED',
+    ...extra,
+  }];
+  return run(wrap(JSON.stringify(e, null, 2)));
+};
+
+for (const [name, basis] of [
+  ['写「调用链：无」', '调用链：无。只是看起来危险，我没验证。'],
+  ['写「未找到调用链」', '未找到调用链。基于代码形状推测。'],
+  ['写「调用路径不明确」', '调用路径不明确，需要进一步确认。'],
+  ['写「caller 未知」', 'caller 未知，但从命名推测会被调用。'],
+]) {
+  console.log(`case 76a: 否定句不得被当成调用链证据（${name}）`);
+  const r = critCase(basis);
+  expect('必须报 critical_without_call_chain',
+    r.r?.errors?.some(x => x.rule === 'critical_without_call_chain'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 76b: 真调用链（带 file:line）→ 通过，不得矫枉过正');
+{
+  const r = critCase('从 src/app.js:10 一路到 src/render.js:88 未做转义');
+  expect('不报 critical_without_call_chain',
+    !r.r?.errors?.some(x => x.rule === 'critical_without_call_chain'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 76c: runtime_evidence 只有空话 → 不算可复现触发');
+{
+  // 原判据只要 observed 是「非空字符串」就放行，写「跑了」也能过。
+  const r = critCase('没验证', {
+    runtime_evidence: { method: 'node x.js', command: 'node x.js', observed: '跑了', reproducible: true },
+  });
+  expect('必须报 critical_without_call_chain',
+    r.r?.errors?.some(x => x.rule === 'critical_without_call_chain'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
+}
+
+console.log('case 76d: runtime_evidence 有真实输出 → 通过');
+{
+  const r = critCase('没写调用链', {
+    runtime_evidence: {
+      method: 'node reproduce.js', command: 'node reproduce.js',
+      observed: 'TypeError: Cannot read property x of undefined at src/a.js:12',
+      reproducible: true,
+    },
+  });
+  expect('不报 critical_without_call_chain',
+    !r.r?.errors?.some(x => x.rule === 'critical_without_call_chain'),
+    JSON.stringify(r.r?.errors?.map(x => x.rule)));
 }
 
 // ── 2026-11-14：verdict=FAIL 的条件必填（契约 §2.5 明文，此前校验器完全不查）──

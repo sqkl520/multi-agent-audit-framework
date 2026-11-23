@@ -1093,10 +1093,50 @@ if (envelope && envelope.payload && envelope.role) {
             ...(Array.isArray(inf.alternatives) ? inf.alternatives : []),
           ].filter((x) => typeof x === 'string').join(' ');
           // 调用链：形如 a() → b() → c，或明确写了「调用链 / 入口 / caller」
-          const hasCallChain = /调用链|调用路径|从\s*\S+\s*到|入口.*→|→.*→|caller|call site/i.test(text);
+          //
+          // 2026-11-23 修：原判据只做关键词匹配，**可以被否定句通过**。
+          // 实测（.work/probe-vacuous.mjs）：
+          //     basis = "调用链：无。只是看起来危险，我没验证。"   → ✅ 契约合规
+          //     basis = "未找到调用链。基于代码形状推测。"         → ✅ 契约合规
+          //     basis = "caller 未知，但从命名推测会被调用。"      → ✅ 契约合规
+          //     basis = "只是看起来危险，没验证。"（诚实版）       → ✗ 被拦
+          //
+          // **诚实地说「没找到」反而被拦，撒谎说「有调用链」却能过。**
+          // 这与 evidence-policy.md:130 记录的 G7 是同一形态：「规则在奖励撒谎」。
+          //
+          // 根因是判据把「关键词出现过」当成「证据形态成立」。修正分两层：
+          //   ① 关键词附近若出现否定/未知词（无 / 未找到 / 未知 / 不明确…），
+          //      关键词不算数——这直接堵掉上面的绕过方式
+          //   ② 调用链要求可定位：要么带 `file:line`，要么是 `a() → b()` 形态。
+          //      纯散文「有调用链」不足以支撑 CRITICAL；
+          //      evidence-policy.md §3 的原话是「函数名 + 文件行号」。
+          const NEGATION_NEAR = /(无|没有|未找到|未见|未知|不明|不确定|不明确|无法确认|未能|缺失|暂无|未验证|猜测|推测)/;
+          const keywordHit = (kw) => {
+            const re = new RegExp(kw.source, kw.flags.includes('g') ? kw.flags : kw.flags + 'g');
+            for (const m of text.matchAll(re)) {
+              // 取关键词前后各 12 字判断是否处于否定语境
+              const ctx = text.slice(Math.max(0, m.index - 12), m.index + m[0].length + 12);
+              if (!NEGATION_NEAR.test(ctx)) return true;
+            }
+            return false;
+          };
+          const CHAIN_KW = /调用链|调用路径|从\s*\S+\s*到|入口.*→|→.*→|caller|call site/i;
+          const hasChainKeyword = keywordHit(CHAIN_KW);
+
+          // 可定位形态：`file.js:12` 这类锚点，或 `a() → b()` 这类链式箭头。
+          const LOCATED_ANCHOR = /\b[\w./-]+\.(?:js|mjs|cjs|ts|tsx|jsx|py|go|rs|java|kt|rb|php|cs|swift|c|cc|cpp|h|hpp|scala|ex|lua|sh|sql|vue|svelte|astro|html|css|scss):\d+/i;
+          const CHAIN_ARROW = /\w+\s*\(\s*\)?\s*→\s*\w+/;
+          const hasCallChain = hasChainKeyword
+            || LOCATED_ANCHOR.test(text)
+            || CHAIN_ARROW.test(text);
           // 可复现触发条件：明确的输入 → 输出，或命令 + 结果
-          const hasTrigger = /(输入|传入|调用).{0,40}(得|返回|输出|→|抛出|抛错)|可复现|复现步骤|命令.{0,20}输出/i.test(text)
-            || (f.runtime_evidence && typeof f.runtime_evidence.observed === 'string' && f.runtime_evidence.observed.trim() !== '');
+          //
+          // 同样加否定过滤：「未复现」「无法复现」不该算可复现。
+          const TRIGGER_KW = /(输入|传入|调用).{0,40}(得|返回|输出|→|抛出|抛错)|可复现|复现步骤|命令.{0,20}输出/i;
+          const hasTrigger = keywordHit(TRIGGER_KW)
+            || (f.runtime_evidence && typeof f.runtime_evidence.observed === 'string'
+                && substanceLength(f.runtime_evidence.observed) >= 10
+                && !isVacuous(f.runtime_evidence.observed));
           if (!hasCallChain && !hasTrigger) {
             errors.push({
               field: `payload.findings[${j}].severity`, rule: 'critical_without_call_chain',
@@ -1410,7 +1450,20 @@ if (envelope && envelope.payload && envelope.role) {
         // 机制对后果错时，reason 必须区分
         if (hasHold && hasRefute) {
           const reason = String(v?.reason ?? '');
-          if (!/机制|后果|危害/.test(reason)) {
+          // 2026-11-23：原判据 `/机制|后果|危害/` 同样是关键词即可通过。
+          // 写「不涉及机制与后果」也能过——与 critical_without_call_chain
+          // 修掉的是同一类毛病（关键词出现过 ≠ 说明做过）。
+          // 这里要求：同时提到至少两类（机制/后果/危害）**且不处于否定语境**。
+          const KINDS = [/机制/, /后果|危害/];
+          const activeKinds = KINDS.filter((re) => {
+            for (const m of reason.matchAll(new RegExp(re.source, 'g'))) {
+              const ctx = reason.slice(Math.max(0, m.index - 10), m.index + m[0].length + 10);
+              // 否定语境：「不涉及机制」「未说明后果」「无危害」等
+              if (!/(不涉及|未涉及|不区分|未说明|没有|无|未|非)/.test(ctx)) return true;
+            }
+            return false;
+          });
+          if (activeKinds.length < KINDS.length) {
             errors.push({
               field: `payload.verdicts[${i}].reason`, rule: 'mixed_sub_claims_unexplained',
               msg: `${fid} 同时有 holds 和 refuted 子主张，但 reason 没说明哪类是机制、哪类是后果——下游无法判断该不该降级`,

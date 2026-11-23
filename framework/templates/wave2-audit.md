@@ -21,7 +21,7 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 11 轮)
 > | `confirmed_without_evidence` | `status=CONFIRMED` 但 `evidence.quote` 为空或纯空白 |
 > | `confirmed_without_severity` | `status=CONFIRMED` 但 `severity` 为空 |
 > | `evidence_wrong_shape` / `inference_wrong_shape` | `evidence` 不是 `{file,line,quote}` 对象 / `inference` 不是 `{claim,basis,alternatives}` 对象 |
-> | `critical_without_call_chain` | `severity=CRITICAL` 却没有运行时证据（调用链/测试输出/日志/控制流） |
+> | `critical_without_call_chain` | `severity=CRITICAL` 却没有可定位的运行时证据（见 §3.3：否定句不算，需 `file:line` 或 `a() → b()` 形态，或实测输出） |
 > | `no_evidence_without_scope` | 有 `NO_EVIDENCE_FOUND` 但 `searched_scope` 缺 `files_read` 或 `dimension_checklist` |
 > | `vacuous_basis` | `NO_EVIDENCE_FOUND` 的 `basis` 少于 15 字 |
 > | `empty_findings` | `findings` 是空数组（「没查」与「查了没发现」在契约上必须可区分） |
@@ -81,6 +81,21 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 11 轮)
 | **3.3** | **`CRITICAL` 的准入门槛**：审计 Agent **不得**把任何发现标为 `CRITICAL`，除非同时提供调用链证据（从入口到问题点的完整路径）或可复现触发条件。仅有定义位置 + 推断的，最高 `HIGH`。 | 本条**只存在于本文件** |
 
 > **为什么 3.3 要单列**：审计波最容易出的问题不是「漏报」，是**严重性通胀**——把「看起来吓人」的东西标成 CRITICAL，锐评波和修复波就被低质量发现拖住了。把 CRITICAL 锁在「必须有调用链」后面，是一条零裁量的机械门槛。
+
+> **机械判据的准确形态（2026-11-23 修订）**：这条门槛曾被写成纯关键词匹配，于是
+> **可以被否定句通过**——实测写「调用链：无」「未找到调用链」「caller 未知」
+> 都能拿到「✅ 契约合规」，而诚实地写「只是看起来危险，没验证」**反而被拦**。
+> 规则在奖励撒谎。
+>
+> 现在的判据分两层，你写证据时要按这个形态来：
+>
+> | 层 | 要求 | 举例 |
+> |---|---|---|
+> | 否定过滤 | 关键词附近 12 字内出现「无 / 没 / 未找到 / 未知 / 不明确 / 推测…」时，**该关键词不算数** | 「调用链：无」→ 不算证据 |
+> | 可定位性 | 调用链要么带 `file:line` 锚点，要么是 `a() → b()` 链式形态 | `从 src/app.js:10 到 src/render.js:88` ✓ |
+> | 或运行时证据 | `runtime_evidence.observed` 必须有实质内容（≥10 字且非空话） | `TypeError: ... at src/a.js:12` ✓；`跑了` ✗ |
+>
+> 换句话说：**「我说我有调用链」不算，得写出调用链长什么样。**
 
 ---
 
