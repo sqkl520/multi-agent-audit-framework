@@ -1212,6 +1212,40 @@ if (envelope && envelope.payload && envelope.role) {
       });
     }
 
+    // 2026-11-23 补：arbiter_artifact_ref 此前**三层全断**。
+    //
+    // `templates/wave3-critique.md:434` 明写「Arbiter 的 payload 中必须包含
+    // `arbiter_artifact_ref`（指向其完整裁决记录的路径）」，但：
+    //   · 契约 schema 里没有这个字段
+    //   · 校验器从不检查
+    // 于是「裁决记录」完全靠 Arbiter 自述——它可以说「我裁决过了」，
+    // 而没有任何产物能证明裁决过程存在、可复核。
+    //
+    // 这是本框架记录过的最常见失败形态：要求写在模板里，格式里没有位置，
+    // 校验器就不可能有出口。三处一起补，这里是最外那一层。
+    if (p.critique_role === 'arbiter') {
+      const ref = p.arbiter_artifact_ref;
+      if (typeof ref !== 'string' || ref.trim() === '') {
+        errors.push({
+          field: 'payload.arbiter_artifact_ref', rule: 'missing_arbiter_artifact_ref',
+          msg: 'critique_role=arbiter 时 arbiter_artifact_ref 必填（wave3-critique.md §4）。'
+            + '它指向完整裁决记录——没有它，「裁决过了」就是一句无法复核的自述',
+        });
+      } else if (/[<>]/.test(ref)) {
+        errors.push({
+          field: 'payload.arbiter_artifact_ref', rule: 'arbiter_artifact_ref_placeholder',
+          msg: `arbiter_artifact_ref 仍是占位符 "${ref}"，没指向真实产物`,
+        });
+      }
+    } else if (p.arbiter_artifact_ref !== undefined && p.arbiter_artifact_ref !== null) {
+      // 反向：只有 arbiter 该填它。其他子角色填了就是越界，
+      // 与 pattern_sweep / five_step 同一类约束。
+      errors.push({
+        field: 'payload.arbiter_artifact_ref', rule: 'arbiter_ref_out_of_role',
+        msg: `arbiter_artifact_ref 仅 critique_role=arbiter 可用，${p.critique_role} 返回即越界`,
+      });
+    }
+
     // 2026-11-14 修：coverage_gaps.kind 是契约声明的闭集，但此前**零校验**。
     // 实测 `kind: "TOTALLY_MADE_UP"` → ✅ 契约合规。
     // 而 kind 决定下一波派谁（SLICE_UNCOVERED → REASSIGN_TO_NEW_AUDIT 等），

@@ -2406,6 +2406,62 @@ console.log('case 164: unverified 缺 target → unverified_missing_target');
     JSON.stringify(r.r?.errors));
 }
 
+// ── arbiter_artifact_ref：模板要求了、契约与校验器都没接（2026-11-23 补）──
+const arbEnv = (over = {}) => JSON.stringify({
+  schema_version: 'output-contract-v1',
+  agent_id: 'a1', role: 'critique', status: 'SUCCESS', contract_valid: true,
+  artifact_path: '/x/c.md',
+  payload: {
+    critique_role: 'arbiter',
+    target_finding_ids: ['F1'],
+    verdicts: [{
+      finding_id: 'F1', verdict: 'UPHELD',
+      reason: '双方证据包比对后维持原判：Skeptic 未能推翻调用链证据（src/store.js:12 → :40）',
+    }],
+    ...over,
+  },
+  error: null,
+}, null, 2);
+
+console.log('case 165: arbiter 缺 arbiter_artifact_ref → missing_arbiter_artifact_ref');
+{
+  // wave3-critique.md:434 明确要求 Arbiter 的 payload 必须包含它，
+  // 但契约 schema 里没有、校验器也不查——三层全断。
+  const r = run(wrap(arbEnv()));
+  expect('报 missing_arbiter_artifact_ref',
+    r.r?.errors?.some(x => x.rule === 'missing_arbiter_artifact_ref'),
+    JSON.stringify(r.r?.errors));
+}
+
+console.log('case 166: arbiter 带了 arbiter_artifact_ref → 不报');
+{
+  const r = run(wrap(arbEnv({ arbiter_artifact_ref: 'round1/round1-03-critique-arbiter.md' })));
+  expect('无 missing_arbiter_artifact_ref',
+    !r.r?.errors?.some(x => x.rule === 'missing_arbiter_artifact_ref'),
+    JSON.stringify(r.r?.errors));
+}
+
+console.log('case 167: arbiter_artifact_ref 是占位符 → 报');
+{
+  const r = run(wrap(arbEnv({ arbiter_artifact_ref: '<OUTDIR>/arbiter.md' })));
+  expect('报 arbiter_artifact_ref_placeholder',
+    r.r?.errors?.some(x => x.rule === 'arbiter_artifact_ref_placeholder'),
+    JSON.stringify(r.r?.errors));
+}
+
+console.log('case 168: 非 arbiter 填 arbiter_artifact_ref → 越界，必须报');
+{
+  // 与 pattern_sweep / five_step 同一类约束：只有特定子角色可用
+  const r = run(wrap(critEnv({
+    finding_id: 'F1', verdict: 'holds',
+    reason: '独立复现确认：把文件设为只读后调用 set()，异常确实冒到调用方且无人处理',
+  }).replace('"critique_role": "skeptic"',
+    '"critique_role": "skeptic", "arbiter_artifact_ref": "x.md"')));
+  expect('报 arbiter_ref_out_of_role',
+    r.r?.errors?.some(x => x.rule === 'arbiter_ref_out_of_role'),
+    JSON.stringify(r.r?.errors));
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

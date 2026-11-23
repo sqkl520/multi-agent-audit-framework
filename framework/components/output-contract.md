@@ -435,6 +435,7 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role <你�
   "payload": {
     "critique_role": "skeptic | devils_advocate | arbiter",
     "target_finding_ids": ["string"],
+    "arbiter_artifact_ref": "path — 仅 critique_role=arbiter 时必填，见下方说明",
     "verdicts": [
       {
         "finding_id": "string",
@@ -514,6 +515,13 @@ node <FRAMEWORK_ROOT>/tools/check-payload.mjs <你的产物文件> --role <你�
 | `arbiter` | **`verdicts[]`**，`verdict` 取 `UPHELD` \| `DOWNGRADED` \| `REVOKED` | **不得**返回 `EVIDENCE_GAP`（见下方 Arbiter 约束），也不得返回 Skeptic 的三值 |
 
 > **为什么 `devils_advocate` 不是「另一套 verdict 枚举」**：它的产出形态根本不同——`coverage_gaps` 是**缺口列表**，不是对某条发现的裁决。此前我在本表里给它编过 `coverage_gap | no_gap` 两个值，那是**凭空发明的枚举**：模板里 `devils_advocate` 从不返回 `verdicts`，凭空加一个枚举会让它「两条路都不合规」（不填 `verdicts` 违反必填，填了又说没有合法值）。**正确的修订是承认它的输出载体不同，而不是给它也造一套裁决词。**
+
+**`arbiter_artifact_ref` 的适用规则**（2026-11-23 补登）：**仅 `critique_role == "arbiter"` 时必填**，指向它完整裁决记录的路径。
+
+> 这一条此前**三层全断**：`templates/wave3-critique.md:434` 明写「Arbiter 的 payload 中必须包含 `arbiter_artifact_ref`」，契约 schema 里没有这个字段，校验器也从不检查。
+> 后果是「裁决记录」这件事完全靠 Arbiter 自述——它可以说「我裁决过了」，而没有任何产物能证明裁决过程存在、可复核。
+> 这正是本框架反复记录的失败形态：**要求写在模板里，格式里没有位置，校验器就不可能有出口**。
+> 同一节还要求每条裁决带 `resolution_reason`（一句话说明为什么是 UPHELD / DOWNGRADED / REVOKED，必须引用证据或指出具体缺失）。该字段复用 `verdicts[].reason`，校验器对它的**实质长度**检查见规则 `vacuous_reason`。
 
 **`devils_advocate` 的四个覆盖扫描布尔**（2026-11-14 补登）：`slice_scan_performed`、`file_scan_performed`、`dimension_scan_performed`、`entry_scan_performed`，**四者必须均为 `true`**。
 

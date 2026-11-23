@@ -37,6 +37,8 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 13 轮（第 6 �
 > | `missing_five_step` / `incomplete_five_step` | 五步测试缺步骤或某步没写完整 |
 > | `vacuous_reason` | 判 `REVOKED` / `UPHELD` 却没给出实质理由 |
 > | `missing_runtime_applicable` / `runtime_required_but_missing` / `runtime_no_output` | 未声明是否适用运行时验证 / 声明必然适用却没验证 / 跑了却没输出 |
+> | `verdict_missing_for_target` / `invalid_verdict_enum` | 有 target_finding_ids 没被判 / verdict 不在该子角色的闭集内 |
+> | `missing_arbiter_artifact_ref` / `arbiter_artifact_ref_placeholder` / `arbiter_ref_out_of_role` | arbiter 缺裁决记录路径 / 写成占位符 / 非 arbiter 却填了它 |
 >
 > 本模板此前一次都没点名这些规则，agent 只能靠试错撞上。
 
