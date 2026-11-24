@@ -9,7 +9,7 @@
   "role": "audit",
   "status": "SUCCESS",
   "contract_valid": true,
-  "artifact_path": "D:\\Projects\\AI prompt\\many-agents_multi-prompt-files_token-heavy\\multi-agent-audit-framework\\tools\\fixtures\\gate0-probe/arts/08-truthful-quote-wrong-claim.md",
+  "artifact_path": "08-truthful-quote-wrong-claim.md",
   "payload": {
     "slice_id": "s1",
     "files": [

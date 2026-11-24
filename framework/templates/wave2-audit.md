@@ -92,8 +92,8 @@ source: https://chat.deepseek.com/share/yn99k1mum4qp5fqwj8 (第 11 轮)
 > | 层 | 要求 | 举例 |
 > |---|---|---|
 > | 否定过滤 | 关键词附近 12 字内出现「无 / 没 / 未找到 / 未知 / 不明确 / 推测…」时，**该关键词不算数** | 「调用链：无」→ 不算证据 |
-> | 可定位性 | 调用链要么带 `file:line` 锚点，要么是 `a() → b()` 链式形态 | `从 src/app.js:10 到 src/render.js:88` ✓ |
-> | 或运行时证据 | `runtime_evidence.observed` 必须有实质内容（≥10 字且非空话） | `TypeError: ... at src/a.js:12` ✓；`跑了` ✗ |
+> | 可定位性 | 调用链要么带 `file:line` 锚点，要么是 `a() → b()` 链式形态（判据在 `tools/check-payload.mjs` 的 `critical_without_call_chain`） | `从 src/app.js:10 到 src/render.js:88` ✓ |
+> | 或运行时证据 | `runtime_evidence.observed` 必须有实质内容（≥10 字且非空话，同一条 `critical_without_call_chain` 判据） | `TypeError: ... at src/a.js:12` ✓；`跑了` ✗ |
 >
 > 换句话说：**「我说我有调用链」不算，得写出调用链长什么样。**
 

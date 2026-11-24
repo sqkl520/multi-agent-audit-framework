@@ -155,7 +155,15 @@ cases['U7-missing-selfchecks'] = env('audit', { slice_id: 's1', searched_scope: 
 
 for (const [name, obj] of Object.entries(cases)) {
   const file = `${dir}/${name}.md`;
-  if (obj.artifact_path === 'PLACEHOLDER') obj.artifact_path = file;
+  // 2026-11-24：原先写的是绝对路径 `file`，于是每份探针都固化了
+  // **建库那台机器**的盘符（D:\Projects\...）。换到 Linux 上，
+  // check-payload 解析不到文件 → artifact_not_found → A1「完全合规的对照组」
+  // 与 S4「sweep 的 leads 允许为空」被判拦截，CI 上稳定「17 通过 / 2 不符」，
+  // 而 Windows 本机是 19/19 —— 同一份夹具在不同机器上结论相反。
+  //
+  // 契约 §1 允许「仓库外绝对路径 **或** <OUTDIR> 相对路径」，相对路径按
+  // 产物自身所在目录解析，所以写文件名即可。
+  if (obj.artifact_path === 'PLACEHOLDER') obj.artifact_path = `${name}.md`;
   fs.writeFileSync(file, '# 报告\n\n正文\n\n```json\n' + JSON.stringify(obj, null, 2) + '\n```\n');
 }
 

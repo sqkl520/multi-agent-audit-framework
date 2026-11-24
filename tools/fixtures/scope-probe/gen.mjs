@@ -39,7 +39,13 @@ const mkArtifact = (name, payload) => {
     role: 'audit',
     status: 'SUCCESS',
     contract_valid: true,
-    artifact_path: artifact,
+    // 2026-11-24：这里曾写 `artifact`（绝对路径），于是产物文件里固化了
+    // **建库那台机器的路径**（D:\Projects\...）。换到 Linux 上 check-payload /
+    // verify-artifacts 解析失败，contract-probe 在 CI 上稳定报「17 通过 / 2 不符」。
+    // 契约 §1 允许「仓库外绝对路径 **或** <OUTDIR> 相对路径」，相对路径按
+    // 产物自身所在目录解析（check-payload 的 resolvedPath），所以写文件名即可，
+    // 而且产物在任何机器上字节相同。
+    artifact_path: `${name}.md`,
     payload,
     error: null,
   };

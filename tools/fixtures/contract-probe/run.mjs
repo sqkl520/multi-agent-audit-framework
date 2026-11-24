@@ -71,4 +71,10 @@ for (const r of rows) {
 }
 
 console.log(`\n合计 ${rows.length} 个用例，${rows.length - bad} 个符合契约，${bad} 个不符\n`);
-process.exit(0);
+// 2026-11-24：这里此前是 `process.exit(0)`——**永远成功**。
+// 后果：CI 上稳定打「17 个符合契约，2 个不符」，check-all 照样全绿，
+// 整整一段时间没人知道这份对照表在 Linux 上是红的。
+// 根因是探针里写死了 Windows 绝对路径（已在 gen.mjs 修）；
+// 但即使根因是夹具问题，「不符」也必须让套件失败——
+// 否则这张表只是装饰，和 stop-hook.test.mjs 缺 exit 是同一类缺陷。
+process.exit(bad > 0 ? 1 : 0);

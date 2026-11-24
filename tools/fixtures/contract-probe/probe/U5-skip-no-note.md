@@ -9,7 +9,7 @@
   "role": "audit",
   "status": "SUCCESS",
   "contract_valid": true,
-  "artifact_path": "D:\\Projects\\AI prompt\\many-agents_multi-prompt-files_token-heavy\\multi-agent-audit-framework\\tools\\fixtures\\contract-probe/probe/U5-skip-no-note.md",
+  "artifact_path": "U5-skip-no-note.md",
   "payload": {
     "slice_id": "s1",
     "searched_scope": {

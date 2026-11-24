@@ -9,7 +9,7 @@
   "role": "sweep",
   "status": "SUCCESS",
   "contract_valid": true,
-  "artifact_path": "D:\\Projects\\AI prompt\\many-agents_multi-prompt-files_token-heavy\\multi-agent-audit-framework\\tools\\fixtures\\contract-probe/probe/S3-bad-reachability.md",
+  "artifact_path": "S3-bad-reachability.md",
   "payload": {
     "slice_id": "s1",
     "reachability": "MAYBE",

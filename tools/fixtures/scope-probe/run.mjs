@@ -30,7 +30,8 @@ const EXPECT = {
   const e = JSON.parse(m[1]);
   e.payload.searched_scope.files_scanned_without_findings =
     e.payload.files.filter((f) => f !== 'src/queue.js');
-  e.artifact_path = `${D}/arts/scope-04-honest-marked.md`;
+  // 2026-11-24：同 gen.mjs —— 不写绝对路径，避免把本机盘符写进被跟踪的夹具。
+  e.artifact_path = 'scope-04-honest-marked.md';
   fs.writeFileSync(`${D}/arts/scope-04-honest-marked.md`,
     '# 报告\n\n正文\n\n```json\n' + JSON.stringify(e, null, 2) + '\n```\n');
 }

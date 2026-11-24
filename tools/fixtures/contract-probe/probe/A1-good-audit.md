@@ -9,7 +9,7 @@
   "role": "audit",
   "status": "SUCCESS",
   "contract_valid": true,
-  "artifact_path": "D:\\Projects\\AI prompt\\many-agents_multi-prompt-files_token-heavy\\multi-agent-audit-framework\\tools\\fixtures\\contract-probe/probe/A1-good-audit.md",
+  "artifact_path": "A1-good-audit.md",
   "payload": {
     "slice_id": "s1",
     "searched_scope": {

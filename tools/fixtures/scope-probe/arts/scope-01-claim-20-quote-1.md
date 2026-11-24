@@ -9,7 +9,7 @@
   "role": "audit",
   "status": "SUCCESS",
   "contract_valid": true,
-  "artifact_path": "D:\\Projects\\AI prompt\\many-agents_multi-prompt-files_token-heavy\\multi-agent-audit-framework\\tools\\fixtures\\scope-probe/arts/scope-01-claim-20-quote-1.md",
+  "artifact_path": "scope-01-claim-20-quote-1.md",
   "payload": {
     "slice_id": "s1",
     "files": [

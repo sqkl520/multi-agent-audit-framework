@@ -46,7 +46,10 @@ const mkArtifact = (name, findings) => {
     role: 'audit',
     status: 'SUCCESS',
     contract_valid: true,
-    artifact_path: artifact,
+    // 2026-11-24：同 scope-probe —— 原先写绝对路径，把建库那台机器的盘符
+    // 固化进了产物。契约 §1 允许相对路径，按产物所在目录解析，
+    // 这样同一份夹具在 Windows / Linux 上字节相同。
+    artifact_path: `${name}.md`,
     payload: {
       slice_id: 's1',
       files: ['src/queue.js'],

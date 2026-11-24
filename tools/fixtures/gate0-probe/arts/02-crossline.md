@@ -9,7 +9,7 @@
   "role": "audit",
   "status": "SUCCESS",
   "contract_valid": true,
-  "artifact_path": "D:\\Projects\\AI prompt\\many-agents_multi-prompt-files_token-heavy\\multi-agent-audit-framework\\tools\\fixtures\\gate0-probe/arts/02-crossline.md",
+  "artifact_path": "02-crossline.md",
   "payload": {
     "slice_id": "s1",
     "files": [

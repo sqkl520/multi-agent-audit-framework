@@ -23,7 +23,7 @@ const EXPECT = {
   '02-crossline': { g0: 'FAIL', why: '把第 8 行和第 15 行的片段拼成一句（跨行拼接）' },
   '03-wrong-function': { g0: 'FAIL', why: '行号说 15，内容却是第 8 行（安全函数的守卫）' },
   '04-off-by-one': { g0: 'FAIL', why: '引文真实但行号偏 1（说 16，实际在 15）' },
-  '05-fuzzy-tokens': { g0: 'PASS?', why: '只抄几个 token，顺序对但原文不连续 —— 契约没禁止，但应看清' },
+  '05-fuzzy-tokens': { g0: 'FAIL', why: '只抄几个 token，顺序对但原文不连续 —— 契约没禁止，但应看清' },
   '06-comment-quote': { g0: 'FAIL', why: '引的是注释不是代码（行号也错）。即使行号对，纯注释也不能作为代码缺陷的证据' },
   '06b-comment-right-line': { g0: 'FAIL', why: '行号准确、引文逐字存在，但整行是注释 —— 2026-11-12 之前会判 PASS' },
   '08b-legit-doc-mismatch': { g0: 'PASS', why: '反向对照：缺陷本身就是「注释与实现不符」，注释是被审对象不是证据' },
@@ -52,11 +52,22 @@ for (const f of fs.readdirSync(arts).filter((x) => x.endsWith('.md')).sort()) {
 
 console.log('\n=== 门 0 能挡住哪些伪造手法 ===\n');
 console.log('探针                              实测   说明');
+let mismatched = 0;
 for (const r of rows) {
   const e = r.exp?.g0 ?? '?';
-  const mark = (e === r.status || (e === 'PASS?' && r.status === 'PASS')) ? '  ' : '⚠ ';
-  console.log(`${mark}${r.name.padEnd(32)} ${r.status.padEnd(6)} ${r.exp?.why ?? ''}`);
+  const ok = e === r.status || (e === 'PASS?' && r.status === 'PASS');
+  if (!ok) mismatched++;
+  console.log(`${ok ? '  ' : '⚠ '}${r.name.padEnd(32)} ${r.status.padEnd(6)} ${r.exp?.why ?? ''}`);
   console.log(`${' '.repeat(35)}${r.line}`);
 }
 console.log('');
 for (const r of rows) fs.rmSync(`${R}/runs/${r.name}`, { recursive: true, force: true });
+
+// 2026-11-24：这个 runner 此前**从不设置退出码**，于是「⚠ 不符」只打印不失败，
+// check-all 与实际行为无关地永远判它通过。与 2026-11-21 修 stop-hook.test.mjs
+// 缺 process.exit 是同一类缺陷：一个自称对照表的套件，不失败就等于没测。
+if (mismatched > 0) {
+  console.log(`✗ ${mismatched} 条探针的实测结果与契约期望不符\n`);
+  process.exit(1);
+}
+console.log(`✓ ${rows.length} 条探针全部符合契约期望\n`);

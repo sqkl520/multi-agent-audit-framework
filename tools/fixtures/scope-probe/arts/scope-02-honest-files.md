@@ -9,7 +9,7 @@
   "role": "audit",
   "status": "SUCCESS",
   "contract_valid": true,
-  "artifact_path": "D:\\Projects\\AI prompt\\many-agents_multi-prompt-files_token-heavy\\multi-agent-audit-framework\\tools\\fixtures\\scope-probe/arts/scope-02-honest-files.md",
+  "artifact_path": "scope-02-honest-files.md",
   "payload": {
     "slice_id": "s1",
     "files": [

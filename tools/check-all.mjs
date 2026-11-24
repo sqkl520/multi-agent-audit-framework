@@ -391,6 +391,15 @@ const CHECKS = [
     desc: '用例：真实路径放行 / 不存在须报 / 带行号不误判 / 模板占位符不误判 / 跨仓库不误判 / 通配符 / 分母为0须exit2',
   },
   {
+    name: '夹具可移植性（夹具里有没有写死本机路径）',
+    // 2026-11-24 补。contract-probe 的 18 份探针把 `D:\Projects\...` 写进了
+    // `artifact_path`：Windows 上 19/19，Linux/CI 上 17/19，同一份夹具两种结论。
+    // 而 runner 结尾是 `process.exit(0)`，CI 稳定打「2 个不符」却永远绿。
+    // 偶然发现一次不够——下一次新夹具还是会这么写。
+    script: 'check-fixture-portability.test.mjs',
+    desc: '用例：相对路径放行 / 盘符与 /mnt 须报 / .mjs 注释不误判 / <FRAMEWORK_ROOT> 允许 / real-artifacts 排除 / 分母为0与无git须exit2',
+  },
+  {
     name: '文档数字一致性（写死的数字 vs 代码实际）',
     // 2026-11-21 补。这个仓库反复宣传「用机械校验代替人肉记忆」，
     // 但它自己的头条数字全是手写维护的，而且已经错过三次：

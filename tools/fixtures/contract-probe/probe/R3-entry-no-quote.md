@@ -9,7 +9,7 @@
   "role": "recon",
   "status": "SUCCESS",
   "contract_valid": true,
-  "artifact_path": "D:\\Projects\\AI prompt\\many-agents_multi-prompt-files_token-heavy\\multi-agent-audit-framework\\tools\\fixtures\\contract-probe/probe/R3-entry-no-quote.md",
+  "artifact_path": "R3-entry-no-quote.md",
   "payload": {
     "slice_id": "s1",
     "files": [

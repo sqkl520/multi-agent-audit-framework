@@ -9,7 +9,7 @@
   "role": "audit",
   "status": "SUCCESS",
   "contract_valid": true,
-  "artifact_path": "D:\\Projects\\AI prompt\\many-agents_multi-prompt-files_token-heavy\\multi-agent-audit-framework\\tools\\fixtures\\contract-probe/probe/U2-confirmed-empty-quote.md",
+  "artifact_path": "U2-confirmed-empty-quote.md",
   "payload": {
     "slice_id": "s1",
     "searched_scope": {
