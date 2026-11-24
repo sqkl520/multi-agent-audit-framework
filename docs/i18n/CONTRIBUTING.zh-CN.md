@@ -59,6 +59,21 @@ node tools/check-rule-ledger.mjs --gate --since HEAD
 - 没有安装步骤——本仓库**刻意保持零运行时依赖**。
   不要为了一个小功能引入依赖；校验器保持无依赖是为了能在任何地方跑。
 
+### Windows：在 WSL 里跑测试套件
+
+这些套件要 spawn 大量短命进程（`node`、`git`）。在开着杀毒实时扫描的 Windows 上，
+每次 spawn 要 2–3 秒（实测 `node -e 0` 3.4 秒、`git --version` 2.0 秒），
+`check-all` 从 CI 上的 **17 秒**变成 **50 分钟以上**。同样的文件在 WSL 里只要 **4 分钟**。
+
+```bash
+wsl -d Debian -- bash -lc 'cd /mnt/d/path/to/multi-agent-audit-framework && node tools/check-all.mjs'
+```
+
+先在发行版里装 Node ≥ 22 和 git（`apt-get install git`，Node 用
+[nodejs.org/dist](https://nodejs.org/dist/) 的二进制包——Debian 源里的 `nodejs` 是 20，低于下限）。
+如果确实在 Windows 上跑完了，套件会检测到慢环境并打印 `⊘ … 跳过` 行；
+**那些是跳过，不是通过**——以 CI 结果为准。
+
 ## 报告安全问题
 
 **不要开公开 issue。** 见 [SECURITY.zh-CN.md](SECURITY.zh-CN.md)。

@@ -65,6 +65,22 @@ Write the *why*. A commit that says "fix bug" is not reviewable six months later
   Please do not add one for a small feature; the validators are deliberately
   dependency-free so they can run anywhere.
 
+### Windows: run the suite inside WSL
+
+The suites spawn a lot of short-lived `node` and `git` processes. On a Windows
+host with real-time antivirus scanning, each spawn costs 2–3 seconds (measured:
+`node -e 0` 3.4 s, `git --version` 2.0 s), and `check-all` goes from **17 s on CI
+to over 50 minutes**. Inside WSL, on the same files, it takes **4 minutes**.
+
+```bash
+wsl -d Debian -- bash -lc 'cd /mnt/d/path/to/multi-agent-audit-framework && node tools/check-all.mjs'
+```
+
+Install Node ≥ 22 and git in the distro first (`apt-get install git`, Node from
+[nodejs.org/dist](https://nodejs.org/dist/) — Debian's `nodejs` package is 20,
+below the floor). If a suite does finish on Windows, it detects the slow env and
+prints `⊘ … 跳过` lines; those are **skips, not passes** — treat CI as the result.
+
 ## Reporting a security issue
 
 **Do not open a public issue.** See [SECURITY.md](SECURITY.md).
