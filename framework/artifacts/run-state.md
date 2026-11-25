@@ -586,7 +586,7 @@ read_result 之后：
    | `status` | 含义 | 动作 |
    |---|---|---|
    | `RUNNING` | 还没写报告，本轮没跑完 | **续跑同一轮**，从 `in_flight` 与 `DEFERRED` 继续 |
-   | `PARTIALLY_CLOSED` | **已出报告**，本轮已收口，但有 `DEFERRED` | **不要续跑本轮**。执行 `tools/check-round-chain-live.mjs`，按 `OPEN_NEXT_ROUND` / `STOP` 处理 |
+   | `PARTIALLY_CLOSED` | **已出报告**，本轮已收口，但有 `DEFERRED` | **不要续跑本轮**。执行 `node tools/check-round-chain-live.mjs <state.json>`（**必须带参数**，否则它 exit 2 打用法），按 `OPEN_NEXT_ROUND` / `STOP` 处理 |
    | `CLOSED` | 已出报告且无遗留 | 直接指向 `report.final_report_path`，**不再派任何 agent** |
    | `BLOCKED` | 连续失败停下 | 出报告说明阻塞原因，开新轮不继承失败切片；**不要问用户「要不要继续」** |
 

@@ -569,6 +569,25 @@ console.log('case 36: 缺 quote 的 evidence 必须判 G0 FAIL，不能 SKIP');
   expect('G0 判 FAIL', hasFinding(r.json, 'FAIL', 'G0'));
   expect('G0 不再 SKIP', !hasFinding(r.json, 'SKIP', 'G0'));
   expect('退出码非 0', r.code !== 0);
+  // 2026-11-25：上面三条只要求「有某个 G0 FAIL」。实测（变异测试 M4）：
+  // 把**逐条**那条 fail（`evidence 缺 quote：…（<path>）`）删掉后，574 行的**汇总**
+  // fail（`门 0 回显: 0/0 通过，1 条 evidence 缺 file 或 quote`）仍然会报，
+  // 于是这三条断言全绿——**逐条诊断信息没有任何测试覆盖**。
+  //
+  // 逐条那条才是 Agent 能据以修正的东西：它点名是哪一个 finding、缺哪个字段、在哪个文件。
+  // 只剩汇总行的话，agent 只知道「有人缺了」，不知道是谁。
+  // 注意：断言必须比「消息里含 evidence 缺 和 quote」更严——**汇总行**的消息
+  // 也长这样（`门 0 回显: 0/0 通过，1 条 evidence 缺 file 或 quote`），
+  // 第一版我按那个模式写，变异后依然全绿。逐条那条的唯一特征短语是
+  // 「的发现必须有 file:line + quote」——汇总行没有这句。
+  //
+  // 2026-11-26 又补一层：断言必须同时要求**点名文件**（`（<path>）`），
+  // 因为「它点名是哪一个 finding、缺哪个字段、在哪个文件」才是这条消息的可操作价值。
+  // 上一版只匹配前半句，把 `（${path}）` 删掉仍然全绿。
+  expect('逐条诊断信息存在且点名文件（「…file:line + quote（<path>）」）',
+    (r.json?.findings ?? []).some((f) => f.check === 'G0'
+      && /的发现必须有 file:line \+ quote（.+）/.test(f.message ?? '')),
+    JSON.stringify((r.json?.findings ?? []).filter((f) => f.check === 'G0').map((f) => f.message)));
   rmSync(dir, { recursive: true, force: true });
 }
 

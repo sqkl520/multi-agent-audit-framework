@@ -161,6 +161,31 @@ console.log('case 8: none_keywords 里的词在模板中真的存在 → 必须�
   expect('点名命中的关键词', /原型链/.test(hit?.detail ?? ''), hit?.detail);
 }
 
+console.log('case 9: **人读模式**下有问题时也必须是 exit 1（`--json` 分支之外还有第二个出口）');
+{
+  // 2026-11-26 变异测试抓到：M2（process.exit(1) → 0）在这套件上**存活**。
+  // 根因：`runIn` 永远带 `--json`，只覆盖 `process.exit(problems.length ? 1 : 0)`；
+  // 而**人读模式的末尾是另一个 exit(1)**（`console.log('发现 N 个问题…'); process.exit(1);`），
+  // 那条从没被任何断言走过。删掉它，工具在 CI 里用 --json 跑照样红，人手动跑就静默通过。
+  const r = withCopy((exp) => {
+    const p = join(exp, 'manifest.json');
+    const m = JSON.parse(readFileSync(p, 'utf8'));
+    const none = m.defects.find((d) => d.pattern === 'none');
+    delete none.none_reason;   // 制造一个 problem
+    writeFileSync(p, JSON.stringify(m, null, 2));
+  }, (dir) => {
+    try {
+      const out = execFileSync(process.execPath,
+        [join(dir, 'tools', 'check-pattern-coverage.mjs')], { encoding: 'utf8' });
+      return { code: 0, out };
+    } catch (e) {
+      return { code: e.status ?? 1, out: (e.stdout ?? '') + (e.stderr ?? '') };
+    }
+  });
+  expect('人读模式 exit 1', r.code === 1, `code=${r.code}`);
+  expect('人读模式打印了问题', /发现 \d+ 个问题/.test(r.out), r.out.slice(-300));
+}
+
 console.log(`
 === 结果: ${pass} 通过 / ${fail} 失败 ===
 `);

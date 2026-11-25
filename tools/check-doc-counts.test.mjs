@@ -151,5 +151,45 @@ console.log('case 7: 同一指标多处出现，只报错的那一处');
   rmSync(dir, { recursive: true, force: true });
 }
 
+console.log('case 8: 「N 项检查」这类写法必须被扫（2026-11-26 补的正则）');
+{
+  // mk(59) 造的是 59 个 .test.mjs，所以自测数与条目数同为 59。
+  const dir = mk(59, { 'README.md': '# T\n\n共 59 项检查。\n' });
+  const r = run(dir);
+  expect('正确值放行', r.code === 0, JSON.stringify(r.data?.problems));
+  rmSync(dir, { recursive: true, force: true });
+}
+{
+  const dir = mk(59, { 'README.md': '# T\n\n共 999 项检查。\n' });
+  const r = run(dir);
+  expect('错值报 N1', (r.data?.problems ?? []).some((p) => p.id === 'N1'), JSON.stringify(r.data?.problems));
+  rmSync(dir, { recursive: true, force: true });
+}
+
+console.log('case 9: HISTORICAL 只看命中所在行——当前进度表里的日期不得把数字也跳过');
+{
+  // 验收实测：第一版用前后 120 字窗判历史，于是「## 当前进度 / 最后更新：2026-11-18 /
+  // | 机械校验（59 项） |」这张**表里的现值**被整行跳过；CAPABILITIES 的「适用版本」同理。
+  const dir = mk(59, {
+    'README.md': '# T\n\n## 当前进度\n\n> 最后更新：2026-11-18\n\n| 机械校验（999 项） | ✅ |\n',
+  });
+  const r = run(dir);
+  expect('当前进度表里的错值必须报', (r.data?.problems ?? []).some((p) => p.id === 'N1'),
+    JSON.stringify(r.data?.problems));
+  rmSync(dir, { recursive: true, force: true });
+}
+
+console.log('case 10: 真正的历史行（0 误拦 / 那 7 条修复）不得被报');
+{
+  // 加一行现在的正确值，保证「抽出数字 > 0」——否则整份文档全是历史行时
+  // 分母为 0 会走 exit 2，测到的就不是「历史行被跳过」而是「没有数字」。
+  const dir = mk(59, {
+    'README.md': '# T\n\n共 59 项检查。\n\n| 机械闸门 | 57 项检查，0 误拦 |\n\n2026-11-16 那 7 条修复，57 项检查全绿。\n',
+  });
+  const r = run(dir);
+  expect('历史行不报（只有现值的 59 被计入）', r.code === 0, JSON.stringify(r.data?.problems));
+  rmSync(dir, { recursive: true, force: true });
+}
+
 console.log(`\n=== 结果: ${pass} 通过 / ${fail} 失败 ===\n`);
 process.exit(fail > 0 ? 1 : 0);

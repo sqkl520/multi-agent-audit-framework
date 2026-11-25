@@ -80,6 +80,9 @@ const TARGETS = [
   { script: 'check-fixture-portability.mjs',   args: [],            why: '夹具里有没有写死本机绝对路径' },
   { script: 'check-promises.mjs',              args: ['tools'],     why: 'tools/ 的 JSDoc 承诺是否兑现' },
   { script: 'lint-terminology.mjs',            args: [],            why: '同一概念是否只有一个写法' },
+  { script: 'severity-consistency.mjs',
+    args: ['experiments/fixture2', 'experiments/fixture2/T1-report.md', 'experiments/fixture2/U1-report.md'],
+    why: '同一缺陷的严重性在各 agent 间是否一致（fixture2 是仓库里被跟踪的真实报告）' },
 ];
 
 // ── 需要真实运行现场的，必须**机械证明**它确实跑不了 ──
@@ -109,7 +112,7 @@ const SKIPPED = [
   { script: 'classify-failures.mjs',       reason: '需要 --state；运行时账本' },
   { script: 'gate.mjs',                    reason: '需要 --gate + 各门参数；由运行流程调用' },
   { script: 'stop-hook.mjs',               reason: 'Stop hook，需要 --state 且从 stdin 读上下文' },
-  { script: 'check-round-chain-live.mjs',  reason: '需要 <state.json>；仓库里唯一的 state.json 是历史快照，且它无参数时 exit 0（见 EXEMPT_NO_ARG_FAIL）' },
+  { script: 'check-round-chain-live.mjs',  reason: '需要 <state.json>；仓库里唯一的 state.json 是 experiments/ 下的历史快照（RUNNING + report.is_complete=false），跑出来会报「已出报告却要续跑同一轮」——那是快照当时的真实处境，不是本仓库的缺陷' },
 ];
 
 // ── 只能人工按需跑的：必须跑一个**受限切片**证明它还能工作 ──
@@ -135,11 +138,12 @@ const MANUAL_ONLY = [
   },
 ];
 
-// ── R3：无参数时不 exit 2 的例外，必须点名并说明 ──
+// ── R3：无参数时**故意** exit 0 的，必须点名并说明 ──
+//
+// 2026-11-25 起只剩一条。`check-round-chain-live.mjs` 原来也在这张表里
+//（它无参数时什么都不分析、直接 exit 0），但那其实是它**缺用法守卫**，
+// 不是设计决定——已经给它补上守卫、挪出豁免表。豁免只能给「故意不拦」的。
 const EXEMPT_NO_ARG_FAIL = [
-  { script: 'check-round-chain-live.mjs',
-    reason: '无参数时它什么都不分析、直接 exit 0（脚本自己没写用法守卫）。这是它的缺陷，'
-      + '但补守卫属于改它的行为，不在本轮范围；列在这里是为了让 R1 不把它当成「能跑」' },
   { script: 'stop-hook.mjs',
     reason: '这是 Stop hook，由 harness 在回合结束时调用。没有 --state 时它**故意** exit 0：'
       + '文件头写明「没有账本就无法判断——不阻断（宁可不拦，也不要误拦）」。'

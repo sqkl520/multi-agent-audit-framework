@@ -33,7 +33,7 @@ Run the full mechanical check suite. It must be green:
 node tools/check-all.mjs
 ```
 
-This runs 57 checks (46 self-test suites plus 11 scripts run directly) covering every validator. If a suite fails, the PR
+This runs 59 checks (48 self-test suites plus 11 scripts run directly) covering every validator. If a suite fails, the PR
 is not ready — the suites are the only thing that distinguishes "the rule exists"
 from "the rule is enforced".
 

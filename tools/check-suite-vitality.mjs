@@ -241,11 +241,49 @@ function runMutation(name, mutator) {
       if (existsSync(join(ROOT, f))) cpSync(join(ROOT, f), join(tmp, f));
     }
     if (existsSync(join(ROOT, 'docs'))) cpSync(join(ROOT, 'docs'), join(tmp, 'docs'), { recursive: true });
+    // 2026-11-26 锐评实测：`severity-consistency.test.mjs` 依赖 experiments/fixture2，
+    // 而这里不拷 experiments/ → 那份自测在临时目录里**不施加任何变异就已经失败**，
+    // 于是任何变异都被判 KILLED：仪表上显示 killed:4/4，实际一条都没测过。
+    // 只拷它用到的那一小块（130K），不整棵拷 experiments/。
+    if (existsSync(join(ROOT, 'experiments', 'fixture2'))) {
+      cpSync(join(ROOT, 'experiments', 'fixture2'), join(tmp, 'experiments', 'fixture2'), { recursive: true });
+    }
+    // 2026-11-26 补：`check-pattern-coverage.test.mjs:31` 自己就要拷整棵 experiments/
+    // （它读 experiments/manifest.json）。不在这里给，那份自测的基线就是红的——
+    // 加 BASELINE_RED 之后这一条被暴露出来了（原先它被静默算成 KILLED）。
+    // experiments/ 约 2MB，只在跑变异测试时拷一次。
+    if (existsSync(join(ROOT, 'experiments'))) {
+      cpSync(join(ROOT, 'experiments'), join(tmp, 'experiments'), { recursive: true });
+    }
 
     const target = join(tmp, 'tools', `${name}.mjs`);
     const orig = readFileSync(target, 'utf8');
     const mutated = mutator.apply(orig);
     if (mutated === null || mutated === orig) return { status: 'NOOP' };
+
+    // 2026-11-26 补：**先跑未变异的自测作基线**，再写变异。
+    //
+    // （第一版把基线放在写变异之后——那测的是「变异后自测失不失败」，
+    //  和后面的 KILLED 判据完全一样，基线就红 100% 触发。顺序错了。）
+    //
+    // 锐评实测：`severity-consistency.test.mjs` 依赖 `experiments/fixture2`，
+    // 而这里原先不拷 `experiments/` → 那份自测在临时目录里**不施加任何变异就已经失败**，
+    // 于是任何变异都被判 KILLED —— 仪表上显示 killed:4/4，实际一条都没测过。
+    //
+    // 拷 fixture 是治标；治本是这条基线：基线就红 → 归 BASELINE_RED，
+    // **既不算抓到也不算存活**，并在汇总里单列。与 TIMEOUT 的处理同源。
+    try {
+      execFileSync(process.execPath, [join(tmp, 'tools', `${name}.test.mjs`)], {
+        encoding: 'utf8', stdio: 'pipe', timeout: ARG.timeoutMs,
+      });
+    } catch (e) {
+      if (!(e.signal === 'SIGTERM' || e.killed)) {
+        const tail = ((e.stdout ?? '') + (e.stderr ?? '')).trim().split('\n').slice(-5);
+        return { status: 'BASELINE_RED', tail };
+      }
+      return { status: 'TIMEOUT', signal: e.signal, baseline: true };
+    }
+
     writeFileSync(target, mutated);
 
     // 跑自测：期望它**失败**（非 0 退出）
@@ -316,6 +354,7 @@ for (const name of names) {
     survived: survivedReal.length,
     equivalent: equivalentCount,
     timedOut: applied.filter((r) => r.status === 'TIMEOUT').length,
+    baselineRed: applied.filter((r) => r.status === 'BASELINE_RED').length,
     detail: perMutator,
   });
 }
@@ -324,14 +363,16 @@ const totalApplied = results.reduce((a, r) => a + r.applied, 0);
 const totalKilled = results.reduce((a, r) => a + r.killed, 0);
 const totalSurvived = results.reduce((a, r) => a + r.survived, 0);
 const totalTimedOut = results.reduce((a, r) => a + r.timedOut, 0);
+const totalBaselineRed = results.reduce((a, r) => a + (r.baselineRed ?? 0), 0);
 
 if (ARG.json) {
   console.log(JSON.stringify({
-    ok: totalSurvived === 0,
-    suites: results.length, applied: totalApplied, killed: totalKilled, survived: totalSurvived, timed_out: totalTimedOut,
+    ok: totalSurvived === 0 && totalBaselineRed === 0,
+    suites: results.length, applied: totalApplied, killed: totalKilled, survived: totalSurvived,
+    timed_out: totalTimedOut, baseline_red: totalBaselineRed,
     results,
   }, null, 2));
-  process.exit(totalSurvived === 0 ? 0 : 1);
+  process.exit(totalSurvived === 0 && totalBaselineRed === 0 ? 0 : 1);
 }
 
 console.log('\n自测套件活力检查（变异测试：改坏校验器，自测是否报错）\n');
@@ -342,7 +383,20 @@ for (const r of results) {
   console.log(`${mark} ${r.name.padEnd(28)}${String(r.applied).padStart(4)}${String(r.killed).padStart(6)}${String(r.survived).padStart(6)}`);
 }
 console.log('─'.repeat(60));
-console.log(`合计: ${results.length} 个套件 / ${totalApplied} 个变异 / 抓到 ${totalKilled} / 存活 ${totalSurvived}\n`);
+console.log(`合计: ${results.length} 个套件 / ${totalApplied} 个变异 / 抓到 ${totalKilled} / 存活 ${totalSurvived}`
+  + (totalBaselineRed ? ` / 基线就红 ${totalBaselineRed}` : '') + '\n');
+
+if (totalBaselineRed > 0) {
+  console.log('基线就红的套件（自测在**没有变异**的临时目录里已经失败——结论不可用）：');
+  for (const r of results) {
+    for (const d of r.detail) {
+      if (d.status !== 'BASELINE_RED') continue;
+      console.log(`  [${r.name}] ${d.mutator}: 自测未变异即失败`);
+      for (const l of d.tail ?? []) console.log(`      ${l}`);
+    }
+  }
+  console.log('  → 多半是临时目录缺 fixture。修 check-suite-vitality 的拷贝集合，别关掉这条检查。\n');
+}
 
 if (totalSurvived > 0) {
   console.log('存活的变异（这些逻辑没有被任何断言覆盖）：');
@@ -359,4 +413,4 @@ if (totalSurvived > 0) {
   console.log('');
 }
 
-process.exit(totalSurvived === 0 ? 0 : 1);
+process.exit(totalSurvived === 0 && totalBaselineRed === 0 ? 0 : 1);

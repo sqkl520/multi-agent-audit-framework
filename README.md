@@ -50,7 +50,7 @@
 git clone https://github.com/sqkl520/multi-agent-audit-framework.git
 cd multi-agent-audit-framework
 
-# 跑全部机械校验（57 项：46 个自测套件 + 11 个直接运行）
+# 跑全部机械校验（59 项：48 个自测套件 + 11 个直接运行）
 node tools/check-all.mjs
 ```
 
@@ -117,8 +117,8 @@ def spawn_agent(role, template, extra):
 完整的「能拦住什么 / 拦不住什么」逐条列在 [`CAPABILITIES.md`](CAPABILITIES.md)。**那份文档比本 README 更能帮你决定要不要用。**
 
 其中最重要的一条：**当它漏掉检查时，不会有任何东西提醒你。**
-实测 912 条规则句里 206 条（22.6%）有机器出口，其余靠执行者自觉；
-其中真正由 `tools/*.mjs` 里可执行规则覆盖的是 113 条（12.4%）。
+实测 913 条规则句里 207 条（22.7%）有机器出口，其余靠执行者自觉；
+其中真正由 `tools/*.mjs` 里可执行规则覆盖的是 114 条（12.5%）。
 
 ## 🔧 它是怎么工作的
 
@@ -136,7 +136,7 @@ def spawn_agent(role, template, extra):
 | 层 | 用了什么 |
 |---|---|
 | 框架本体 | Markdown 提示词 + JSON 契约（`framework/`）|
-| 校验器 | 零依赖 Node.js（`tools/*.mjs`，57 项检查／其中 46 个自测套件）|
+| 校验器 | 零依赖 Node.js（`tools/*.mjs`，59 项检查／其中 48 个自测套件）|
 | 状态机 | `state.json` 落盘，中断可续跑 |
 | 证据链 | 门 0：每条发现必须逐字回显本回合读到的 `file:line` |
 
@@ -183,8 +183,8 @@ else:
 |---|---|
 | 四波次只读路径 + 报告 | ✅ 完成 |
 | 修复 / 验收独立路径 | ✅ 完成 |
-| 机械校验（57 项） | ✅ 全绿 · CI 三平台通过 |
-| 契约三层闭环（模板/契约/校验器） | ⚠️ 部分 —— 出口率 22.6%（严格口径 12.4%）|
+| 机械校验（59 项） | ✅ 全绿 · CI 三平台通过 |
+| 契约三层闭环（模板/契约/校验器） | ⚠️ 部分 —— 出口率 22.7%（严格口径 12.5%）|
 | 规则 → 校验器对账工具 | ✅ 已上线（仪表，不是闸门）|
 | 中英双语门面 | ✅ README + 社区文件 |
 | 模式 B（判定面只覆盖自造样本）的机械检测 | ⬜ 实测做不到，未实现 |
@@ -195,7 +195,7 @@ else:
 ## 📦 验证
 
 ```bash
-node tools/check-all.mjs          # 全部机械校验（57 项，含 46 个自测套件）
+node tools/check-all.mjs          # 全部机械校验（59 项，含 48 个自测套件）
 node tools/check-rule-ledger.mjs  # 规则句 → 机器出口对账（仪表）
 node tools/check-payload.mjs <产物> --role <角色>   # 单份产物契约准入
 ```

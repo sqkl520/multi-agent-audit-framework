@@ -172,5 +172,25 @@ console.log('case 6: 变异只写临时副本，不碰工作区');
   rmSync(dir, { recursive: true, force: true });
 }
 
+console.log('case 7 (2026-11-26): 自测在未变异时就失败 → 报 BASELINE_RED，不算 KILLED');
+{
+  // 锐评实测：severity-consistency.test.mjs 依赖 experiments/fixture2，
+  // 而 vitality 不拷 experiments/ → 自测在临时目录里**不施加任何变异就已经失败**，
+  // 于是任何变异都被判 KILLED：仪表显示 killed:4/4，实际一条都没测过。
+  //
+  // 造一份「无论校验器怎样都会失败」的自测，验证它被归到 BASELINE_RED 而不是 KILLED。
+  const ALWAYS_FAIL = `
+process.exit(1);
+`;
+  const dir = mk(GOOD_CHECK, ALWAYS_FAIL);
+  const r = runVitality(dir);
+  const d = (r.data?.results?.[0]?.detail ?? []);
+  const red = d.filter((x) => x.status === 'BASELINE_RED').length;
+  expect('有 BASELINE_RED', red > 0, JSON.stringify(d.map((x) => `${x.mutator}:${x.status}`)));
+  expect('killed 为 0（不能把基线红算成抓到）', (r.data?.killed ?? -1) === 0, `killed=${r.data?.killed}`);
+  expect('exit 1（基线红也要让整个人工检查失败）', r.code === 1, `code=${r.code}`);
+  rmSync(dir, { recursive: true, force: true });
+}
+
 console.log(`\n=== 结果: ${pass} 通过 / ${fail} 失败 ===\n`);
 process.exit(fail > 0 ? 1 : 0);

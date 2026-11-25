@@ -492,7 +492,7 @@ const CHECKS = [
     // 「自测绿」和「仓库干净」是两个命题。这一条补的是第二个。
     // 需要运行时输入的校验器不在此列，理由写在 check-repo.mjs 的 SKIPPED 里。
     script: 'check-repo.mjs',
-    desc: '13 个能对真实仓库跑的校验器 + SKIPPED 逐条机械验证无参数 exit 2 + 分母基线比对',
+    desc: '14 个能对真实仓库跑的校验器 + SKIPPED 逐条机械验证无参数 exit 2 + 分母基线比对',
   },
   {
     name: '真实仓库自检 自测（分母、跳过理由、退出码）',
@@ -512,6 +512,20 @@ const CHECKS = [
     // 抽出 lib/code-scan.mjs 之后，它自己也要有自测，否则修好一次下次还会坏。
     script: 'code-scan.test.mjs',
     desc: '用例：行/块注释不算引用 / 字符串算 / 子串撞车（consistency vs check-enum-consistency）/ 注释掉的 CI 步骤不算 / run: | 块标量算',
+  },
+  {
+    name: '自动续轮判定的真实数据驱动（check-round-chain-live）',
+    // 2026-11-25 补。这个脚本此前**没有自测、没有用法守卫、也没有任何调用方**——
+    // 无参数时什么都不分析直接 exit 0，check-repo 的 R1 不得不为它开豁免。
+    script: 'check-round-chain-live.test.mjs',
+    desc: '用例：无参数 exit2 / 文件不存在 exit1 / RUNNING 一致 / CLOSED+DEFERRED 一致 / 已出报告不得续跑 / 两条规则冲突须报',
+  },
+  {
+    name: '严重性定级一致性（severity-consistency）',
+    // 2026-11-25 补。此前它**一直在报全 0**：报告写「**严重性**: 高」，
+    // 而正则只认 CRITICAL|HIGH|MEDIUM|LOW。修好词表后又补了分母为 0 的守卫。
+    script: 'severity-consistency.test.mjs',
+    desc: '用例：真实 fixture 有可比定级 / 中文词表 / 分母为0须exit2 / 英文仍识别 / 用法错误 exit2',
   },
 ];
 

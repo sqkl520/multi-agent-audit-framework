@@ -19,7 +19,10 @@
  *
  *   N1  文档里的「N 个自测套件 / N self-test suites」必须等于 check-all.mjs 实际条目数
  *   N2  文档里的「出口率 X%」必须与 check-rule-ledger 的输出一致（容差 0.1）
- *   N3  同一份文档里同一个指标出现多次时，几处必须互相一致
+ *   N3  同一份文档里同一个指标出现多次时，几处必须互相一致（**未实现**；
+ *       2026-11-26 锐评指出这一行与代码不符——代码里只有 N1/N2。
+ *       原本计划靠它抓「57 项：48 个自测 + 11 个直接运行」这种行内矛盾，
+ *       现在改由 N1 的两个正则（「N 项」与「N 个自测套件」分别对各自真值）覆盖。
  *
  * ── 为什么不自动改写文档 ────────────────────────────────────────────
  *
@@ -107,18 +110,37 @@ for (const doc of DOCS) {
   //        原来一律按条目数比，文档写「56 个自测套件」而实际只有 45 个 .test.mjs，
   //        数字对上了、标签是错的。
   //   H3  正则放宽：`N 个校验套件` / `N validation suites` / `about N suites` 也认。
+  //
+  // 2026-11-26（锐评 C1）：`N 项检查` / `N 项` / `N checks` 这类写法此前**完全没被扫**。
+  // 实测：把 README 里全部「N 项」改成 999，本工具仍报绿——于是「57 项：48 个自测 + 11 个直接运行」
+  // 这种行内自相矛盾（57 ≠ 48+11）能一直存在。现在补上。
+  //
+  // ⚠ **历史叙述**里也会出现这类数字（「2026-11-16 那次运行 57 项检查」）。
+  // 那是记录不是声称当前值，改它会篡改历史。
+  //
+  // 2026-11-26 验收实测：第一版用「命中点前后 120 字窗」判定历史，窗口太宽——
+  // `README.md:186`（`| 机械校验（59 项） |`，在「## 📌 当前进度」表里，同段有
+  // `最后更新：2026-11-18`）与 `CAPABILITIES.md:4`（`适用版本：… 59 项检查`，同段有
+  // `更新时间：2026-11-16`）**都是当前声称值，却被当成历史跳过了**。
+  // 那正是「用过滤掩盖漏检」——本仓库反复修的形态。
+  //
+  // 现在：只看**命中所在的这一行**，且必须出现真正的历史标记词（`误拦`、`当时`、
+  // `那 7 条修复`、`实测数据` 等）。日期本身**不再**算历史标记（当前进度表也写日期）。
+  const HISTORICAL = /误拦|false blocks|那 7 条修复|当时|此前|历史|实测数据|那次/;
   const SUITE_RES = [
     { re: /(\d+)\s*个自测套件/g, truth: () => SELF_TESTS, what: '自测套件' },
     { re: /(\d+)\s*(?:个)?(?:校验)?套件/g, truth: () => SUITES, what: '套件（含直接运行的脚本）' },
     { re: /(\d+)\s*self-test suites/gi, truth: () => SELF_TESTS, what: 'self-test suites' },
     { re: /(\d+)\s*validation suites/gi, truth: () => SUITES, what: 'validation suites（含直接运行的脚本）' },
     { re: /机械校验套件（(\d+)\s*个）/g, truth: () => SUITES, what: '套件（含直接运行的脚本）' },
-    // 2026-11-25 补：规则句总数此前完全没人管。实测 CAPABILITIES.md 里
-    // 「912 条规则句」与「22.5%」并存时自相矛盾（206/912 = 22.6%），而本工具报绿。
-    //
-    // 只认「实测 N 条规则句」/「Of N rule sentences」这种**声称当前值**的写法。
-    // 历史叙述里也会出现数字（「分母从 1121 降到 909」），那是记录不是声称，
-    // 改它会篡改历史——第一版用裸 `N 条规则句` 就误报了那一处。
+    // 2026-11-26 补：条目总数（= 自测套件 + 直接运行的脚本）
+    { re: /(\d+)\s*项检查/g, truth: () => SUITES, what: '项检查' },
+    { re: /机械校验（(\d+)\s*项）/g, truth: () => SUITES, what: '项检查' },
+    { re: /(\d+)\s*项，含/g, truth: () => SUITES, what: '项检查（含 N 个自测套件）' },
+    { re: /(\d+)\s*项：\d+\s*个自测套件/g, truth: () => SUITES, what: '项检查（N 项：M 个自测 + K 个直接运行）' },
+    { re: /(\d+)\s+checks\b/gi, truth: () => SUITES, what: 'checks' },
+    { re: /(\d+)\s*项\)/g, truth: () => SUITES, what: '项' },
+    // 规则句总数：只认「实测 N 条规则句」/「Of N rule sentences」这种**声称当前值**的写法。
     { re: /实测\s*(\d+)\s*条规则句/g, truth: () => (EXIT ? EXIT.sentences : -1), what: '规则句' },
     { re: /Of\s+(\d+)\s+rule sentences/gi, truth: () => (EXIT ? EXIT.sentences : -1), what: 'rule sentences' },
   ];
@@ -127,6 +149,12 @@ for (const doc of DOCS) {
     for (const m of text.matchAll(re)) {
       const n = Number(m[1]);
       const expectN = truth();
+      // 历史叙述跳过（见 HISTORICAL）：**只看命中所在的那一行**。
+      const lineStart = text.lastIndexOf('\n', m.index) + 1;
+      let lineEnd = text.indexOf('\n', m.index + m[0].length);
+      if (lineEnd < 0) lineEnd = text.length;
+      const ctx = text.slice(lineStart, lineEnd);
+      if (HISTORICAL.test(ctx)) continue;
       extracted++;
       if (n !== expectN) {
         problems.push({

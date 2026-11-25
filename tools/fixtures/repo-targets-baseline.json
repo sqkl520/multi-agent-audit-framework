@@ -13,6 +13,7 @@
     "check-promises.mjs",
     "check-rule-doc-link.mjs",
     "check-wrapper-contract.mjs",
-    "lint-terminology.mjs"
+    "lint-terminology.mjs",
+    "severity-consistency.mjs"
   ]
 }
