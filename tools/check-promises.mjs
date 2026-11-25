@@ -44,6 +44,17 @@ function walk(dir, out = []) {
 
 const files = walk(root);
 
+// 分母为 0 不等于通过（H2，2026-11-25 锐评实测）。
+//
+// 输出「承诺兑现检查: 0 个文件 / 未发现『承诺未兑现』」并 exit 0 —— 一次目录改名、
+// 一次参数拼错，129 个文件的检查就静默变成「检查了 0 个文件，通过」。
+// check-repo 把本工具当作「对真实仓库跑」的一员，它不能空转。
+if (files.length === 0) {
+  console.error(`\n✗ 在 ${root} 下没有找到任何可检查的源文件——分母为 0，不能判「未发现承诺未兑现」。`);
+  console.error('  检查参数是否指向了正确的目录。');
+  process.exit(2);
+}
+
 /** 抽出所有带 JSDoc 的函数定义（粗粒度，但对本类检查够用） */
 function extractFunctions(src, relPath) {
   const lines = src.split('\n');

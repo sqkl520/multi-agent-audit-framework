@@ -56,7 +56,7 @@ Zero dependencies; all you need is **Node.js ≥ 22** (some harness log validato
 git clone https://github.com/sqkl520/multi-agent-audit-framework.git
 cd multi-agent-audit-framework
 
-# Run all mechanical checks (about 53 self-test suites)
+# Run all mechanical checks (57 checks: 46 self-test suites + 11 scripts run directly)
 node tools/check-all.mjs
 ```
 
@@ -115,7 +115,7 @@ Measured data from one real run:
 | Wall-clock time | about 90 minutes |
 | Sub-agents | 9 (10 real subagent calls) |
 | Output | 20 files / +804 −78 / 15 new tests |
-| Mechanical gate | 26 validation suites, 0 false blocks |
+| Mechanical gate | 57 checks, 0 false blocks |
 | **Then an independent red-team review of those 7 fixes** | **5 had defects, 2 of them serious** |
 
 That last row is the most important self-description this framework has.
@@ -141,7 +141,7 @@ Main Agent (orchestrates only, does not read code)
 | Layer | What it uses |
 |---|---|
 | Framework itself | Markdown prompts + JSON contracts (`framework/`) |
-| Validators | Zero-dependency Node.js (`tools/*.mjs`, 53 self-test suites) |
+| Validators | Zero-dependency Node.js (`tools/*.mjs`, 57 checks — 46 self-test suites) |
 | State machine | `state.json` persisted to disk, resumes after interruption |
 | Evidence chain | Gate 0: every finding must verbatim echo the `file:line` read in this round |
 
@@ -188,7 +188,7 @@ See [`docs/analysis/2026-11-01-proposal.md`](docs/analysis/2026-11-01-proposal.m
 |---|---|
 | Four-wave read-only path + report | ✅ Done |
 | Fix / acceptance separate path | ✅ Done |
-| Mechanical validation suites (53) | ✅ All green · CI passing on three platforms |
+| Mechanical validation suites (57) | ✅ All green · CI passing on three platforms |
 | Three-layer contract loop (template/contract/validator) | ⚠️ Partial — 22.4% outlet rate (12.2% strict) |
 | Rule → validator reconciliation tool | ✅ Shipped (a dashboard, not a gate) |
 | Chinese/English bilingual front | ✅ README + community files |
@@ -200,7 +200,7 @@ See [`docs/analysis/2026-11-01-proposal.md`](docs/analysis/2026-11-01-proposal.m
 ## 📦 Verification
 
 ```bash
-node tools/check-all.mjs          # all mechanical checks (about 40 suites)
+node tools/check-all.mjs          # all mechanical checks (57 checks, 46 of them self-test suites)
 node tools/check-rule-ledger.mjs  # rule sentence → machine outlet reconciliation (dashboard)
 node tools/check-payload.mjs <产物> --role <角色>   # contract admission for a single artifact
 ```

@@ -428,7 +428,7 @@ const CHECKS = [
     //
     // 判据：有 exit、exit 不是常量 0、有失败计数变量。
     script: 'check-test-vitality.mjs',
-    desc: '检查 42 个 .test.mjs：是否有 process.exit / 是否恒为 0 / 是否有失败计数',
+    desc: '检查每个 .test.mjs：是否有 process.exit / 是否恒为 0 / 是否有失败计数',
   },
   {
     name: '未被总检收录的自测（覆盖缺口）',
@@ -476,6 +476,42 @@ const CHECKS = [
     // 全量按需手动跑：node tools/check-suite-vitality.mjs
     script: 'check-suite-vitality.test.mjs',
     desc: '用例：断言了退出码则变异被抓 / 什么都不测则存活 / 只写临时副本',
+  },
+  {
+    name: '真实仓库自检（跑在仓库本身，不是合成 fixture 上）',
+    // 2026-11-24 补。在这之前，本文件里四十多个条目是 `.test.mjs`——
+    // 对其中十几个校验器，CI 只跑了**自测**（在临时目录造合成数据），
+    // **从来没对着这个仓库跑过一次**。
+    //
+    // 两条实测证据：
+    //   · check-doc-counts 修好接线前报 14 处过期数字、exit 1，
+    //     而它的自测一直绿、CI 一直绿
+    //   · 2026-11-24 新加的 check-fixture-portability 犯了同一个错：
+    //     接进来的是它的 .test.mjs，检查器本身从未扫过真实仓库
+    //
+    // 「自测绿」和「仓库干净」是两个命题。这一条补的是第二个。
+    // 需要运行时输入的校验器不在此列，理由写在 check-repo.mjs 的 SKIPPED 里。
+    script: 'check-repo.mjs',
+    desc: '13 个能对真实仓库跑的校验器 + SKIPPED 逐条机械验证无参数 exit 2 + 分母基线比对',
+  },
+  {
+    name: '真实仓库自检 自测（分母、跳过理由、退出码）',
+    // 上一条跑的是生产；这一条钉住它的分母不被悄悄改小。
+    script: 'check-repo.test.mjs',
+    desc: '用例：全部通过 / 任一失败须读退出码 / 空理由 exit2 / 缺脚本 exit2 / TARGETS 为空 exit2 / 自相矛盾 exit2',
+  },
+  {
+    name: '自测接线 自测（R1 未注册 / R4 无真实调用路径 / CI 也算 / 误报防回归）',
+    script: 'check-test-registration.test.mjs',
+    desc: '用例：全接线通过 / R1 未注册 / R4 无调用路径 / 被工具引用放行 / CI 单独跑也算 / check-repo 自身未注册',
+  },
+  {
+    name: '源码扫描（注释里提到 ≠ 引用 / 文件名子串不撞车 / CI 块标量）',
+    // 2026-11-25 补。R4 被注释骗过：check-contract-slices 与 check-suite-vitality
+    // 唯一的"引用"都是注释，却被判成「已接线」——正是 R4 要抓的形态。
+    // 抽出 lib/code-scan.mjs 之后，它自己也要有自测，否则修好一次下次还会坏。
+    script: 'code-scan.test.mjs',
+    desc: '用例：行/块注释不算引用 / 字符串算 / 子串撞车（consistency vs check-enum-consistency）/ 注释掉的 CI 步骤不算 / run: | 块标量算',
   },
 ];
 

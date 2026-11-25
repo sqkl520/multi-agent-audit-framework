@@ -49,6 +49,12 @@ function actualSuiteCount() {
   return (src.match(/script:\s*'/g) ?? []).length;
 }
 
+/** 其中真正的 .test.mjs 自测数（H4：文档写「N 个自测套件」时，这个才是真值） */
+function actualSelfTestCount() {
+  const src = readFileSync(join(HERE, 'check-all.mjs'), 'utf8');
+  return (src.match(/script:\s*'[^']+\.test\.mjs'/g) ?? []).length;
+}
+
 /** 出口率：跑一次 check-rule-ledger --json */
 function actualExitRate() {
   try {
@@ -74,11 +80,18 @@ if (SUITES === 0) {
   console.error('[预期失败] 从 check-all.mjs 里数出 0 个套件——结构可能变了');
   process.exit(2);
 }
+const SELF_TESTS = actualSelfTestCount();
 const EXIT = actualExitRate();
 
 // ── 参与检查的文档 ──
-const DOCS = ['README.md', 'README.en.md', 'CONTRIBUTING.md', 'docs/i18n/CONTRIBUTING.zh-CN.md']
-  .filter((f) => existsSync(join(ROOT, f)));
+//
+// 2026-11-25（H3 锐评）：原先只有 4 份，CAPABILITIES.md 与 check-all.mjs 里的
+// 写死数字完全看不见。`README.en.md:203` 甚至和同一文件第 59 行互相矛盾
+// （一个写 40，一个写 57），而本工具报绿。
+const DOCS = [
+  'README.md', 'README.en.md', 'CONTRIBUTING.md', 'docs/i18n/CONTRIBUTING.zh-CN.md',
+  'CAPABILITIES.md',
+].filter((f) => existsSync(join(ROOT, f)));
 
 let extracted = 0;
 
@@ -88,21 +101,30 @@ for (const doc of DOCS) {
   // ── N1 · 套件数 ──
   //
   // 匹配「N 个自测套件」「N 个机械校验」「N self-test suites」「机械校验套件（N 个）」
+  //
+  // 2026-11-25（H3/H4 锐评）：两条修正。
+  //   H4  「N 个自测套件」里 N 的真值是 **.test.mjs 的数量**，不是 check-all 的条目数。
+  //        原来一律按条目数比，文档写「56 个自测套件」而实际只有 45 个 .test.mjs，
+  //        数字对上了、标签是错的。
+  //   H3  正则放宽：`N 个校验套件` / `N validation suites` / `about N suites` 也认。
   const SUITE_RES = [
-    /(\d+)\s*个自测套件/g,
-    /(\d+)\s*个套件/g,
-    /(\d+)\s*self-test suites/gi,
-    /机械校验套件（(\d+)\s*个）/g,
+    { re: /(\d+)\s*个自测套件/g, truth: () => SELF_TESTS, what: '自测套件' },
+    { re: /(\d+)\s*(?:个)?(?:校验)?套件/g, truth: () => SUITES, what: '套件（含直接运行的脚本）' },
+    { re: /(\d+)\s*self-test suites/gi, truth: () => SELF_TESTS, what: 'self-test suites' },
+    { re: /(\d+)\s*validation suites/gi, truth: () => SUITES, what: 'validation suites（含直接运行的脚本）' },
+    { re: /机械校验套件（(\d+)\s*个）/g, truth: () => SUITES, what: '套件（含直接运行的脚本）' },
   ];
   const seen = new Map();   // 数值 → 第一次出现的上下文
-  for (const re of SUITE_RES) {
+  for (const { re, truth, what } of SUITE_RES) {
     for (const m of text.matchAll(re)) {
       const n = Number(m[1]);
+      const expectN = truth();
       extracted++;
-      if (n !== SUITES) {
+      if (n !== expectN) {
         problems.push({
-          id: 'N1', doc, found: n, expected: SUITES,
-          msg: `${doc} 写「${m[0].trim()}」，但 check-all.mjs 实际有 ${SUITES} 个套件`,
+          id: 'N1', doc, found: n, expected: expectN,
+          msg: `${doc} 写「${m[0].trim()}」，但${what}实际是 ${expectN} 个`
+            + `（check-all 共 ${SUITES} 条，其中 ${SELF_TESTS} 个 .test.mjs）`,
         });
       } else if (!seen.has(n)) {
         seen.set(n, m[0]);

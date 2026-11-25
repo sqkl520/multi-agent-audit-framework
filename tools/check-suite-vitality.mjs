@@ -50,6 +50,7 @@ import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { isCodeAt } from './lib/code-scan.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -140,8 +141,17 @@ const MUTATORS = [
     id: 'M2-exit-flip',
     desc: '失败退成成功（process.exit(1) → process.exit(0)）',
     apply(src) {
-      if (!/process\.exit\(1\)/.test(src)) return null;
-      return src.replace(/process\.exit\(1\)/g, 'process.exit(0)');
+      // 2026-11-25：只改**代码里**的 process.exit(1)。
+      // 原先全串替换会把 M2 自己那行 desc 字符串里的
+      // "process.exit(1) → process.exit(0)" 也改掉 —— 行为不变，于是报「存活」。
+      // 那是假阳性：变异打偏了，不是覆盖缺口。
+      let hit = 0;
+      const out = src.replace(/process\.exit\(1\)/g, (m, off) => {
+        if (!isCodeAt(src, off, m.length)) return m;
+        hit++;
+        return 'process.exit(0)';
+      });
+      return hit > 0 ? out : null;
     },
   },
   {
@@ -154,9 +164,16 @@ const MUTATORS = [
       // 报出来只会是噪声，然后整条检查被关掉。
       //
       // 现在只针对 `problems.length > 0` —— 那才是"有没有问题"的判定。
-      const re = /problems\.length\s*>\s*0(?!\d)/g;
-      if (!re.test(src)) return null;
-      return src.replace(re, 'problems.length > 999999');
+      //
+      // 2026-11-25：再加一层「只改代码」。本文件的注释与 desc 里有多处
+      // `problems.length > 0` 的字面提及，改它们等于没改。
+      let hit = 0;
+      const out = src.replace(/problems\.length\s*>\s*0(?!\d)/g, (m, off) => {
+        if (!isCodeAt(src, off, m.length)) return m;
+        hit++;
+        return 'problems.length > 999999';
+      });
+      return hit > 0 ? out : null;
     },
   },
   {
@@ -168,6 +185,40 @@ const MUTATORS = [
       //
       // 现在只对**第一处** problems.push 做「整条语句注释掉」，
       // 模拟"某类检查被误删"。这是真实会发生的 bug 形态。
+      //
+      // 2026-11-25 修：这条会打偏。`check-fix-instances-harness.mjs` 的第一处
+      // problems.push 在 `info()` 这个辅助函数体里，而 `infos.push` 还在——
+      // 于是变异了等于没变异，测出来的是「测试恰好用 infos 断言」，
+      // 不是「某类检查被删掉了」。
+      //
+      // 现在按优先级挑**真正的检查点**：
+      //   1. 一行 `fail('rule', ...)` —— 那就是一条 FAIL 级检查
+      //   2. `problems.push(` 里不在辅助函数定义（`=> {` / `function x() {` 之后）的那一处
+      const lines = src.split('\n');
+      const helperStart = new Set();
+      lines.forEach((l, i) => {
+        if (/(=>\s*\{\s*$)|(^\s*function\s+\w+\s*\([^)]*\)\s*\{\s*$)/.test(l)) {
+          for (let k = i; k < Math.min(i + 6, lines.length); k++) helperStart.add(k);
+        }
+      });
+
+      // 1) FAIL 级检查点。
+      //    注意要认 `else fail('...')` 这种行内形式——check-fix-instances-harness
+      //    的三处 fail( 全是 `else fail(...)`，只认行首 fail( 会全部漏掉。
+      const failIdx = lines.findIndex((l) => /^\s*(?:else\s+|if\s*\([^)]*\)\s*)?fail\(\s*['"]/.test(l));
+      if (failIdx >= 0) {
+        lines[failIdx] = '      /* MUTANT: check dropped */;';
+        return lines.join('\n');
+      }
+
+      // 2) 不在辅助函数里的 problems.push
+      const pushIdx = lines.findIndex((l, i) => /^\s*problems\.push\(\{/.test(l) && !helperStart.has(i));
+      if (pushIdx >= 0) {
+        lines[pushIdx] = '      /* MUTANT: check dropped */;';
+        return lines.join('\n');
+      }
+
+      // 3) 退回旧行为（单行完整语句形式的 push）
       const m = src.match(/^\s*problems\.push\(\{[\s\S]*?\}\);\s*$/m);
       if (!m) return null;
       return src.replace(m[0], '      /* MUTANT: check dropped */;');
@@ -297,7 +348,12 @@ if (totalSurvived > 0) {
   console.log('存活的变异（这些逻辑没有被任何断言覆盖）：');
   for (const r of results) {
     for (const d of r.detail) {
-      if (d.status === 'SURVIVED') console.log(`  [${r.name}] ${d.mutator}: ${d.desc}`);
+      // 2026-11-25：这里原先只判 status === 'SURVIVED'，于是**已列入等价白名单**的
+      // 那条也会被打印出来——计数是 3 行却打印 4 条，读的人会以为汇总算错了。
+      // 汇总与明细必须用同一个判据。
+      if (d.status !== 'SURVIVED') continue;
+      if (EQUIVALENT.has(`${r.name}::${d.mutator}`)) continue;
+      console.log(`  [${r.name}] ${d.mutator}: ${d.desc}`);
     }
   }
   console.log('');

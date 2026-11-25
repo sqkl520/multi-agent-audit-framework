@@ -1,0 +1,18 @@
+{
+  "note": "check-repo.mjs 的 TARGETS 分母基线。改动 TARGETS 必须同步这里——否则「把某个校验器从真实仓库自检里摘掉」会悄无声息地发生（见 check-repo.mjs 的 R2）",
+  "targets": [
+    "check-contract-examples.mjs",
+    "check-contract-slice-fidelity.mjs",
+    "check-contract-slices.mjs",
+    "check-doc-counts.mjs",
+    "check-doc-paths.mjs",
+    "check-enum-consistency.mjs",
+    "check-fixture-portability.mjs",
+    "check-gate-doc-sync.mjs",
+    "check-pattern-coverage.mjs",
+    "check-promises.mjs",
+    "check-rule-doc-link.mjs",
+    "check-wrapper-contract.mjs",
+    "lint-terminology.mjs"
+  ]
+}

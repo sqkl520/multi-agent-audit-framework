@@ -145,6 +145,23 @@ for (const r of results) {
 }
 
 const totalFields = results.reduce((s, r) => s + r.sectionFields, 0);
+
+// 分母为 0 不等于通过（H1，2026-11-25 锐评实测）。
+//
+// `extractFields` 只认反引号/JSON 键形式的 snake_case。把 output-contract.md 里的
+// `_` 全换成 `-`（等价于一次 camelCase 重构）后，7 份切片的字段数全变 0，
+// `missing` 恒为空，于是打印「7 份切片无损：角色本节共 0 个字段，全部保留」并 exit 0。
+//
+// 同仓库的 check-doc-paths / check-rule-doc-link / lint-terminology 都有这条守卫，
+// 而这条校验器被 check-repo 当作「13 个真实仓库校验器」之一在跑——它不能空转。
+if (totalFields === 0) {
+  console.error('');
+  console.error(`✗ 从 ${results.length} 份切片的角色小节里抽到 0 个字段——分母为 0，不能判「无损」。`);
+  console.error('  多半是 output-contract.md 的字段命名形态变了（extractFields 只认 snake_case）。');
+  console.error('  修 extractFields 的判据，而不是把这条守卫删掉。');
+  process.exit(2);
+}
+
 console.log('');
 if (problems.length === 0) {
   console.log(`${results.length} 份切片无损：角色本节共 ${totalFields} 个字段，全部保留。`);

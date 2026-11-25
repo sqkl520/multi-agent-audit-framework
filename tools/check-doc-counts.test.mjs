@@ -25,7 +25,11 @@ function mk(nSuites, docs) {
   cpSync(TOOL, join(dir, 'tools', 'check-doc-counts.mjs'));
 
   // 造一个含 N 个套件的 check-all.mjs
-  const entries = Array.from({ length: nSuites }, (_, i) => `  { script: 't${i}.mjs' },`).join('\n');
+  //
+  // 2026-11-25：条目名必须带 `.test.mjs`。N1 现在区分两个口径——
+  // 「N 个自测套件」对 .test.mjs 的数量，「N 个校验套件」对全部条目数——
+  // 造 `t0.mjs` 会让自测数恒为 0，用例就测不到真的判据了。
+  const entries = Array.from({ length: nSuites }, (_, i) => `  { script: 't${i}.test.mjs' },`).join('\n');
   writeFileSync(join(dir, 'tools', 'check-all.mjs'), `const CHECKS = [\n${entries}\n];\n`);
   // 造一个最小 ledger（本工具会调它拿出口率）
   writeFileSync(join(dir, 'tools', 'check-rule-ledger.mjs'), `

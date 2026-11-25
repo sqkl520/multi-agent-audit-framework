@@ -29,6 +29,7 @@ function mk(checkBody, testBody) {
   const dir = mkdtempSync(join(tmpdir(), 'vit-'));
   mkdirSync(join(dir, 'tools'), { recursive: true });
   cpSync(TOOL, join(dir, 'tools', 'check-suite-vitality.mjs'));
+  cpSync(join(HERE, 'lib'), join(dir, 'tools', 'lib'), { recursive: true });
   writeFileSync(join(dir, 'tools', 'fakecheck.mjs'), checkBody);
   writeFileSync(join(dir, 'tools', 'fakecheck.test.mjs'), testBody);
   return dir;
@@ -126,6 +127,7 @@ console.log('case 4: 没有自测的校验器被跳过（不报错）');
   const dir = mkdtempSync(join(tmpdir(), 'vit-none-'));
   mkdirSync(join(dir, 'tools'), { recursive: true });
   cpSync(TOOL, join(dir, 'tools', 'check-suite-vitality.mjs'));
+  cpSync(join(HERE, 'lib'), join(dir, 'tools', 'lib'), { recursive: true });
   writeFileSync(join(dir, 'tools', 'lonely.mjs'), 'console.log(1);');
   let code = 0, stderr = '';
   try {
@@ -141,6 +143,7 @@ console.log('case 5: 生成器类（gen-*）被排除，不当成"该失败"的�
   const dir = mkdtempSync(join(tmpdir(), 'vit-gen-'));
   mkdirSync(join(dir, 'tools'), { recursive: true });
   cpSync(TOOL, join(dir, 'tools', 'check-suite-vitality.mjs'));
+  cpSync(join(HERE, 'lib'), join(dir, 'tools', 'lib'), { recursive: true });
   writeFileSync(join(dir, 'tools', 'gen-thing.mjs'), GOOD_CHECK);
   writeFileSync(join(dir, 'tools', 'gen-thing.test.mjs'), WEAK_TEST);
   let code = 0;
