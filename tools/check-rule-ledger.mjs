@@ -670,4 +670,17 @@ if (ARG.json) {
 }
 
 const bad = violations.length > 0 || gated.length > 0 || regression;
-process.exit(bad ? 1 : 0);
+
+// 2026-11-25：这里原先是 `process.exit(bad ? 1 : 0)`。
+//
+// Linux 上 `process.exit()` **不等 stdout 写完**：`--json --dump-rows` 的输出
+// 有几十 KB，会被截断在 128 KB 的 pipe 缓冲边界上，下游 `JSON.parse` 抛异常。
+// 实测（WSL Debian）：`check-doc-counts` 调本工具拿出口率时解析失败，
+// `actualExitRate()` 静默返回 null，于是 N2（出口率核对）**整段被跳过**——
+// 而文档里写着 22.6% 还是 99.9% 都判绿。
+//
+// 这是「检查器在 Linux 上静默失效」的又一个实例，也是本项目把测试放在 WSL 里跑
+// 却仍然漏掉的那一类：Windows 的 node 恰好不截断，本地怎么看都正常。
+//
+// 修法：改用 `process.exitCode`，让进程自然退出、把 stdout 冲刷完。
+process.exitCode = bad ? 1 : 0;

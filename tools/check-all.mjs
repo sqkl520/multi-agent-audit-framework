@@ -244,7 +244,7 @@ const CHECKS = [
   },
   {
     name: 'Resume Packet 校验（波次间传递格式）',
-    // 2026-11-19 补：handoff-schema.md 定义了 7 个必填字段、3 套枚举、10 种 open_items.kind，
+    // 2026-11-19 补：handoff-schema.md 定义了 5 个必填字段、3 套枚举、10 种 open_items.kind，
     // 并写着「缺失时行为：拒绝整个包」「违反视为 CONTRACT_VIOLATION」——
     // 但此前 grep 不到任何校验器。这份契约的每一条约束从写下那天起就没被执行过。
     // 这是「根本没有检测器」，比「引用断了」更彻底。

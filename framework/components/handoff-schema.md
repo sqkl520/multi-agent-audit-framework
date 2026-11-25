@@ -204,7 +204,17 @@ Resume Packet 是一个**不可变快照**，在每个波次闭合时由主Agent
 - `parties` 中每一条必须携带 `artifact_ref`，指向该方立场的**证据出处**。Resume Packet 本身不复制证据正文。
 - 当 `resolution` 为 `UPHELD` / `DOWNGRADED` / `REVOKED` 时，`arbiter_artifact_ref` 必填，指向仲裁Agent的产出文件。主Agent**不得**自己填写 `resolution`；这个字段只能由 Arbiter 的 `output-contract` 返回结果填充。
 
+> 以上三条与「PENDING 冲突阻止闭合」都由 `tools/check-handoff.mjs` 实现（规则名见下方），
+> 由 `tools/gate.mjs --gate close --packet` 在每次收口时调用。
+
 **为什么冲突不内联**：如果把双方的完整论据塞进 Resume Packet，包会迅速膨胀到不可维护，且主Agent会倾向于“读一下双方说了什么然后自己判断”——这直接违反“主Agent不亲自下场”的禁令。指针化设计强制冲突只能通过 Arbiter 的独立Agent实例来裁决。
+
+> **机器校验**：本节的三条硬约束由 `tools/check-handoff.mjs` 实现，并由
+> `tools/gate.mjs --gate close --packet` 在每次收口时调用。
+> 规则名分别是 `pending_conflict_blocks_close` / `bad_resolution` /
+> `party_without_artifact_ref` / `resolved_without_arbiter_ref`——
+> 四条都是 ERROR。「缺 `conflict_id`」「缺 `resolution`」「`parties: []`」
+> 在正文里没有「必填」字样，所以只报 WARN（**校验器不比契约严**）。
 
 
 ## 第 5 节：`covered_modules`——已覆盖模块标记
@@ -304,6 +314,24 @@ Resume Packet 在每个波次闭合时生成，**不跨波次修改**。每一�
 5. `conflicts` 中 `resolution` 为 `UPHELD` 的条目，`arbiter_artifact_ref` 存在且可读。
 
 **校验失败的处理**：`schema_version` 或 `packet_digest` 失败 → 拒绝整个包，主Agent标记 `PERMANENT_FAILURE`，写入 `unverified`。`artifact_paths` 缺失 → 记录 `ARTIFACT_MISSING`，继续推进，但在最终报告中标注。`arbiter_artifact_ref` 缺失 → 将对应冲突的 `resolution` 回退为 `PENDING`，派发新的 Arbiter 实例，**不得**让修复波基于未验证的裁决继续。
+
+> **哪些步骤是机器做的、哪些只能由主Agent做**（2026-11-25 补）。
+>
+> 上面 5 步里，**只有第 5 步的前半段（`arbiter_artifact_ref` 是否填写）是机械的**，
+> 由 `tools/check-handoff.mjs` 的 H8 实现，并在 `tools/gate.mjs --gate close --packet`
+> 上强制执行。其余四步都需要**运行时信息**，静态校验器做不了：
+>
+> | 步骤 | 为什么机械做不了 |
+> |---|---|
+> | 1 `schema_version` | 机械可做（H2），但它属于「结构」不是「加载」 |
+> | 2 `packet_digest` 重算 | 需要包生成器的**确定性序列化约定**，本仓库还没定义。猜一个算法会让校验本身变成假保险 |
+> | 3 `trace_id` 与当前轮次一致 | 当前轮次的 `trace_id` 不在包里，校验器读不到 |
+> | 4 `artifact_paths` 存在 | 包可能被搬到别处；存在性要在**加载那一刻**、于真实路径上判断 |
+> | 5 后半段「可读」 | 同 4 |
+>
+> 这一段写在这里，是因为**「契约里有这条」和「有东西在检查它」是两件事**。
+> 本仓库已经出过同一形态三次（`check-contract-slices`、`check-suite-vitality`、
+> 以及本节所属的 `check-handoff` 自己 30/31 条规则无出口）。
 
 
 ## 第 10 节：与 `output-contract.md` 的边界

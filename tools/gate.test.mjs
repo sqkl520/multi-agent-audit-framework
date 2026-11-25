@@ -132,8 +132,7 @@ console.log('case 5: close 门 —— 缺发现去向证据必须拒绝（2026-1
   rmSync(dir, { recursive: true, force: true });
 }
 
-console.log('case 5b: close 门 —— 「无法证明」不得当作「通过」必须说明理由');
-{
+console.log('case 5b: close 门 —— 「无法证明」不得当作「通过」必须说明理由');{
   const dir = mkdtempSync(join(tmpdir(), 'g-'));
   writeFileSync(join(dir, 'state.json'), JSON.stringify(GOOD_STATE));
   const r = run(['--gate', 'close', '--state', join(dir, 'state.json'), '--round-dir', dir]);
@@ -203,6 +202,76 @@ console.log('case 11: 非法的 --gate 值 → 用法错误退出码 2');
   } catch (e) {
     expect('退出码 2', e.status === 2, `got ${e.status}`);
   }
+}
+
+console.log('case 13: close 门 —— 缺 --packet 必须拒绝（check-handoff 的唯一入口，2026-11-25 接线）');
+{
+  // 背景：`check-handoff.mjs` 此前**不在任何门上**，只被自己的 .test.mjs 跑过。
+  // 这条用例钉住：close 门现在真的会跑它，且缺参数时不得当作通过。
+  const dir = mkdtempSync(join(tmpdir(), 'g-'));
+  writeFileSync(join(dir, 'state.json'), JSON.stringify(GOOD_STATE));
+  const r = run(['--gate', 'close', '--state', join(dir, 'state.json'), '--round-dir', dir]);
+  const names = (r.r?.results ?? []).map((x) => x.name);
+  const hs = (r.r?.results ?? []).find((x) => x.name === 'check-handoff');
+  expect('拒绝', r.r?.passed === false);
+  expect('确实执行了 check-handoff', names.includes('check-handoff'), JSON.stringify(names));
+  expect('失败信息说明缺 --packet', /未提供 --packet/.test(hs?.out ?? ''), hs?.out?.slice(0, 200));
+  rmSync(dir, { recursive: true, force: true });
+}
+
+console.log('case 14: close 门 —— 给了不合规的 --packet → 拒绝，并点名 check-handoff');
+{
+  const dir = mkdtempSync(join(tmpdir(), 'g-'));
+  writeFileSync(join(dir, 'state.json'), JSON.stringify(GOOD_STATE));
+  const bad = join(dir, 'packet.json');
+  // 缺必填字段 + wave_id 越界
+  writeFileSync(bad, JSON.stringify({ schema_version: 'handoff-schema-v1', wave_id: 'wave-9' }, null, 2));
+  const r = run(['--gate', 'close', '--state', join(dir, 'state.json'), '--round-dir', dir, '--packet', bad]);
+  const hs = (r.r?.results ?? []).find((x) => x.name === 'check-handoff');
+  expect('拒绝', r.r?.passed === false);
+  expect('check-handoff 判失败', hs?.ok === false, JSON.stringify(hs?.out?.slice(0, 200)));
+  expect('报出具体规则', /missing_field|bad_wave_id/.test(hs?.out ?? ''), hs?.out?.slice(0, 300));
+  rmSync(dir, { recursive: true, force: true });
+}
+
+console.log('case 15: close 门 —— 合规的 --packet 不再因为 handoff 失败（其余项仍可能失败）');
+{
+  const dir = mkdtempSync(join(tmpdir(), 'g-'));
+  writeFileSync(join(dir, 'state.json'), JSON.stringify(GOOD_STATE));
+  const good = join(dir, 'packet.json');
+  writeFileSync(good, JSON.stringify({
+    schema_version: 'handoff-schema-v1', round_id: 'round1', wave_id: 'wave-2',
+    wave_status: 'CLOSED', trace_id: 't', packet_digest: 'a'.repeat(64),
+    open_items: [{ kind: 'UNRESOLVED_FINDING', blocking: true, artifact_ref: 'x.md' }],
+  }, null, 2));
+  const r = run(['--gate', 'close', '--state', join(dir, 'state.json'), '--round-dir', dir, '--packet', good]);
+  const hs = (r.r?.results ?? []).find((x) => x.name === 'check-handoff');
+  expect('check-handoff 通过', hs?.ok === true, JSON.stringify(hs?.out?.slice(0, 200)));
+  rmSync(dir, { recursive: true, force: true });
+}
+
+console.log('case 16: close 门 —— 通过项里的 WARN 必须可见（否则「只提示」等于不存在）');
+{
+  // 2026-11-25 锐评实测：gate 只在 !ok 时打印子脚本输出，于是 check-handoff 的
+  // WARN 在唯一被接线的地方全部不可见——「有人工阻塞项，本轮只能 PARTIALLY_CLOSED」
+  // 这句提示经 gate 调用后一个字符都看不到。
+  const dir = mkdtempSync(join(tmpdir(), 'g-'));
+  writeFileSync(join(dir, 'state.json'), JSON.stringify(GOOD_STATE));
+  const p = join(dir, 'packet.json');
+  writeFileSync(p, JSON.stringify({
+    schema_version: 'handoff-schema-v1', round_id: 'round1', wave_id: 'wave-2',
+    wave_status: 'CLOSED', trace_id: 't', packet_digest: 'a'.repeat(64),
+    open_items: [{ kind: 'HUMAN_DECISION_REQUIRED', blocking: true, summary: 'x' }],
+  }, null, 2));
+  // 用人读输出而不是 --json：要测的正是「打印了什么」
+  let out = '';
+  try {
+    out = execFileSync('node', [GATE, '--gate', 'close', '--state', join(dir, 'state.json'),
+      '--round-dir', dir, '--packet', p], { encoding: 'utf8', cwd: HERE, stdio: 'pipe' });
+  } catch (e) { out = (e.stdout ?? '') + (e.stderr ?? ''); }
+  expect('提示行可见（human_blocker_present）', /human_blocker_present/.test(out), out.slice(-600));
+  expect('汇总行可见（1 项警告）', /项警告/.test(out), out.slice(-300));
+  rmSync(dir, { recursive: true, force: true });
 }
 
 console.log(`

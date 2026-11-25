@@ -113,6 +113,14 @@ for (const doc of DOCS) {
     { re: /(\d+)\s*self-test suites/gi, truth: () => SELF_TESTS, what: 'self-test suites' },
     { re: /(\d+)\s*validation suites/gi, truth: () => SUITES, what: 'validation suites（含直接运行的脚本）' },
     { re: /机械校验套件（(\d+)\s*个）/g, truth: () => SUITES, what: '套件（含直接运行的脚本）' },
+    // 2026-11-25 补：规则句总数此前完全没人管。实测 CAPABILITIES.md 里
+    // 「912 条规则句」与「22.5%」并存时自相矛盾（206/912 = 22.6%），而本工具报绿。
+    //
+    // 只认「实测 N 条规则句」/「Of N rule sentences」这种**声称当前值**的写法。
+    // 历史叙述里也会出现数字（「分母从 1121 降到 909」），那是记录不是声称，
+    // 改它会篡改历史——第一版用裸 `N 条规则句` 就误报了那一处。
+    { re: /实测\s*(\d+)\s*条规则句/g, truth: () => (EXIT ? EXIT.sentences : -1), what: '规则句' },
+    { re: /Of\s+(\d+)\s+rule sentences/gi, truth: () => (EXIT ? EXIT.sentences : -1), what: 'rule sentences' },
   ];
   const seen = new Map();   // 数值 → 第一次出现的上下文
   for (const { re, truth, what } of SUITE_RES) {

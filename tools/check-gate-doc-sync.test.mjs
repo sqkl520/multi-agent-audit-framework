@@ -89,9 +89,11 @@ console.log('case 3: 用「改之前」的 protocol.md 回放 → 必须报出 3
     const missing = (r.data?.problems ?? [])
       .filter((p) => p.kind === 'missing_required_arg_in_doc').map((p) => p.arg).sort();
     expect('exit 1', r.code === 1, `code=${r.code}`);
-    expect('报出 --artifacts / --ledger / --report 三项',
-      JSON.stringify(missing) === JSON.stringify(['--artifacts', '--ledger', '--report']),
+    expect('报出 --artifacts / --ledger / --report / --packet 四项',
+      JSON.stringify(missing) === JSON.stringify(['--artifacts', '--ledger', '--packet', '--report']),
       JSON.stringify(missing));
+    // 2026-11-25：--packet 是 close 门新接的必需参数（接 check-handoff）。
+    // 这条断言随后者是变——它测的是「文档示例缺参数会被抓到」，不是「参数恰好有 3 个」。
   });
 }
 

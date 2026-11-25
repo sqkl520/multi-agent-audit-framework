@@ -87,7 +87,7 @@ const TARGETS = [
 // 每条都会被不带参数跑一次，必须 exit 2。理由只用来给人读，不作为放行依据。
 const SKIPPED = [
   { script: 'check-concurrency-cap.mjs',   reason: '需要 --sessions（dsh 会话日志）；本仓库没有某次真实运行的日志' },
-  { script: 'check-handoff.mjs',           reason: '需要 <packet.json>；Resume Packet 只在真实波次衔接时产生' },
+  { script: 'check-handoff.mjs',           reason: '需要 <packet.json>；由 gate.mjs --gate close --packet 调用（2026-11-25 接线前它不在任何门上）' },
   { script: 'check-deliverables.mjs',      reason: '需要 --round-dir；本仓库的 experiments/ 快照是历史产物，跑出来红在占位符上，不是本仓库的缺陷' },
   { script: 'check-state.mjs',             reason: '需要 <state.json>；仓库里唯一的 state.json 是 experiments/ 下的历史快照，target_repo 仍是占位符' },
   { script: 'check-payload.mjs',           reason: '需要 <产物文件> --role <角色>；由 gate.mjs accept 门在真实返回上调用' },
